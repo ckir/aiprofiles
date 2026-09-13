@@ -36,7 +36,7 @@ macOS and Windows CI, without pre-empting the SP2 adapter model and without ship
 |---|---|
 | Adapter trait, capability and evidence model, contract suite, real adapters | SP2 |
 | Adapter-owned argument-conflict rules (§21) | SP2 |
-| How to launch npm-style `.cmd`/`.bat` shims without shell mediation | SP2 (open decision, §8) |
+| How to launch npm-style `.cmd`/`.bat` shims without shell mediation | SP2 (open decision, §10 step 3) |
 | Repository discovery, mappings, global default, `resolve`, `current`, `status`, `link`, `unlink` | SP3 |
 | `create`, `delete`, `list`, `repositories`, `doctor`, JSON output, completions | SP5 |
 
@@ -52,7 +52,7 @@ Each fork was consulted with the agy peer first (AGY-FIRST); the owner decided.
 | D4 | Config writes: `std::fs::File::lock` on a separate `config.toml.lock`, `tempfile` in the same directory, sync, rename; any failure fails the write. | ALIGNED | `File::lock` is stable since Rust 1.89 (MSRV 1.98 compiles it, measured). `std::fs::rename` on Windows uses `FileRenameInfoEx` POSIX semantics where supported. |
 | D5 | Writes use `toml_edit`, preserving comments, key order and formatting. | ALIGNED | V3 §17. |
 | D6 | CLI parsing: Clap derive for top-level reserved words, `external_subcommand` capturing `<agent> …`, a hand-written splitter for the rest. | ALIGNED (consult breached review-only; owner waived the re-run; driver re-verified) | Measured: `external_subcommand` yields `["claude","work","--dry-run","--","--dry-run"]` verbatim. |
-| D7 | Unknown keys inside a known configuration table are a configuration error. | recommended lenient reads; owner chose strict | A typo such as `executible` fails loudly instead of surfacing as "agent not installed". |
+| D7 | Unknown keys inside a known configuration table are a configuration error. | recommended lenient reads; owner chose strict | A misspelled key fails loudly instead of surfacing as "agent not installed". |
 | D8 | Executable discovery refuses `.bat` and `.cmd`. | ALIGNED | `library/std/src/sys/process/windows.rs` runs batch files through `cmd.exe` (V3 §23.2 forbids shell mediation). |
 
 ## 4. Command surface
