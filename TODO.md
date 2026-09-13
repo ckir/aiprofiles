@@ -25,8 +25,11 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 
 - [ ] Enable GitHub private vulnerability reporting (see [SECURITY.md](SECURITY.md)). Branch
       protection is applied during SP0 (design §4.1).
-- [ ] The MSRV (1.85) is not checked in CI. SP0 verified it by hand with
-      `cargo +1.85 check --workspace --all-targets`. Decide whether to add a CI job.
+- [ ] The MSRV (1.89) is not checked in CI; verify by hand with
+      `cargo +1.89 check --workspace --all-targets`. Decide whether to add a CI job.
+- [ ] `cargo install --path crates/agent-profile` also installs the `fake-agent` test fixture binary.
+      Not reachable from any gate or release (release.yml builds `--bin agent-profile`); revisit if
+      source installs are ever documented.
 
 ## Scaffold follow-ups
 

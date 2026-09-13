@@ -17,7 +17,7 @@ The same list is machine-readable in `.claude/recommended-tools.json`.
 | `git-cliff` | `cliff.toml` (conventional commits; Dependabot uses `chore`/`ci` prefixes so its commits are kept) | `changelog` | release time |
 | `cargo-release` | `[workspace.metadata.release]` in `Cargo.toml` (lockstep, `v{{version}}` tag, `publish = false`) | `release <patch\|minor\|major>` | pushed tag triggers `release.yml` |
 | `rustfmt` | `rustfmt.toml` (edition 2024, width 100) | `fmt`, `fmt-check` | `just check`, pre-push, CI Format |
-| `clippy` | `clippy.toml` (msrv 1.85) | `clippy` (`--workspace --all-targets -- -D warnings`) | `just check`, pre-push, CI Clippy |
+| `clippy` | `clippy.toml` (msrv 1.89) | `clippy` (`--workspace --all-targets -- -D warnings`) | `just check`, pre-push, CI Clippy |
 | `typos` (typos-cli) | `_typos.toml` (excludes the V3 spec) | `typos` | `just check`, pre-push, CI Typos |
 | `cargo-deny` | `deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples) | `deny` | CI Cargo deny |
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |

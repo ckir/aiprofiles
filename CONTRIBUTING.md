@@ -21,7 +21,7 @@ pull requests.
 
 ## Development setup
 
-Requires Rust 1.85+ (edition 2024). The toolchain is pinned by `rust-toolchain.toml`.
+Requires Rust 1.89+ (edition 2024). The toolchain is pinned by `rust-toolchain.toml`.
 
 ```bash
 # One-time: install the dev tools
@@ -72,8 +72,8 @@ corruption and atomicity, LaunchPlan per adapter, opaque passthrough, environmen
 process behaviour. New behaviour should land with the matching test from that list, and
 platform-specific behaviour needs the test on the platform it concerns.
 
-Tests that launch an "agent" use the `fake-agent` fixture (`crates/fake-agent`), located through
-`crates/agent-profile/tests/support`. Never launch a real coding agent from a test.
+Tests that launch an "agent" use the `fake-agent` fixture (`crates/agent-profile/src/bin/fake-agent.rs`),
+launched through `crates/agent-profile/tests/support`. Never launch a real coding agent from a test.
 
 ## Commit messages
 

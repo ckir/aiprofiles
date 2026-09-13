@@ -75,7 +75,7 @@ jobs:
             </p>
             <ul>
               <li><a href="agent_profile/index.html"><span class="crate">agent-profile</span></a> &mdash; library and the <code>agent-profile</code> binary: naming, configuration, repository discovery, resolution, adapters, launcher, CLI, output</li>
-              <li><a href="fake_agent/index.html"><span class="crate">fake-agent</span></a> &mdash; test-only stand-in for a coding agent; never shipped</li>
+              <li><a href="fake_agent/index.html"><span class="crate">fake-agent</span></a> &mdash; test-only stand-in for a coding agent (a second binary of agent-profile); never shipped</li>
             </ul>
             <p class="note">
               Private items are documented: every crate is <code>publish = false</code>,

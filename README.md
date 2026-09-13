@@ -69,11 +69,11 @@ mechanisms below are the specification's starting point, not a claim about isola
 | Crate | Responsibility |
 |---|---|
 | `agent-profile` | Library (naming, configuration, repository discovery, resolution, adapters, launcher, CLI, output) and the `agent-profile` binary |
-| `fake-agent` | Test-only stand-in for a coding agent; never shipped |
+| `agent-profile` → `fake-agent` binary | Test-only stand-in for a coding agent (`src/bin/fake-agent.rs`); never shipped |
 
 ## Building
 
-Requires Rust 1.85+ (edition 2024).
+Requires Rust 1.89+ (edition 2024).
 
 ```
 cargo build --workspace

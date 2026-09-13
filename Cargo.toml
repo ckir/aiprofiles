@@ -1,19 +1,18 @@
 # Agent Profile workspace root.
 #
 # Virtual workspace: no root package. The shipped binary is `agent-profile`, produced by
-# crates/agent-profile. crates/fake-agent is a test-only fixture and never ships.
+# crates/agent-profile. Its second binary, fake-agent, is a test-only fixture and never ships.
 
 [workspace]
 resolver = "3"
 members = [
     "crates/agent-profile",
-    "crates/fake-agent",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89"
 license = "PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/ckir/aiprofiles"
 publish = false
