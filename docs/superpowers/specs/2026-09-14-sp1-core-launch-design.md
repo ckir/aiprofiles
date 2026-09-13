@@ -71,11 +71,13 @@ Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`.
 
 ### 4.2 Parsing rules
 
-1. Clap parses the top level. The reserved words of V3 §5.3 (`agents profiles status list create delete
+1. Clap parses the top level with `disable_help_subcommand` (so `help` is not a hidden command word) and
+   `allow_external_subcommands`. The reserved words of V3 §5.3 (`agents profiles status list create delete
    current resolve doctor link unlink repositories completions`) are Clap subcommands. Each one accepts
    and ignores any further arguments.
 2. Any other first word is captured, with everything after it, by `#[command(external_subcommand)]` as
-   `Vec<OsString>`. Its first element is the agent word.
+   `Vec<OsString>`. Its first element is the agent word. A non-UTF-8 agent word is `UnknownAgent`, rendered
+   lossily in the message.
 3. The splitter cuts the remaining elements at the FIRST `--`. Everything after that `--` is opaque
    agent input: kept as `OsString`, never inspected, reordered or re-encoded. Later `--` tokens are opaque.
 4. Before the cut:
@@ -101,8 +103,9 @@ Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`.
 | `<agent> <profile> --dry-run` | Dry-run report (§7.4) | 0 |
 | `<agent> <profile>` | Launch (§7) | agent's status |
 
-Precedence when several apply: usage errors from rule 4 of §4.2 first, then `--json`, then unknown agent,
-then reserved word, then profile validation.
+Precedence when several apply: `-h`/`--help` anywhere before `--` first (launch-form usage, exit 0, even for
+an unknown agent), then usage errors from rule 4 of §4.2, then `--json`, then unknown agent, then reserved
+word, then profile validation.
 
 ## 5. Module layout
 
@@ -124,7 +127,9 @@ The SP0 library already has one empty module per V3 §4 layer. SP1 fills them an
 profile directory, whether it exists, the executable's origin (`Configured` or `Path`) and a one-line
 mechanism description.
 
-`main.rs` becomes `std::process::exit(agent_profile::cli::run(std::env::args_os()))`. Errors print as
+`main.rs` becomes `std::process::exit(agent_profile::cli::run(std::env::args_os()))`; this is the ONLY
+exit path. The Windows launcher returns `LaunchOutcome::Exited(code)` up through `run`, which returns
+`code`; on Unix a successful `exec` never returns. Errors print as
 `agent-profile: error: <message>` on stderr.
 
 ### 5.1 Launch data flow
@@ -135,7 +140,8 @@ mechanism description.
 4. `resolve::resolve`.
 5. `adapter::plan`: discover the executable; compute `<root>/profiles/<profile>/fake`; build
    `LaunchPlan { executable, args: opaque, env: [("FAKE_AGENT_HOME", dir)], cwd: None }`.
-6. With `--dry-run`: render the report and exit 0. Nothing is created.
+6. With `--dry-run`: render the report and exit 0. Nothing is created. Executable discovery still runs, so
+   a dry run of an agent that is not installed fails with exit 3, exactly like a launch.
 7. Otherwise: lazily create the profile directory (§7.3); with `--verbose`, render the report to stderr;
    launch (§7).
 
@@ -236,7 +242,7 @@ pub enum LaunchOutcome {
 1. Explicit override `agents.<id>.executable`: must exist and be a file, else
    `AgentNotInstalled { ExplicitMissing(path) }` (exit 3).
 2. Otherwise search `PATH` in order for the adapter's executable name (`fake-agent` for `fake`). Unix: a
-   regular file with an execute bit. Windows: `<name>.exe`. Not found: `AgentNotInstalled { NotOnPath }`.
+   regular file (after following symlinks) with at least one of the owner, group or other execute bits set. Windows: `<name>.exe`. Not found: `AgentNotInstalled { NotOnPath }`.
 3. A resolved path whose extension is `.bat` or `.cmd` (ASCII case-insensitive, any platform) is
    `UnsupportedExecutable` (exit 6). No shell is ever involved.
 
@@ -271,7 +277,9 @@ arguments:    ["--foo", "bar"]
 
 ### 7.5 Unix (V3 §23.1)
 
-`std::os::unix::process::CommandExt::exec`. It returns only on failure, mapped to `Launch` (exit 6). On
+`std::os::unix::process::CommandExt::exec`. It returns only on failure, mapped to `Launch` (exit 6). A
+profile directory created by step 7 of §5.1 before a failed `exec` stays; lazy initialization is idempotent
+and creates nothing but the empty directory. On
 success the agent replaces the wrapper: same PID, exit status and stdio; no wrapper code runs afterwards.
 
 ### 7.6 Windows (V3 §23.2, §24)
@@ -289,7 +297,8 @@ In this order:
 4. **Wait.**
 5. **Release the job.** `SetInformationJobObject` with no limit flags, so processes the agent left running
    survive the wrapper's exit. A failure is reported only under `--verbose`; it does not change the exit code.
-6. **Exit** with `std::process::exit(code)` carrying the child's full 32-bit exit code.
+6. **Return** `LaunchOutcome::Exited(code)` with the child's full 32-bit exit code; `main` passes it to
+   `std::process::exit` (§5), which preserves all 32 bits (M2). The job handle is closed by that exit.
 
 Consequences, each tested (§8.4):
 - Wrapper terminated while waiting: the job handle closes, the agent is killed; no orphan.
@@ -336,7 +345,10 @@ Any unparsable value of these variables is a fixture error (exit 125, empty stdo
 - Valid TOML; invalid TOML; unknown key; relative `executable`: each read reports `ConfigInvalid`.
 - Corrupt file refused by `update`, byte-identical afterwards.
 - Comments and key order preserved across `update`.
-- Concurrent writers: N threads each add a distinct agent table; all N present afterwards.
+- Concurrent writers: N threads each add a distinct agent table; all N present afterwards. Threads are a
+  valid proxy for processes here because each `update` opens its own lock-file handle: `flock` locks
+  belong to the open file description and `LockFileEx` locks to the handle, so two handles in one
+  process contend exactly as two processes do.
 - Stale-writer race: writer B's edit is applied to writer A's result, never to a pre-A snapshot.
 - Reader during writes: a loop of reads while writers run never sees a parse failure.
 - Failed replacement, two tests with one assertion (`ConfigWrite`, previous content byte-identical, no
@@ -382,7 +394,8 @@ sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, 
 - No orphan: kill the wrapper mid-sleep; the fake agent's PID is gone within a bounded wait.
 - Background survival: after a normal exit, `"sleeper_pid"` is still alive; the test then kills it.
 - Terminated before child creation: the debug-only hook `AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS`
-  (`cfg(debug_assertions)`, sleeps immediately before step 3) lets the test kill the wrapper in that window;
+  (`cfg(all(windows, debug_assertions))`, read only by the Windows launcher, sleeps immediately before
+  step 3; unparsable values are ignored) lets the test kill the wrapper in that window;
   no fake-agent report ever appears.
 - Child creation failure: covered by the garbage-executable test in `tests/launch.rs`.
 
