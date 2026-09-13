@@ -1,0 +1,17 @@
+[package]
+name = "agent-profile"
+description = "Select and launch profiles for multiple coding agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+# Two binaries: `agent-profile` (src/main.rs, the product) and `fake-agent` (src/bin/fake-agent.rs, a
+# test-only fixture that tests launch through CARGO_BIN_EXE_fake-agent). Only agent-profile ships:
+# release.yml builds `--bin agent-profile`.
+default-run = "agent-profile"
+
+[dependencies]
+clap = { workspace = true }
+serde_json = { workspace = true }

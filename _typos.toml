@@ -1,0 +1,20 @@
+# https://github.com/crate-ci/typos
+
+[files]
+extend-exclude = [
+    "target/",
+    "Cargo.lock",
+    # The V3 specification is a delivered document; do not rewrite it.
+    "agent-profile-implementation-spec-v3.md",
+]
+
+[default]
+extend-ignore-re = [
+    # Long hex digests (commit SHAs, hashes)
+    "[0-9a-fA-F]{32,}",
+]
+
+[default.extend-words]
+# Domain terms and names that look like typos
+ckir = "ckir"
+aiprofiles = "aiprofiles"

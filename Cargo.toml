@@ -1,0 +1,42 @@
+# Agent Profile workspace root.
+#
+# Virtual workspace: no root package. The shipped binary is `agent-profile`, produced by
+# crates/agent-profile. Its second binary, fake-agent, is a test-only fixture and never ships.
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/agent-profile",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "PolyForm-Noncommercial-1.0.0"
+repository = "https://github.com/ckir/aiprofiles"
+publish = false
+
+# Shared version registry. Listing a crate here pins ONE version for the whole workspace;
+# it does NOT add it to any crate — members opt in with `foo = { workspace = true }`.
+# Pins are copied from flux; later sub-projects add crates in their own specs.
+[workspace.dependencies]
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1.1"
+thiserror = "2"
+tempfile = "3"
+proptest = "1.11"
+
+[workspace.metadata.release]
+shared-version = true
+tag-name = "v{{version}}"
+tag-prefix = ""
+pre-release-commit-message = "release: v{{version}}"
+publish = false
+
+[profile.ci]
+inherits = "dev"
+debug = 0
+strip = "debuginfo"
