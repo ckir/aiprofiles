@@ -121,7 +121,15 @@ tests (§34).
 
 ### 3.4 Test helper
 
-`crates/agent-profile/tests/support/mod.rs` exposes `fake_agent_path() -> PathBuf`.
+`crates/agent-profile/tests/support/mod.rs` exposes `fake_agent_path() -> PathBuf` and
+`fake_agent() -> Command`.
+
+`fake_agent()` is the constructor every fixture test uses. It removes `FAKE_AGENT_EXIT` and
+`FAKE_AGENT_ECHO_ENV` from the inherited environment, so a value exported in the developer's shell cannot
+change a test's outcome; tests set the variables they mean to test on top of that baseline. This was added
+after code review: before it, running the suite with `FAKE_AGENT_EXIT=9` exported failed 3 of 8 tests.
+
+`fake_agent_path()` builds the fixture:
 
 - On first call it runs `$CARGO build -p fake-agent --message-format=json`. It uses the `CARGO`
   environment variable, which cargo sets for the processes it runs, and falls back to `cargo` if that is
