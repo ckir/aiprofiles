@@ -14,6 +14,17 @@ pub fn fake_agent_path() -> PathBuf {
     PATH.get_or_init(build_fake_agent).clone()
 }
 
+/// A `Command` for the `fake-agent` fixture with a clean fixture environment.
+///
+/// `Command` inherits the parent's environment, so a `FAKE_AGENT_EXIT` or `FAKE_AGENT_ECHO_ENV`
+/// exported in the shell running the tests would silently change every fixture run. Tests set the
+/// variables they mean to test on top of this baseline.
+pub fn fake_agent() -> Command {
+    let mut command = Command::new(fake_agent_path());
+    command.env_remove("FAKE_AGENT_EXIT").env_remove("FAKE_AGENT_ECHO_ENV");
+    command
+}
+
 fn build_fake_agent() -> PathBuf {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let output = Command::new(&cargo)
@@ -26,8 +37,9 @@ fn build_fake_agent() -> PathBuf {
 
     let mut executables = Vec::new();
     for line in stdout.lines() {
-        let message: serde_json::Value = serde_json::from_str(line)
-            .unwrap_or_else(|e| panic!("unparsable cargo message {line:?}: {e}\n{stderr}"));
+        let message: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|e| {
+            panic!("unparsable cargo message {line:?}: {e}\n{stdout}\n{stderr}")
+        });
         let is_bin = message["target"]["kind"]
             .as_array()
             .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"));

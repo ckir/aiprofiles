@@ -33,21 +33,20 @@ fn unimplemented_invocation_is_usage_error() {
 #[test]
 fn fake_agent_echoes_argv_exactly() {
     let args = ["--foo", "bar", "--", "a b"];
-    let output = Command::new(support::fake_agent_path()).args(args).output().unwrap();
+    let output = support::fake_agent().args(args).output().unwrap();
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(stdout_json(&output)["argv"], serde_json::json!(args));
 }
 
 #[test]
 fn fake_agent_exit_code_is_controllable() {
-    let output =
-        Command::new(support::fake_agent_path()).env("FAKE_AGENT_EXIT", "7").output().unwrap();
+    let output = support::fake_agent().env("FAKE_AGENT_EXIT", "7").output().unwrap();
     assert_eq!(output.status.code(), Some(7));
 }
 
 #[test]
 fn fake_agent_echoes_only_listed_env() {
-    let output = Command::new(support::fake_agent_path())
+    let output = support::fake_agent()
         .env("FAKE_AGENT_ECHO_ENV", "AP_TEST_SET,,AP_TEST_UNSET")
         .env("AP_TEST_SET", "yes")
         .env("AP_TEST_NOT_LISTED", "no")
@@ -60,10 +59,7 @@ fn fake_agent_echoes_only_listed_env() {
 
 #[test]
 fn fake_agent_env_is_empty_without_echo_list() {
-    let output = Command::new(support::fake_agent_path())
-        .env_remove("FAKE_AGENT_ECHO_ENV")
-        .output()
-        .unwrap();
+    let output = support::fake_agent().env_remove("FAKE_AGENT_ECHO_ENV").output().unwrap();
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(stdout_json(&output)["env"], serde_json::json!({}));
 }
@@ -71,10 +67,7 @@ fn fake_agent_env_is_empty_without_echo_list() {
 #[test]
 fn fake_agent_invalid_exit_code_is_fixture_error() {
     for value in ["", "256", "-1", "seven"] {
-        let output = Command::new(support::fake_agent_path())
-            .env("FAKE_AGENT_EXIT", value)
-            .output()
-            .unwrap();
+        let output = support::fake_agent().env("FAKE_AGENT_EXIT", value).output().unwrap();
         assert_eq!(output.status.code(), Some(125), "FAKE_AGENT_EXIT={value:?}");
         assert!(output.stdout.is_empty(), "FAKE_AGENT_EXIT={value:?}");
     }
@@ -82,7 +75,7 @@ fn fake_agent_invalid_exit_code_is_fixture_error() {
 
 #[test]
 fn fake_agent_non_utf8_argument_is_fixture_error() {
-    let output = Command::new(support::fake_agent_path()).arg(non_utf8()).output().unwrap();
+    let output = support::fake_agent().arg(non_utf8()).output().unwrap();
     assert_eq!(output.status.code(), Some(125));
     assert!(output.stdout.is_empty());
 }
