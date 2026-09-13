@@ -21,7 +21,7 @@ pull requests.
 
 ## Development setup
 
-Requires Rust 1.89+ (edition 2024). The toolchain is pinned by `rust-toolchain.toml`.
+Requires Rust 1.98+ (edition 2024). The toolchain is pinned by `rust-toolchain.toml`.
 
 ```bash
 # One-time: install the dev tools
