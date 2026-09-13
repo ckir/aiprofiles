@@ -154,7 +154,8 @@ tests (§34).
    - `fake_agent_exit_code_is_controllable` — `FAKE_AGENT_EXIT=7` exits 7.
 4. Workflows pass `actionlint`.
 5. SP0 lands through a pull request from branch `sp0-scaffold`, not a direct push to `main`.
-   - The PR's CI jobs Format, Typos, Clippy, Cargo deny and Test (ubuntu, macos, windows) are green.
+   - The PR's CI jobs Format, Typos, Clippy, Cargo deny, Docs build and Test (ubuntu, macos, windows) are
+     green.
    - After merge, the `push` run on `main` is green, including `docs.yml`.
    - The release workflow is not triggered.
 6. The GitHub settings in §4.1 are applied in the stated order and read back through `gh api`.
@@ -180,7 +181,7 @@ step's gate holds; for steps 1 and 4 that means **waiting** for the CI runs to f
 | # | Step | Gate before the next step |
 |---|---|---|
 | 1 | Push branch `sp0-scaffold` and open a PR to `main`. The PR's `pull_request` run makes the check names exist. | Wait until every §4 item 5 check has completed green on the PR |
-| 2 | Protect `main`, requiring `Format`, `Typos`, `Clippy`, `Cargo deny`, `Test (ubuntu-latest)`, `Test (macos-latest)`, `Test (windows-latest)`, with `strict: true`, so a PR must be up to date with `main` before merging and the checks cover the tree actually merged | `gh api repos/ckir/aiprofiles/branches/main/protection --jq '.required_status_checks'` shows `strict: true` and exactly those 7 contexts |
+| 2 | Protect `main`, requiring `Format`, `Typos`, `Clippy`, `Cargo deny`, `Docs build`, `Test (ubuntu-latest)`, `Test (macos-latest)`, `Test (windows-latest)`, with `strict: true`, so a PR must be up to date with `main` before merging and the checks cover the tree actually merged | `gh api repos/ckir/aiprofiles/branches/main/protection --jq '.required_status_checks'` shows `strict: true` and exactly those 8 contexts |
 | 3 | Enable Pages with `build_type=workflow` | `gh api repos/ckir/aiprofiles/pages --jq .build_type` prints `workflow` |
 | 4 | Merge the PR. This enables Dependabot, and `docs.yml`'s first run **publishes the docs site publicly** at the Pages URL; the repo is public. | Wait until `main`'s `push` runs (CI, Docs) complete green |
 | 5 | Enable `allow_auto_merge` — last, so auto-merge never exists while `main` lacks required checks | `gh api repos/ckir/aiprofiles --jq .allow_auto_merge` prints `true` |
@@ -194,9 +195,9 @@ so nothing merges.
    ```bash
    git push -u origin sp0-scaffold
    gh pr create --base main --head sp0-scaffold --fill
-   # Checks register asynchronously. Wait until all 7 gate checks exist before watching,
+   # Checks register asynchronously. Wait until all 8 gate checks exist before watching,
    # so --watch cannot return early on an empty set.
-   until [ "$(gh pr checks sp0-scaffold --json name --jq '[.[] | select(.name == "Format" or .name == "Typos" or .name == "Clippy" or .name == "Cargo deny" or (.name | startswith("Test (")))] | length')" -ge 7 ]; do sleep 10; done
+   until [ "$(gh pr checks sp0-scaffold --json name --jq '[.[] | select(.name == "Format" or .name == "Typos" or .name == "Clippy" or .name == "Cargo deny" or .name == "Docs build" or (.name | startswith("Test (")))] | length')" -ge 8 ]; do sleep 10; done
    gh pr checks sp0-scaffold --watch --fail-fast
    ```
    The gate holds when `gh pr checks` exits 0 with every check passing.
@@ -206,7 +207,7 @@ so nothing merges.
    {
      "required_status_checks": {
        "strict": true,
-       "contexts": ["Format", "Typos", "Clippy", "Cargo deny",
+       "contexts": ["Format", "Typos", "Clippy", "Cargo deny", "Docs build",
                     "Test (ubuntu-latest)", "Test (macos-latest)", "Test (windows-latest)"]
      },
      "enforce_admins": false,
@@ -285,7 +286,13 @@ Every tool runs through a `just` recipe, so the local gate, lefthook and CI cann
     do not rewrite it).
   - Keep the hex-digest ignore patterns.
   - `extend-words` holds domain terms as needed, plus `ckir`.
-- **`.github/workflows/ci.yml`:** identical job set (fmt, typos, clippy, deny, test ×3 OS).
+- **`.github/workflows/ci.yml`:** flux's job set (fmt, typos, clippy, deny, test ×3 OS) plus one added job:
+  - Job id `docs-build`, `name: Docs build`, runs on `ubuntu-latest`.
+  - Steps: checkout, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`, then
+    `cargo doc --workspace --no-deps --document-private-items` with `RUSTDOCFLAGS: -D warnings`.
+    That is the same command as `docs.yml`'s build step.
+  - This is a deliberate deviation from flux, chosen by the owner, so a PR cannot merge with a broken
+    docs build. `docs.yml` stays the post-merge publisher.
 - **`.github/workflows/release.yml`:** same matrix. It builds `--bin agent-profile` and names the archives
   `agent-profile-<target>.{tar.gz,zip}`.
 - **`.github/workflows/docs.yml`:** same structure. The index page lists `agent-profile` and `fake-agent`.
@@ -345,15 +352,17 @@ Every tool runs through a `just` recipe, so the local gate, lefthook and CI cann
   run. That path is unreachable because every gate runs tests natively: flux `ci.yml:64`
   (`cargo nextest run --workspace --no-tests=pass --no-fail-fast`, copied here) and the `justfile` `test`
   recipe pass no `--target`.
-- OPEN — owner decision pending: `docs.yml` runs only on `push` to `main`, never on PRs, so the docs
-  build (`RUSTDOCFLAGS=-D warnings`) is not a required check.
-  - A PR that breaks the docs build can still merge.
-  - For a Dependabot auto-merge, the resulting push is made with `GITHUB_TOKEN`, which does not trigger
-    workflows, so the break surfaces only at the next human push.
-  - The published *content* is unaffected by dependency-only merges: flux `docs.yml:37` uses
-    `cargo doc --workspace --no-deps`.
-  - This gap is inherited from flux. Two options: keep flux parity, or add a PR `Docs build` job to
-    `ci.yml` and make it an 8th required check.
+- FOLDED (owner decision, 2026-09-13): `docs.yml` ran the docs build only on `push` to `main`, so a PR,
+  including a Dependabot auto-merge whose push via `GITHUB_TOKEN` triggers no workflows, could merge
+  with a broken docs build. Fixed by the `Docs build` CI job (§5.1), which is the 8th required check (§4.1).
+- UNVERIFIED-ACCEPTED (owner decision, 2026-09-13): the pre-push hook keeps flux parity (fmt-check,
+  clippy, typos; no tests). The agy panel suggested adding `just test`; the owner kept parity, and tests
+  remain gated by `just check` and CI.
+- UNVERIFIED-ACCEPTED (owner decision, 2026-09-13): the agy panel stopped at round 5 of 6, still finding
+  command-level details in §4.1. The owner shipped the spec because the implementation plan re-verifies
+  every command and each outward-facing step is confirmed before it runs. Not verified by a live call:
+  `POST repos/{owner}/{repo}/pages` with `build_type=workflow` creates the site. The §4.1 stop-and-report
+  rule covers a mismatch.
 - REJECTED: the copied CI's action versions may not support `rust-version = "1.85"`. flux `ci.yml:19`
   uses `dtolnay/rust-toolchain@stable`, which installs current stable regardless; `rust-version` does not
   select the toolchain.
