@@ -38,25 +38,25 @@ aiprofiles/
 ├─ Cargo.toml                    virtual workspace (no root package)
 ├─ agent-profile-implementation-spec-v3.md
 ├─ crates/
-│  ├─ agent-profile/             lib + bin `agent-profile`
-│  │  ├─ src/lib.rs
-│  │  ├─ src/main.rs
-│  │  ├─ src/{name,config,repo,resolve,cli,output}.rs
-│  │  ├─ src/adapter/mod.rs
-│  │  ├─ src/launch/mod.rs
-│  │  └─ tests/                  integration + (later) contract suite
-│  │     ├─ support/mod.rs       fake-agent build helper
-│  │     └─ smoke.rs
-│  └─ fake-agent/                test-only fixture binary
-│     └─ src/main.rs
+│  └─ agent-profile/             lib + bins `agent-profile` and `fake-agent`
+│     ├─ src/lib.rs
+│     ├─ src/main.rs             bin `agent-profile` (the product)
+│     ├─ src/bin/fake-agent.rs   bin `fake-agent` (test-only fixture)
+│     ├─ src/{name,config,repo,resolve,cli,output}.rs
+│     ├─ src/adapter/mod.rs
+│     ├─ src/launch/mod.rs
+│     └─ tests/                  integration + (later) contract suite
+│        ├─ support/mod.rs       fake_agent() helper
+│        └─ smoke.rs
 ├─ docs/ …                       see §6
 └─ tooling configs               see §5
 ```
 
 ### 3.1 Root `Cargo.toml`
 
-- `[workspace]` with `resolver = "3"` and members `crates/agent-profile` and `crates/fake-agent`.
-- `[workspace.package]`: `version = "0.1.0"`, `edition = "2024"`, `rust-version = "1.85"`,
+- `[workspace]` with `resolver = "3"` and the single member `crates/agent-profile`.
+- `[workspace.package]`: `version = "0.1.0"`, `edition = "2024"`, `rust-version = "1.98"` (owner decision,
+  2026-09-13; originally `1.85` as in flux),
   `license = "PolyForm-Noncommercial-1.0.0"`, `repository = "https://github.com/ckir/aiprofiles"`,
   `publish = false`.
 - Every member `Cargo.toml` opts in to **each** of those keys: `version.workspace = true`,
@@ -72,13 +72,15 @@ aiprofiles/
   - `tempfile = "3"`
   - `proptest = "1.11"`
 
-  SP0 itself uses `clap` (agent-profile) and `serde_json` (fake-agent, plus a dev-dependency of
-  agent-profile). Each later sub-project adds its own crates in its own spec.
+  SP0 itself uses `clap` and `serde_json`, both as normal dependencies of `agent-profile`. A binary
+  target cannot have dependencies of its own, so the `fake-agent` binary's `serde_json` is the package's;
+  V3 §32 JSON output needs it in SP5 regardless. Each later sub-project adds its own crates in its own spec.
 - `[workspace.metadata.release]` and `[profile.ci]` are copied verbatim from flux.
+- `crates/agent-profile/Cargo.toml` sets `default-run = "agent-profile"`, so `cargo run` is unambiguous
+  with two binaries.
 
 **Why there is no root package:** the integration tests live in `crates/agent-profile/tests/`, which gives
-them `CARGO_BIN_EXE_agent-profile` directly. Only `fake-agent`, a different package, needs the §3.4 helper.
-A root package would add a third manifest and still need the helper for both binaries.
+them `CARGO_BIN_EXE_agent-profile` and `CARGO_BIN_EXE_fake-agent` directly.
 
 ### 3.2 `crates/agent-profile`
 
@@ -98,7 +100,7 @@ A root package would add a third manifest and still need the helper for both bin
   - SP0 declares **no subcommands**. §5.3's reserved words are a mix of top-level forms (`link`) and
     agent-scoped forms (`<agent> create`), so the command tree is a grammar decision that belongs to SP1.
 
-### 3.3 `crates/fake-agent`
+### 3.3 The `fake-agent` binary (`crates/agent-profile/src/bin/fake-agent.rs`)
 
 A test fixture that later sub-projects use as the "agent" for launch, passthrough and environment contract
 tests (§34).
@@ -117,36 +119,39 @@ tests (§34).
     Windows). The default is 0.
   - An empty, non-numeric or out-of-range value is a fixture error: stderr message, exit **125**. That
     code is reserved for fixture errors, so a test can always tell them apart from a requested code.
-- `publish = false`. The release workflow builds `--bin agent-profile` only, so the fixture never ships.
+- The release workflow builds `--bin agent-profile` only, so the fixture never ships, and the package is
+  `publish = false`. Known debt (tracked in `TODO.md`): `cargo install --path crates/agent-profile` would
+  also install `fake-agent`. No gate or release path runs that.
 
 ### 3.4 Test helper
 
-`crates/agent-profile/tests/support/mod.rs` exposes `fake_agent_path() -> PathBuf` and
-`fake_agent() -> Command`.
+`crates/agent-profile/tests/support/mod.rs` exposes one function, `fake_agent() -> Command`, which every
+fixture test uses.
 
-`fake_agent()` is the constructor every fixture test uses. It removes `FAKE_AGENT_EXIT` and
-`FAKE_AGENT_ECHO_ENV` from the inherited environment, so a value exported in the developer's shell cannot
-change a test's outcome; tests set the variables they mean to test on top of that baseline. This was added
-after code review: before it, running the suite with `FAKE_AGENT_EXIT=9` exported failed 3 of 8 tests.
+- **Locating the fixture.** It starts from `env!("CARGO_BIN_EXE_fake-agent")`. The fixture is a binary of
+  the same package, so cargo (and nextest) build it before any test runs. Tests never invoke cargo
+  themselves.
+- **Clean environment.** It removes `FAKE_AGENT_EXIT` and `FAKE_AGENT_ECHO_ENV` from the inherited
+  environment, so a value exported in the developer's shell cannot change a test's outcome. Tests set the
+  variables they mean to test on top of that baseline. Added after code review: before it, running the
+  suite with `FAKE_AGENT_EXIT=9` exported failed 3 of 8 tests.
 
-`fake_agent_path()` builds the fixture:
-
-- On first call it runs `$CARGO build -p fake-agent --message-format=json`. It uses the `CARGO`
-  environment variable, which cargo sets for the processes it runs, and falls back to `cargo` if that is
-  unset.
-- The cache is per process, and nextest runs each test in its own process, so several builds can start at
-  once. Cargo's build-directory lock serializes them; every build after the first is a no-op.
-- It scans stdout line by line and selects the one JSON message where all of these hold:
-  - `reason == "compiler-artifact"`
-  - `target.name == "fake-agent"`
-  - `target.kind` contains `"bin"`
-  - `executable` is a non-null string
-
-  That string is the path. Any other outcome panics with the full build output: no such message, more
-  than one, a non-zero exit, or an unparsable line.
-- The path is cached in a `OnceLock`.
-- It panics with the build output if the build fails.
-- It adds no dependency; parsing uses `serde_json`, a dev-dependency.
+**History — why the fixture is not a separate crate.** The first design put `fake-agent` in its own crate
+(`crates/fake-agent`). A helper ran `cargo build -p fake-agent --message-format=json` in each test process
+and executed the path cargo reported.
+- **Failure.** PR #1's first CI run (run `34765996082`) failed on `Test (macos-latest)` only:
+  `fake_agent_env_is_empty_without_echo_list` got `Os { code: 2, kind: NotFound }` spawning that path.
+- **Local reproduction attempts, all negative.** Windows stress (204 spawns during 60 no-op builds), Linux
+  under WSL2 stress (2944 spawns during 80 builds), and 15 cold `cargo nextest run` iterations on WSL2.
+- **Decision.** The macOS mechanism is unverified, so the design removes the whole class instead: no test
+  may spawn a path that a concurrent cargo process could be writing. Options considered:
+  - (A) a second binary of `agent-profile` — chosen;
+  - (B) a copy with retries;
+  - (C) prebuild and never build in tests;
+  - (D) a cross-process lock around build and copy — agy's first proposal.
+- **Convergence.** agy and the driver converged on A over two negotiation rounds, the second after the owner
+  allowed a newer Rust, which makes `File::lock` available. Deciding reason: D still runs one nested cargo
+  per test process and adds new locking code in exactly the area that failed.
 
 ## 4. Acceptance (definition of done)
 
@@ -167,7 +172,7 @@ after code review: before it, running the suite with `FAKE_AGENT_EXIT=9` exporte
      `seven` each exit 125 with empty stdout.
    - `fake_agent_non_utf8_argument_is_fixture_error` — a non-UTF-8 argument exits 125 with empty stdout
      (Unix: byte `0xff`; Windows: lone surrogate `0xD800`).
-7. The workspace also compiles on the declared MSRV: `cargo +1.85 check --workspace --all-targets`.
+7. The workspace also compiles on the declared MSRV: `cargo +1.98 check --workspace --all-targets`.
 4. Workflows pass `actionlint`.
 5. SP0 lands through a pull request from branch `sp0-scaffold`, not a direct push to `main`.
    - The PR's CI jobs Format, Typos, Clippy, Cargo deny, Docs build and Test (ubuntu, macos, windows) are
@@ -275,7 +280,7 @@ Every tool runs through a `just` recipe, so the local gate, lefthook and CI cann
 | git-cliff | `cliff.toml` | `changelog` | release time |
 | cargo-release | `[workspace.metadata.release]` (lockstep, `v{{version}}` tag, `publish = false`) | `release <patch\|minor\|major>` | pushed tag triggers `release.yml` |
 | rustfmt | `rustfmt.toml` | `fmt`, `fmt-check` | gate, pre-push, CI |
-| clippy | `clippy.toml` (msrv 1.85) | `clippy` (`--workspace --all-targets -- -D warnings`) | gate, pre-push, CI |
+| clippy | `clippy.toml` (msrv 1.98) | `clippy` (`--workspace --all-targets -- -D warnings`) | gate, pre-push, CI |
 | typos | `_typos.toml` | `typos` | gate, pre-push, CI |
 | cargo-deny | `deny.toml` | `deny` | CI |
 | bacon | `bacon.toml` | `watch` | local |
@@ -363,14 +368,13 @@ Every tool runs through a `just` recipe, so the local gate, lefthook and CI cann
 
 ## Stand-downs
 
-- REJECTED: the `rust-version = "1.85"` claim breaks on the pinned deps. Measured with `cargo info`:
-  clap 4.6.6 → 1.85, toml 1.1.6 → 1.85, serde_json 1.0.151 → 1.71, thiserror 2.0.20 → 1.71.
+- REJECTED (at the time; the MSRV is now 1.98): the `rust-version = "1.85"` claim breaks on the pinned
+  deps. Measured with `cargo info`: clap 4.6.6 → 1.85, toml 1.1.6 → 1.85, serde_json 1.0.151 → 1.71,
+  thiserror 2.0.20 → 1.71.
 - REJECTED: a lib and a bin both named `agent-profile` collide under `RUSTDOCFLAGS=-D warnings`.
   A scratch workspace probe documented `agent_profile` and `fake_agent` with no warning.
-- DISCARDED-BELOW-FLOOR: the §3.4 helper builds `fake-agent` for the host under a cross `--target` test
-  run. That path is unreachable because every gate runs tests natively: flux `ci.yml:64`
-  (`cargo nextest run --workspace --no-tests=pass --no-fail-fast`, copied here) and the `justfile` `test`
-  recipe pass no `--target`.
+- OBSOLETE (the helper no longer builds anything): the §3.4 helper built `fake-agent` for the host under a
+  cross `--target` test run. It was discarded below the floor because every gate runs tests natively.
 - FOLDED (owner decision, 2026-09-13): `docs.yml` ran the docs build only on `push` to `main`, so a PR,
   including a Dependabot auto-merge whose push via `GITHUB_TOKEN` triggers no workflows, could merge
   with a broken docs build. Fixed by the `Docs build` CI job (§5.1), which is the 8th required check (§4.1).
@@ -385,6 +389,10 @@ Every tool runs through a `just` recipe, so the local gate, lefthook and CI cann
 - REJECTED: the copied CI's action versions may not support `rust-version = "1.85"`. flux `ci.yml:19`
   uses `dtolnay/rust-toolchain@stable`, which installs current stable regardless; `rust-version` does not
   select the toolchain.
-- REJECTED: the §3.4 helper's nested `cargo build` deadlocks or races under nextest. A scratch probe ran
-  2 parallel tests each invoking `$CARGO build -p fake-agent --message-format=json`; it passed under both
-  `cargo nextest run` and `cargo test`.
+- WRONGLY REJECTED, then FOLDED: "the §3.4 helper's nested `cargo build` races under nextest".
+  - The original rejection rested on a Windows scratch probe: 2 parallel tests each ran the nested build,
+    and it passed.
+  - That probe checked builds, not spawning the reported path while another build ran, and never ran on
+    macOS.
+  - macOS CI then failed with ENOENT exactly there.
+  - Folded by making `fake-agent` a binary of `agent-profile` (§3.4, History).
