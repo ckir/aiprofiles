@@ -72,7 +72,7 @@ aiprofiles/
   - `tempfile = "3"`
   - `proptest = "1.11"`
 
-  SP0 itself uses `clap` (agent-profile) and `serde` + `serde_json` (fake-agent, plus a dev-dependency of
+  SP0 itself uses `clap` (agent-profile) and `serde_json` (fake-agent, plus a dev-dependency of
   agent-profile). Each later sub-project adds its own crates in its own spec.
 - `[workspace.metadata.release]` and `[profile.ci]` are copied verbatim from flux.
 
@@ -115,7 +115,7 @@ tests (§34).
 - **Exit code:**
   - It exits with the integer in `FAKE_AGENT_EXIT`, which must be in `0..=255` (portable across Unix and
     Windows). The default is 0.
-  - A missing, non-numeric or out-of-range value is a fixture error: stderr message, exit **125**. That
+  - An empty, non-numeric or out-of-range value is a fixture error: stderr message, exit **125**. That
     code is reserved for fixture errors, so a test can always tell them apart from a requested code.
 - `publish = false`. The release workflow builds `--bin agent-profile` only, so the fixture never ships.
 
@@ -152,6 +152,14 @@ tests (§34).
      claim about reserved words, which SP1 designs and tests.
    - `fake_agent_echoes_argv_exactly` — args `["--foo", "bar", "--", "a b"]` come back verbatim.
    - `fake_agent_exit_code_is_controllable` — `FAKE_AGENT_EXIT=7` exits 7.
+   - `fake_agent_echoes_only_listed_env` — only variables listed in `FAKE_AGENT_ECHO_ENV` and actually set
+     appear in `env`; empty list entries are ignored.
+   - `fake_agent_env_is_empty_without_echo_list` — `FAKE_AGENT_ECHO_ENV` unset gives `env: {}`.
+   - `fake_agent_invalid_exit_code_is_fixture_error` — `FAKE_AGENT_EXIT` values `""`, `256`, `-1` and
+     `seven` each exit 125 with empty stdout.
+   - `fake_agent_non_utf8_argument_is_fixture_error` — a non-UTF-8 argument exits 125 with empty stdout
+     (Unix: byte `0xff`; Windows: lone surrogate `0xD800`).
+7. The workspace also compiles on the declared MSRV: `cargo +1.85 check --workspace --all-targets`.
 4. Workflows pass `actionlint`.
 5. SP0 lands through a pull request from branch `sp0-scaffold`, not a direct push to `main`.
    - The PR's CI jobs Format, Typos, Clippy, Cargo deny, Docs build and Test (ubuntu, macos, windows) are
@@ -228,9 +236,12 @@ so nothing merges.
    # Runs for the merge commit spawn asynchronously; wait for both CI and Docs to exist for THIS sha,
    # so a watch can never latch onto an older green run.
    until [ "$(gh run list --commit "$sha" --event push --json workflowName --jq '[.[] | select(.workflowName == "CI" or .workflowName == "Docs")] | length')" -ge 2 ]; do sleep 10; done
+   # A for loop's status is only its LAST iteration's, so collect failures explicitly.
+   failed=0
    for id in $(gh run list --commit "$sha" --event push --json databaseId,workflowName --jq '.[] | select(.workflowName == "CI" or .workflowName == "Docs") | .databaseId'); do
-     gh run watch "$id" --exit-status
+     gh run watch "$id" --exit-status || failed=1
    done
+   test "$failed" -eq 0 && echo MAIN-GREEN
    ```
 5. Allow auto-merge:
    ```bash
