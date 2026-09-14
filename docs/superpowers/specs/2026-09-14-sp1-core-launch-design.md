@@ -91,7 +91,9 @@ Clap's own usage error (exit 2).
    2. Any option token is `-V` or `--version`: the version, exit 0.
    3. The agent word is not a known agent of this build: `UnknownAgent` (exit 2). Matching is exact and
       case-sensitive (`Fake` is not `fake`, consistent with the lowercase `AgentId` syntax); a non-UTF-8
-      agent word never matches and is rendered lossily.
+      agent word never matches and is rendered lossily. Only to fill `unknown_configured`, this path makes
+      one best-effort attempt at §6.1 root resolution and §6.2 configuration load before building the error;
+      any failure of that attempt leaves the list empty and never changes the error or its exit code.
    4. The first bare word equals a reserved word (ASCII case-insensitive): `NotYetImplemented` for
       "`<agent> <word>`" (exit 2). Every other pre-cut element, option tokens included, is ignored, so
       `fake create work` and `fake create --bogus` both give `NotYetImplemented`.
@@ -145,9 +147,11 @@ directories without touching the process environment, since `std::env::set_var` 
 2024); `config::AppRoot::resolve() -> Result<AppRoot>` (§6.1); `config::Config::load(&AppRoot) ->
 Result<Config>` with `Config::agent_executable(&self, id: &str) -> Option<&Path>`; and
 `config::update(&AppRoot, edit) -> Result<()>`. Crate-private, for unit tests inside `config`:
-`update_with(root: &AppRoot, edit, before_persist: impl FnOnce() -> Result<()>, replace: impl FnOnce(&Path,
-&Path) -> std::io::Result<()>) -> Result<()>`, where `update` calls it with a no-op `before_persist` and the
-real `persist` as `replace`.
+`update_with(root: &AppRoot, edit, before_persist: impl FnOnce() -> Result<()>, replace: impl
+FnOnce(tempfile::NamedTempFile, &Path) -> std::io::Result<()>) -> Result<()>`, where `update` calls it with a
+no-op `before_persist` and `|tmp, dest| tmp.persist(dest).map(drop).map_err(|e| e.error)` as `replace`
+(`NamedTempFile::persist` consumes the temp file; on failure the returned `PersistError` is dropped, which
+deletes the temp file, so a failing injected `replace` exercises the same cleanup path).
 
 `PlannedLaunch` carries the `LaunchPlan` plus what dry run reports but the launcher does not need: the
 profile directory, whether it exists, the executable's origin (`Configured` or `Path`) and a one-line
@@ -326,7 +330,9 @@ arguments:    ["--foo", "bar"]
   `<redacted>`. As a backstop, any override whose name contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD`,
   `CREDENTIAL` or `AUTH` (ASCII case-insensitive) is also redacted. SP1's `fake` declares none; the SP2
   adapter contract makes the declaration mandatory for every override.
-- `--verbose` on a real launch renders the same lines to stderr, each prefixed `agent-profile: `.
+- `--verbose` on a real launch renders the same lines to stderr, each prefixed `agent-profile: `. Every
+  `--verbose` and diagnostic write uses `writeln!` on `std::io::stderr()` and ignores the result (never
+  `eprintln!`, which panics on a broken pipe and would turn the exit status into 101).
 
 ### 7.5 Unix (V3 §23.1)
 
@@ -551,7 +557,10 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 
 - The Windows event window from handler installation until the child attaches to the console (§7.6).
 - The close/logoff/shutdown handler path (§7.6 step 2) is argued from Microsoft's HandlerRoutine
-  documentation, not tested: CI cannot close a console window.
+  documentation and conhost's dispatch order (newest process first, `microsoft/terminal`
+  `src/server/ProcessList.cpp`), not tested: CI cannot close a console window. Reported, unverified: in
+  sessions handed off to Windows Terminal, closing a tab may not deliver close events at all
+  (`microsoft/terminal` PR #20650).
 - `std::fs::rename` is assumed atomic on Windows (§6.4).
 - Release builds of SP1 know no agents; every launch in a release build is `UnknownAgent`.
 - The case-only-twin check (§7.3) is not atomic with directory creation: two simultaneous first launches of
@@ -566,7 +575,12 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 ## 12. Stand-downs
 
 Findings from the AGY-AFTER panel that were not folded, one line each. Rounds 1-2 ran on the agy peer; rounds
-3-5 ran on independent subagent reviewers at the owner's direction after the peer hit quota failures.
+3-6 ran on independent subagent reviewers at the owner's direction after the peer hit quota failures. Round 6
+was the owner-approved final round at the six-round cap.
+
+- DISCARDED-BELOW-FLOOR: "§7.6 step 2's rationale assumes simultaneous close delivery" - conhost dispatches
+  newest process first; the design is safe under either order, so only the rationale's wording is affected.
+- DISCARDED-BELOW-FLOOR: "the sleeper smoke test sentence sits in the case-twin bullet" - placement only.
 
 - DISCARDED-BELOW-FLOOR: "a lone `-` is classified as an option token" - §4.2 rule 3 defines every element
   beginning with `-` as an option token and check 5 rejects it deterministically; no implementer divergence.
