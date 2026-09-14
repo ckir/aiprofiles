@@ -1,4 +1,4 @@
-//! SP0 smoke tests: the stub binary's contract and the fake-agent fixture's contract.
+//! Smoke tests: the binary's top-level contract and the fake-agent fixture's contract.
 
 mod support;
 
@@ -32,21 +32,11 @@ fn version_exits_zero() {
 }
 
 #[test]
-fn help_exits_zero_and_says_scaffold() {
+fn help_exits_zero_and_shows_launch_usage() {
     let output = agent_profile(&["--help"]);
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("SP0 scaffold"), "{stdout}");
-}
-
-#[test]
-fn unimplemented_invocation_is_usage_error() {
-    for args in [&["doctor"][..], &["claude", "work"], &["zzz-unknown"]] {
-        let output = agent_profile(args);
-        assert_eq!(output.status.code(), Some(2), "args {args:?}");
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains("not yet implemented"), "args {args:?}: {stderr}");
-    }
+    assert!(stdout.contains("agent-profile <agent> <profile>"), "{stdout}");
 }
 
 #[test]
@@ -105,7 +95,7 @@ fn fake_agent_invalid_exit_code_is_fixture_error() {
 
 #[test]
 fn fake_agent_non_utf8_argument_is_fixture_error() {
-    let output = support::fake_agent().arg(non_utf8()).output().unwrap();
+    let output = support::fake_agent().arg(support::non_utf8()).output().unwrap();
     assert_fixture_error(&output, "non-UTF-8 argument");
 }
 
@@ -113,7 +103,7 @@ fn fake_agent_non_utf8_argument_is_fixture_error() {
 fn fake_agent_non_utf8_env_value_is_fixture_error() {
     let output = support::fake_agent()
         .env("FAKE_AGENT_ECHO_ENV", "AP_TEST_NON_UTF8")
-        .env("AP_TEST_NON_UTF8", non_utf8())
+        .env("AP_TEST_NON_UTF8", support::non_utf8())
         .output()
         .unwrap();
     assert_fixture_error(&output, "non-UTF-8 echoed env value");
@@ -123,20 +113,79 @@ fn fake_agent_non_utf8_env_value_is_fixture_error() {
 fn fake_agent_helper_clears_fixture_env() {
     let command = support::fake_agent();
     let envs: BTreeMap<&OsStr, Option<&OsStr>> = command.get_envs().collect();
-    for name in ["FAKE_AGENT_EXIT", "FAKE_AGENT_ECHO_ENV"] {
+    for name in support::FIXTURE_VARS {
         assert_eq!(envs.get(OsStr::new(name)), Some(&None), "{name} must be removed");
     }
 }
 
-#[cfg(unix)]
-fn non_utf8() -> std::ffi::OsString {
-    use std::os::unix::ffi::OsStringExt;
-    std::ffi::OsString::from_vec(vec![0x66, 0xff])
+#[test]
+fn fake_agent_reports_its_pid() {
+    let child = support::fake_agent().stdout(std::process::Stdio::piped()).spawn().unwrap();
+    let pid = child.id();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout_json(&output)["pid"], serde_json::json!(pid));
 }
 
-#[cfg(windows)]
-fn non_utf8() -> std::ffi::OsString {
-    use std::os::windows::ffi::OsStringExt;
-    // A lone surrogate: valid in an OS string, not valid UTF-8.
-    std::ffi::OsString::from_wide(&[0x0066, 0xD800])
+#[test]
+fn fake_agent_reads_stdin_when_asked() {
+    use std::io::Write;
+    let mut child = support::fake_agent()
+        .env("FAKE_AGENT_STDIN", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"line one\nline two").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout_json(&output)["stdin"], serde_json::json!("line one\nline two"));
+}
+
+#[test]
+fn fake_agent_writes_requested_stderr_after_the_report() {
+    let output = support::fake_agent().env("FAKE_AGENT_STDERR", "to stderr").output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"to stderr");
+    assert!(stdout_json(&output).get("argv").is_some());
+}
+
+#[test]
+fn fake_agent_sleeps_after_reporting() {
+    let started = std::time::Instant::now();
+    let output = support::fake_agent().env("FAKE_AGENT_SLEEP_MS", "300").output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(started.elapsed() >= std::time::Duration::from_millis(300));
+    assert!(stdout_json(&output).get("pid").is_some());
+}
+
+#[test]
+fn fake_agent_reports_a_distinct_sleeper_pid() {
+    let output = support::fake_agent().env("FAKE_AGENT_SPAWN_SLEEPER", "200").output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let report = stdout_json(&output);
+    let sleeper = report["sleeper_pid"].as_u64().unwrap();
+    assert_ne!(Some(sleeper), report["pid"].as_u64());
+}
+
+#[test]
+fn fake_agent_invalid_control_values_are_fixture_errors() {
+    for (name, value) in [
+        ("FAKE_AGENT_STDIN", "yes"),
+        ("FAKE_AGENT_SLEEP_MS", "-1"),
+        ("FAKE_AGENT_SLEEP_MS", "soon"),
+        ("FAKE_AGENT_SPAWN_SLEEPER", ""),
+        ("FAKE_AGENT_CTRL_C_EXIT", "256"),
+        ("FAKE_AGENT_BREAKAWAY", "yes"),
+    ] {
+        let output = support::fake_agent().env(name, value).output().unwrap();
+        assert_fixture_error(&output, &format!("{name}={value:?}"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn fake_agent_ctrl_c_exit_is_windows_only() {
+    let output = support::fake_agent().env("FAKE_AGENT_CTRL_C_EXIT", "42").output().unwrap();
+    assert_fixture_error(&output, "FAKE_AGENT_CTRL_C_EXIT on Unix");
 }
