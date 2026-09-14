@@ -10,6 +10,7 @@
 pub mod adapter;
 pub mod cli;
 pub mod config;
+pub mod error;
 pub mod launch;
 pub mod name;
 pub mod output;
