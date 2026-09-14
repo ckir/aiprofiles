@@ -113,7 +113,7 @@ Clap's own usage error (exit 2).
 | Unknown option before `--`, or a second bare word | Usage error | 2 |
 | `<agent> --help`, `<agent> --version` | Launch-form usage text; version | 0 |
 | `<agent>` with no profile | The resolver stub returns `ResolutionSource::None`; error "no profile selected for `<agent>`" (V3 §11 no-profile condition) | 4 |
-| `<agent> <invalid profile>` | `InvalidProfileName`, stating the reason (reserved words included) | 4 |
+| `<agent> <invalid profile>` | `InvalidProfileName`, stating the reason | 4 |
 | `<agent> <profile> --dry-run` | Dry-run report (§7.4) | 0 |
 | `<agent> <profile>` | Launch (§7) | agent's status |
 
@@ -318,17 +318,23 @@ In this order:
 2. **Handler.** `SetConsoleCtrlHandler(Some(handler), TRUE)`. The child shares the console and receives
    every event itself. The handler:
    - `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`: return TRUE at once (the wrapper survives and keeps waiting).
-   - `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`: if the child's process handle has been
-     published (step 3), wait on it with `WaitForSingleObject(handle, INFINITE)`, then return TRUE; if not,
-     return FALSE. Windows still terminates the wrapper when a close-type handler returns, and bounds the
-     wait with its own timeout (Microsoft HandlerRoutine "Timeouts"). Without the wait, the wrapper would
-     exit at once and its job would kill the agent in the middle of the agent's own cleanup, which direct
-     invocation does not do. The wrapper never calls
+   - `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`: if the child handle has been published
+     (step 3), wait on it with `WaitForSingleObject(child, INFINITE)`, then clear the job's limit flags
+     itself (the same call as step 5, on the published job handle), then return TRUE; if nothing has been
+     published, return FALSE. Windows terminates the wrapper as soon as a close-type handler returns and
+     bounds the wait with its own timeout (Microsoft HandlerRoutine "Timeouts"), so the main thread may
+     never reach step 5 on this path; the handler therefore does step 5's work before returning. Without the
+     wait, the wrapper would exit at once and its job would kill the agent mid-cleanup; without the clear,
+     the job would kill processes the agent left running. (In practice only `CTRL_CLOSE_EVENT` reaches an
+     interactive console application; the logoff and shutdown branches are defensive.) The wrapper never calls
    `SetConsoleCtrlHandler(NULL, …)`: an inherited "ignore Ctrl-C" attribute is left as direct invocation
    would leave it.
 3. **Spawn** directly with `LaunchPlan::command().spawn()`. The child inherits job membership. Failure:
-   `Launch` (exit 6). On success, publish the child's raw process handle in a process-global
-   `OnceLock` for the handler.
+   `Launch` (exit 6). On success, publish two handles for the handler in a process-global
+   `OnceLock<Published>` where `Published { job: usize, child: usize }` holds raw handle values as `usize`
+   (raw handles are not `Send`/`Sync`): `job` is the step-1 job handle, which the launcher keeps open until
+   process exit; `child` is a `DuplicateHandle` copy of the child's process handle with `SYNCHRONIZE` access,
+   owned by the global and never closed, so it stays valid after `Child` is dropped.
 4. **Wait.**
 5. **Release the job.** `SetInformationJobObject` with no limit flags, so processes the agent left running
    survive the wrapper's exit. A failure is reported only under `--verbose`; it does not change the exit code.
@@ -366,14 +372,15 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_STDERR=<text>` | Write `<text>` to stderr after reporting |
 | `FAKE_AGENT_SLEEP_MS=<u64>` | After printing and flushing the report, sleep that long, then exit with the requested code |
 | `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with only `FAKE_AGENT_SLEEP_MS=<u64>` set and its stdin, stdout and stderr all null (so it holds none of the wrapper's pipes), and report its PID as `"sleeper_pid"` |
-| `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that survives the event long enough to prove the wrapper waited |
+| `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): BEFORE printing the report, install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that outlives a wrapper that failed to survive the event |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
 `support::fake_agent()` additionally removes all five new variables.
 
 ### 8.2 Unit tests (in-module)
 
-- `name`: a table covering every V3 §6 rule for both `Platform` values: valid names; empty; leading
+- `name`: a table covering every V3 §6 rule for both `Platform` values (the reserved-word reason is reachable
+  only here in SP1, because §4.2 check 4 routes a reserved bare word before profile validation): valid names; empty; leading
   `.`/`_`/`-`; each forbidden character class; `.` and `..`; separators; control characters and NUL; every
   §5.3 reserved word in mixed case; `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9` with and without
   extensions; trailing dot and space. Windows-only rules must be rejected for `Windows` and accepted for
@@ -383,7 +390,9 @@ Any unparsable value of these variables is a fixture error (exit 125, empty stdo
 - `config` schema: every §6.2 error class and the accepted forms.
 - `output`: redaction table and argument rendering.
 
-### 8.3 `tests/config.rs` (V3 §34 "Configuration")
+### 8.3 Configuration tests (V3 §34 "Configuration")
+
+In `tests/config.rs` unless a bullet says "unit test inside `config`".
 
 - Valid TOML: the read succeeds and `agents.fake.executable` has the configured value.
 - Invalid TOML; unknown key; relative `executable`: each read reports `ConfigInvalid`.
@@ -394,7 +403,8 @@ Any unparsable value of these variables is a fixture error (exit 125, empty stdo
   belong to the open file description and `LockFileEx` locks to the handle, so two handles in one
   process contend exactly as two processes do.
 - Stale-writer race: writer B's edit is applied to writer A's result, never to a pre-A snapshot.
-- Reader during writes, with a deterministic overlap: `update_with` also takes a crate-private hook that runs
+- Reader during writes (unit test inside `config`, because the hook is crate-private and `tests/` files see
+  only the public API), with a deterministic overlap: `update_with` also takes a hook that runs
   after the temp file is written and synced and before `persist`. The test's hook blocks on a barrier until
   a reader thread has read `config.toml` at least once, and the reader must see the complete PREVIOUS
   content; after `update` returns, a read sees the complete NEW content. A read never observes the temp
@@ -441,6 +451,10 @@ the child inherits the test's working directory.
 exits 125 on non-Windows). The driver is started with `CREATE_NEW_CONSOLE`, calls
 `SetConsoleCtrlHandler(NULL, FALSE)` and installs a swallowing handler for itself, runs the wrapper against a
 sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, and writes a result file.
+The driver never uses `CREATE_NEW_PROCESS_GROUP` for the wrapper (that flag sets the ignore-Ctrl-C
+attribute). It captures the wrapper's stdout and stderr and sends an event only after a readiness signal:
+for agent-running tests, after the complete fake-agent report line has been read (the fixture installs its
+handler before printing it); for the swallowed-window test, after the pause marker line has been read.
 
 - Ctrl-C, handled agent: fake agent with `FAKE_AGENT_CTRL_C_EXIT=42` and a long sleep; after `CTRL_C_EVENT`
   the wrapper exits 42. A wrapper without a working handler would die first (default processing exits
@@ -448,8 +462,10 @@ sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, 
 - Ctrl-Break, handled agent: the same with `CTRL_BREAK_EVENT` and `FAKE_AGENT_CTRL_C_EXIT=43`, exit 43.
 - Ctrl-C, default agent: without `FAKE_AGENT_CTRL_C_EXIT`, the wrapper exits `0xC000013A` well before the
   sleep ends (the agent's own default code, propagated).
-- Swallowed window: with `AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS`, the driver sends `CTRL_C_EVENT` during
-  the pause; the fake-agent report still appears and the wrapper returns the agent's exit code.
+- Swallowed window: `AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS=2000`, fake agent with `FAKE_AGENT_EXIT=7`
+  and no sleep; the driver sends `CTRL_C_EVENT` after reading the pause marker. The fake-agent report appears
+  and the wrapper exits exactly 7 (an event that reached a running agent would have produced `0xC000013A`
+  instead).
 - Normal completion and non-zero exit through the job path.
 - No orphan: kill the wrapper mid-sleep; the fake agent has exited within a bounded wait, checked by waiting
   on its process handle (`WaitForSingleObject`) or `GetExitCodeProcess`, never by "the PID can be opened".
@@ -460,8 +476,9 @@ sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, 
   `console-driver`, running in its own `CREATE_NEW_CONSOLE` console, may call it; the test process itself
   must never share that console, or the event would reach the test runner.
 - Terminated before child creation: the debug-only hook `AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS`
-  (`cfg(all(windows, debug_assertions))`, read only by the Windows launcher, sleeps immediately before
-  step 3; unparsable values are ignored) lets the test kill the wrapper in that window;
+  (`cfg(all(windows, debug_assertions))`, read only by the Windows launcher; immediately before step 3 it
+  writes the line `agent-profile: debug: paused before spawn` to stderr, flushes, then sleeps; unparsable
+  values are ignored) lets the test kill the wrapper in that window;
   no fake-agent report ever appears.
 - Child creation failure: covered by the garbage-executable test in `tests/launch.rs`.
 
