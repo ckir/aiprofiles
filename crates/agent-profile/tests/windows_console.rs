@@ -198,6 +198,29 @@ fn processes_the_agent_left_running_survive_a_normal_exit() {
 }
 
 #[test]
+fn breakaway_process_creation_matches_direct_invocation() {
+    // CREATE_BREAKAWAY_FROM_JOB succeeds only if every job around the caller allows breakaway. Whatever the test
+    // runner's own jobs allow, the wrapper must not change the outcome (V3 §24): compare against a direct run.
+    let env = [("FAKE_AGENT_SPAWN_SLEEPER", "1000"), ("FAKE_AGENT_BREAKAWAY", "1")];
+    let mut direct = support::fake_agent();
+    let root = Root::new();
+    let mut wrapped = root.agent_profile(["fake", "work"]);
+    for (name, value) in env {
+        direct.env(name, value);
+        wrapped.env(name, value);
+    }
+    let direct = direct.output().unwrap();
+    let wrapped = wrapped.output().unwrap();
+    assert_eq!(
+        wrapped.status.code(),
+        direct.status.code(),
+        "direct stderr: {}\nwrapped stderr: {}",
+        String::from_utf8_lossy(&direct.stderr),
+        String::from_utf8_lossy(&wrapped.stderr)
+    );
+}
+
+#[test]
 fn killing_the_wrapper_before_spawn_starts_no_agent() {
     let root = Root::new();
     let mut wrapper =

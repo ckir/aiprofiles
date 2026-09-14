@@ -54,12 +54,10 @@ impl AppRoot {
                 Ok(AppRoot(path))
             }
             None => match home_dir {
-                Some(home) if !home.as_os_str().is_empty() => {
-                    Ok(AppRoot(home.join(".agent-profile")))
-                }
+                Some(home) if home.is_absolute() => Ok(AppRoot(home.join(".agent-profile"))),
                 _ => Err(Error::AppRoot {
                     message: format!(
-                        "cannot determine the home directory; set {HOME_ENV} to an absolute path"
+                        "cannot determine an absolute home directory; set {HOME_ENV} to an absolute path"
                     ),
                 }),
             },
@@ -351,6 +349,10 @@ mod tests {
         let root = AppRoot::resolve_from(None, Some(home.clone())).unwrap();
         assert_eq!(root.path(), home.join(".agent-profile"));
         assert!(matches!(AppRoot::resolve_from(None, None), Err(Error::AppRoot { .. })));
+        for bad in ["", "relative/home"] {
+            let error = AppRoot::resolve_from(None, Some(PathBuf::from(bad))).unwrap_err();
+            assert!(matches!(error, Error::AppRoot { .. }), "{bad:?}: {error:?}");
+        }
     }
 
     #[test]

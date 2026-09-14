@@ -176,6 +176,7 @@ fn fake_agent_invalid_control_values_are_fixture_errors() {
         ("FAKE_AGENT_SLEEP_MS", "soon"),
         ("FAKE_AGENT_SPAWN_SLEEPER", ""),
         ("FAKE_AGENT_CTRL_C_EXIT", "256"),
+        ("FAKE_AGENT_BREAKAWAY", "yes"),
     ] {
         let output = support::fake_agent().env(name, value).output().unwrap();
         assert_fixture_error(&output, &format!("{name}={value:?}"));

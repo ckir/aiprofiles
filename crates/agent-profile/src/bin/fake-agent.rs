@@ -13,6 +13,8 @@
 //!   report its PID as `"sleeper_pid"`.
 //! - `FAKE_AGENT_CTRL_C_EXIT=<u8>` (Windows only): on Ctrl-C or Ctrl-Break, sleep 300 ms, then exit with
 //!   `<u8>`. The handler is installed before the report is printed.
+//! - `FAKE_AGENT_BREAKAWAY=1` (Windows only): spawn the `FAKE_AGENT_SPAWN_SLEEPER` sleeper with
+//!   `CREATE_BREAKAWAY_FROM_JOB`.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -24,7 +26,7 @@ use std::time::Duration;
 const FIXTURE_ERROR: u8 = 125;
 
 /// Every control variable, so a spawned sleeper can be given a clean environment.
-const CONTROL_VARS: [&str; 7] = [
+const CONTROL_VARS: [&str; 8] = [
     "FAKE_AGENT_EXIT",
     "FAKE_AGENT_ECHO_ENV",
     "FAKE_AGENT_STDIN",
@@ -32,6 +34,7 @@ const CONTROL_VARS: [&str; 7] = [
     "FAKE_AGENT_SLEEP_MS",
     "FAKE_AGENT_SPAWN_SLEEPER",
     "FAKE_AGENT_CTRL_C_EXIT",
+    "FAKE_AGENT_BREAKAWAY",
 ];
 
 fn main() -> ExitCode {
@@ -54,6 +57,15 @@ fn run() -> Result<u8, String> {
         None => false,
         Some(value) if value == "1" => true,
         Some(value) => return Err(format!("FAKE_AGENT_STDIN must be 1, got {value:?}")),
+    };
+    let breakaway = match std::env::var_os("FAKE_AGENT_BREAKAWAY") {
+        None => false,
+        Some(value) if value == "1" && cfg!(windows) => true,
+        Some(value) => {
+            return Err(format!(
+                "FAKE_AGENT_BREAKAWAY must be 1 and is Windows only, got {value:?}"
+            ));
+        }
     };
     let stderr_text =
         std::env::var_os("FAKE_AGENT_STDERR").map(|v| utf8(v, "FAKE_AGENT_STDERR")).transpose()?;
@@ -99,7 +111,7 @@ fn run() -> Result<u8, String> {
         report["stdin"] = stdin.into();
     }
     if let Some(ms) = sleeper_ms {
-        report["sleeper_pid"] = spawn_sleeper(ms)?.into();
+        report["sleeper_pid"] = spawn_sleeper(ms, breakaway)?.into();
     }
 
     let mut stdout = std::io::stdout();
@@ -133,10 +145,19 @@ fn utf8(value: OsString, what: &str) -> Result<String, String> {
     value.into_string().map_err(|raw| format!("{what} is not valid UTF-8: {raw:?}"))
 }
 
-fn spawn_sleeper(ms: u64) -> Result<u32, String> {
+fn spawn_sleeper(ms: u64, breakaway: bool) -> Result<u32, String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate fake-agent: {e}"))?;
-    let child =
-        sleeper_command(exe, ms).spawn().map_err(|e| format!("cannot spawn the sleeper: {e}"))?;
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut command = sleeper_command(exe, ms);
+    #[cfg(windows)]
+    if breakaway {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+        command.creation_flags(CREATE_BREAKAWAY_FROM_JOB);
+    }
+    #[cfg(not(windows))]
+    let _ = breakaway;
+    let child = command.spawn().map_err(|e| format!("cannot spawn the sleeper: {e}"))?;
     Ok(child.id())
 }
 

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Every `fake-agent` control variable (SP1 design §8.1).
-pub const FIXTURE_VARS: [&str; 7] = [
+pub const FIXTURE_VARS: [&str; 8] = [
     "FAKE_AGENT_EXIT",
     "FAKE_AGENT_ECHO_ENV",
     "FAKE_AGENT_STDIN",
@@ -16,6 +16,7 @@ pub const FIXTURE_VARS: [&str; 7] = [
     "FAKE_AGENT_SLEEP_MS",
     "FAKE_AGENT_SPAWN_SLEEPER",
     "FAKE_AGENT_CTRL_C_EXIT",
+    "FAKE_AGENT_BREAKAWAY",
 ];
 
 /// Wrapper variables a developer's shell could leak into a test run.

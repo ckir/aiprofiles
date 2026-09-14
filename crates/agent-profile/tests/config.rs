@@ -118,6 +118,13 @@ fn concurrent_writers_lose_no_update() {
     }
     let config = Config::load(&root).unwrap();
     assert_eq!(config.configured_agents().count(), 8);
+    for index in 0..8 {
+        assert_eq!(
+            config.agent_executable(&format!("agent{index}")),
+            Some(Path::new(&absolute(&format!("a{index}")))),
+            "agent{index}"
+        );
+    }
 }
 
 #[test]
