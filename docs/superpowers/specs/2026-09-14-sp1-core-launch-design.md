@@ -109,6 +109,7 @@ Clap's own usage error (exit 2).
 
 | Invocation | Result | Exit |
 |---|---|---|
+| No arguments at all | Clap prints the top-level help to stderr | 2 |
 | Top-level reserved word | "`<word>` is not yet implemented" | 2 |
 | `<agent> <reserved word> ...` | "`<agent> <word>` is not yet implemented" | 2 |
 | Unknown agent | Usage error listing the known agents; a build with none says "no agents are available in this build". If the configuration loads and has `agents.<id>` tables for ids this build does not know, the message lists them too; a configuration that fails to load does not change this error. | 2 |
@@ -135,8 +136,8 @@ The SP0 library already has one empty module per V3 §4 layer. SP1 fills them an
 | `config` | `AppRoot` (§6.1), `Config` strict read (§6.2), `config::update` writer (§6.4). | `error` |
 | `exe` | Executable discovery (§7.2). | `config`, `error` |
 | `resolve` | V3 §12 `Resolution` and `ResolutionSource` types verbatim; SP1 stub `resolve(agent, explicit)` returns `Explicit` or `None`. SP3 replaces the body, not the types. | `name` |
-| `adapter` | SP1-internal `plan(&AgentId, &Resolution, &AppRoot, &Config) -> Result<PlannedLaunch>`; one arm, `fake`, under `cfg(debug_assertions)`; owns the case-only-twin check (§7.3). No trait: SP2 designs it. | `exe`, `config`, `launch`, `resolve`, `name`, `error` |
-| `launch` | `LaunchPlan` (V3 §4 struct, unchanged), `LaunchOutcome`, `launch/unix.rs`, `launch/windows.rs`. | `error` |
+| `adapter` | SP1-internal `plan(&AgentId, &Resolution, &AppRoot, &Config, args: Vec<OsString>, path_var: Option<&OsStr>) -> Result<PlannedLaunch>` plus `ensure_profile_dir(&PlannedLaunch)` and `known_agents()`; one arm, `fake`, under `cfg(debug_assertions)`; owns the case-only-twin check (§7.3). No trait: SP2 designs it. | `exe`, `config`, `launch`, `resolve`, `name`, `error` |
+| `launch` | `LaunchPlan` (V3 §4 struct, unchanged), `LaunchOutcome`, `launch(&LaunchPlan, verbose: bool)`, `launch/unix.rs`, `launch/windows.rs`. | `error` |
 | `output` | Dry-run and `--verbose` rendering, environment-value redaction. | `adapter` (`PlannedLaunch`), `resolve`, `launch` |
 | `cli` | Clap types, splitter, dispatch; `pub fn run(args: impl IntoIterator<Item = OsString>) -> i32`. | all |
 
@@ -154,7 +155,7 @@ no-op `before_persist` and `|tmp, dest| tmp.persist(dest).map(drop).map_err(|e| 
 deletes the temp file, so a failing injected `replace` exercises the same cleanup path).
 
 `PlannedLaunch` carries the `LaunchPlan` plus what dry run reports but the launcher does not need: the
-profile directory, whether it exists, the executable's origin (`Configured` or `Path`) and a one-line
+validated profile, the profile directory, whether it exists, the executable's origin (`Configured` or `Path`) and a one-line
 mechanism description.
 
 `main.rs` becomes `std::process::exit(agent_profile::cli::run(std::env::args_os()))`; this is the ONLY
@@ -199,13 +200,16 @@ executable = "/absolute/path/to/fake-agent"
 - Top level: only the `agents` table is allowed.
 - `agents`: keys must be valid `AgentId`s. Any valid id is accepted, including agents this build does not
   know, so a configuration written for later versions' agents does not fail.
-- Each `agents.<id>` table: only `executable` is allowed (`deny_unknown_fields`); it is a string holding an
+- Each `agents.<id>` table: only `executable` is allowed; it is a string holding an
   absolute path.
 - A missing file is an empty configuration. A missing `agents` table or agent table means "no override".
 - Everything else is `ConfigInvalid` (exit 4): unreadable file, non-UTF-8 content, TOML syntax error, unknown
   key, wrong type, invalid agent id, relative `executable`. The message names the file, the key when there is
   one, and says: "agent-profile never rewrites an invalid configuration; fix or move the file."
 - Reads never take the lock and open only `config.toml`.
+- Implementation note (from the verified prototype): validation walks the parsed `toml::Table` rather than
+  deserializing with serde `deny_unknown_fields`, because the walk can name the exact offending key for every
+  error class; `serde` is therefore not a dependency.
 
 ### 6.3 Errors and exit codes
 
@@ -407,7 +411,7 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_STDIN=1` | Read all of stdin before reporting; `"stdin"` holds it (non-UTF-8 = fixture error 125) |
 | `FAKE_AGENT_STDERR=<text>` | Write `<text>` to stderr after reporting |
 | `FAKE_AGENT_SLEEP_MS=<u64>` | After printing and flushing the report, sleep that long, then exit with the requested code |
-| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every `FAKE_AGENT_*` variable removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null (so it holds none of the wrapper's pipes), and report its PID as `"sleeper_pid"` |
+| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every `FAKE_AGENT_*` variable removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null, and report its PID as `"sleeper_pid"`. On Windows a spawned process also inherits every inheritable handle, including the pipes the fixture's own stdout and stderr are attached to (measured in the prototype), so a test must never wait for the wrapper's pipes to close while a sleeper runs |
 | `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): BEFORE printing the report, install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that outlives a wrapper that failed to survive the event |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
@@ -474,8 +478,8 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
 - Case-only twin: with `<root>/profiles/work/` present, `fake WORK` and `fake WORK --dry-run` both exit 4
   with `ProfileCaseConflict` naming `work`, and the byte-exact entry names listed from `<root>/profiles/` are
   exactly `["work"]` afterwards (a `WORK` existence check would be meaningless on case-insensitive
-  filesystems); `fake work` still launches. A fixture-level smoke test asserts the sleeper spawned by
-  `FAKE_AGENT_SPAWN_SLEEPER` reports no `"sleeper_pid"` of its own.
+  filesystems); `fake work` still launches. A unit test inside `src/bin/fake-agent.rs` asserts that the
+  sleeper's command removes every `FAKE_AGENT_*` variable except its own `FAKE_AGENT_SLEEP_MS`.
 - Stdio: stdin bytes reach `"stdin"`; `FAKE_AGENT_STDERR` text appears on the wrapper's stderr.
 - Errors: each §4.3 row with a non-zero exit; explicit executable missing (3); empty `PATH` and no override
   (3); corrupt configuration (4, file untouched); a `.cmd` override (6); an override pointing at a non-
@@ -489,7 +493,8 @@ environment override replacing an inherited value, and args including `--` and a
 the child inherits the test's working directory.
 
 `tests/windows_console.rs` (`cfg(windows)`) uses a helper binary `src/bin/console-driver.rs` (a stub that
-exits 125 on non-Windows). The driver is started with `CREATE_NEW_CONSOLE`, calls
+exits 125 on non-Windows) with the command line
+`console-driver <result-file> <none|ctrl-c|ctrl-break> <none|report|pause-marker> <program> [args...]`. The driver is started with `CREATE_NEW_CONSOLE`, calls
 `SetConsoleCtrlHandler(NULL, FALSE)` and installs a swallowing handler for itself, runs the wrapper against a
 sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, and writes a result file.
 The driver never uses `CREATE_NEW_PROCESS_GROUP` for the wrapper (that flag sets the ignore-Ctrl-C
@@ -511,7 +516,8 @@ handler before printing it); for the swallowed-window test, after the pause mark
 - Normal completion and non-zero exit through the job path.
 - No orphan: kill the wrapper mid-sleep; the fake agent has exited within a bounded wait, checked by waiting
   on its process handle (`WaitForSingleObject`) or `GetExitCodeProcess`, never by "the PID can be opened".
-- Background survival: after a normal exit, `"sleeper_pid"` is still alive; the test then kills it.
+- Background survival: the test reads the report line, waits for the wrapper process (never for its pipes,
+  see §8.1), and asserts `"sleeper_pid"` is still alive; the drop guard then kills it.
 - Every PID a test learns (fake agent, sleeper, wrapper) is held by a drop guard that kills it if still alive,
   so a panicking assertion cannot leak processes onto the runner.
 - `GenerateConsoleCtrlEvent(event, 0)` targets every process attached to the CALLER's console. Only
@@ -541,13 +547,15 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 
 ## 10. Delivery
 
-1. **First plan task — CI proof.** Land the `console-driver` Ctrl-C test against a minimal wrapper on the
-   Windows runner. If GitHub's runner cannot deliver the event, STOP and ask the owner before any launcher
-   work; the §24 test contract would need a documented alternative.
-2. New dependencies (workspace-pinned, checked by `cargo deny`): `serde` (derive), `toml` (reads),
-   `toml_edit` (writes), `thiserror`, `tempfile` (normal dependency), `windows-sys` (Windows target only;
-   features `Win32_Foundation`, `Win32_Security`, `Win32_System_Console`, `Win32_System_JobObjects`,
-   `Win32_System_Threading`).
+1. **CI proof — done before planning.** A throwaway prototype of this whole design ran on draft PR #7
+   (closed unmerged), run 34853308762: the Windows runner passed 97/97 tests including all eight
+   `tests/windows_console.rs` tests (headless Ctrl-C and Ctrl-Break delivery proven on GitHub's runner);
+   macOS and Linux passed 91/91 including the Unix `exec` PID test. The implementation plan is written from
+   that verified prototype. If a later change makes a console test fail only on CI, STOP and ask the owner.
+2. New dependencies (workspace-pinned, checked by `cargo deny`): `toml` (reads), `toml_edit` (writes),
+   `thiserror`, `tempfile` (normal dependency), `windows-sys` (Windows target only; features
+   `Win32_Foundation`, `Win32_Security`, `Win32_Storage_FileSystem`, `Win32_System_Console`,
+   `Win32_System_JobObjects`, `Win32_System_Threading`).
 3. `TODO.md`: remove the four SP1 open decisions; add the SP2 open decision "launching `.cmd`/`.bat`
    shims without shell mediation"; extend the `cargo install` debt item to name `console-driver`.
 4. `README.md`/`ROADMAP.md`: SP1 row state updated when merged; README gains the `AGENT_PROFILE_HOME` note.
