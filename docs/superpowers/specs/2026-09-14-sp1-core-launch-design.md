@@ -354,11 +354,15 @@ In this order:
 
 0. **Once per process.** A second launch in the same process is refused with `Launch` (exit 6): the control
    handler and its published handles describe exactly one child.
-1. **Job.** `CreateJobObjectW`; `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
-   JOB_OBJECT_LIMIT_BREAKAWAY_OK`; `AssignProcessToJobObject(GetCurrentProcess())`. Any failure: `Launch` (exit
-   6) before a child exists. Breakaway stays allowed because a job without it makes every
-   `CREATE_BREAKAWAY_FROM_JOB` process creation inside it fail with access denied (measured, os error 5), which
-   direct invocation does not do; a process that breaks away has deliberately detached and is not killed.
+1. **Job.** `CreateJobObjectW`; `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` plus the
+   breakaway flag inherited from the job the wrapper was started in; `AssignProcessToJobObject(GetCurrentProcess())`.
+   Any failure: `Launch` (exit 6) before a child exists. `CREATE_BREAKAWAY_FROM_JOB` fails with access denied when
+   the creator's innermost job lacks `JOB_OBJECT_LIMIT_BREAKAWAY_OK` (measured, os error 5), so the new job copies
+   that one flag: outside any job it is allowed; inside a job it is allowed exactly when that job
+   (`IsProcessInJob`, then `QueryInformationJobObject` on the current job) allows it; if the query fails it is not
+   allowed. The agent's breakaway attempts therefore succeed or fail as under direct invocation (measured both
+   ways: cargo test's job forbids breakaway, nextest's per-test job allows it). A process that breaks away has
+   deliberately detached and is not killed.
 2. **Handler.** `SetConsoleCtrlHandler(Some(handler), TRUE)`. The child shares the console and receives
    every event itself. The handler:
    - `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`: return TRUE at once (the wrapper survives and keeps waiting).
@@ -384,7 +388,7 @@ In this order:
    process exit; `child` is a `DuplicateHandle` copy of the child's process handle with `SYNCHRONIZE` access,
    owned by the global and never closed, so it stays valid after `Child` is dropped.
 4. **Wait.**
-5. **Release the job.** `SetInformationJobObject` with only `JOB_OBJECT_LIMIT_BREAKAWAY_OK`, so processes the agent left running
+5. **Release the job.** `SetInformationJobObject` with only the inherited breakaway flag, so processes the agent left running
    survive the wrapper's exit. A failure is reported only under `--verbose`; it does not change the exit code.
 6. **Return** `LaunchOutcome::Exited(code)` with the child's full 32-bit exit code; `main` passes it to
    `std::process::exit` (§5), which preserves all 32 bits (M2). The job handle is closed by that exit.
@@ -528,8 +532,9 @@ handler before printing it); for the swallowed-window test, after the pause mark
   instead).
 - Normal completion and non-zero exit through the job path.
 - Breakaway equivalence: a fake agent spawning its sleeper with `FAKE_AGENT_BREAKAWAY=1` exits with the same code
-  directly and through the wrapper. (If the test runner's own jobs forbid breakaway both runs fail alike and the
-  test cannot discriminate; on this machine under nextest removing `JOB_OBJECT_LIMIT_BREAKAWAY_OK` made it fail.)
+  directly and through the wrapper. Measured under both harnesses: a
+  never-allow mutant fails it under nextest and an always-allow mutant fails it under cargo test. A unit test
+  pins the inherit-or-deny decision table.
 - No orphan: kill the wrapper mid-sleep; the fake agent has exited within a bounded wait, checked by waiting
   on its process handle (`WaitForSingleObject`) or `GetExitCodeProcess`, never by "the PID can be opened".
 - Background survival: the test reads the report line, waits for the wrapper process (never for its pipes,
