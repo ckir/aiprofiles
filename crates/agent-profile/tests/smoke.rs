@@ -32,21 +32,11 @@ fn version_exits_zero() {
 }
 
 #[test]
-fn help_exits_zero_and_says_scaffold() {
+fn help_exits_zero_and_shows_launch_usage() {
     let output = agent_profile(&["--help"]);
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("SP0 scaffold"), "{stdout}");
-}
-
-#[test]
-fn unimplemented_invocation_is_usage_error() {
-    for args in [&["doctor"][..], &["claude", "work"], &["zzz-unknown"]] {
-        let output = agent_profile(args);
-        assert_eq!(output.status.code(), Some(2), "args {args:?}");
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains("not yet implemented"), "args {args:?}: {stderr}");
-    }
+    assert!(stdout.contains("agent-profile <agent> <profile>"), "{stdout}");
 }
 
 #[test]
