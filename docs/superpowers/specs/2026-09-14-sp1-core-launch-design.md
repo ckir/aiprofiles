@@ -1,6 +1,7 @@
 # SP1 — Core and explicit launch: design
 
-**Status:** approved in brainstorming on 2026-09-14; awaiting the written-spec review.
+**Status:** approved by the owner on 2026-09-14 after six panel rounds; implemented by
+`docs/superpowers/plans/2026-09-14-sp1-core-launch.md`.
 **Branch:** `sp1-core-launch` (from `main` at `204efb7`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` (called "V3" below). Where this document and V3
 disagree, V3 wins; report the conflict instead of resolving it silently.
@@ -239,8 +240,9 @@ library-level only in SP1 (no CLI command writes configuration yet).
 
 1. Create the root directory if missing.
 2. Open or create `<root>/config.toml.lock` and acquire the exclusive lock with `File::try_lock()`, retrying
-   every 50 ms for at most 10 s. Timeout: `ConfigWrite` "another agent-profile process holds
-   `<root>/config.toml.lock`; retry, or check for a stuck process". Any other error: `ConfigWrite`. Nothing is
+   every 50 ms for at most 10 s. Timeout: `ConfigWrite` for the lock path, whose message reads "could not write
+   `<root>/config.toml.lock`: another agent-profile process holds the configuration lock; retry, or check for a
+   stuck process". Any other error: `ConfigWrite`. Nothing is
    written in either case. The lock file is never deleted or replaced.
 3. Delete files in the root named `.config.toml.*.tmp`. Under the lock no writer is active, so they are
    leftovers of crashed writers. The sweep is best-effort: a deletion error is ignored (and mentioned only
@@ -299,8 +301,8 @@ pub enum LaunchOutcome {
 **Case-only twins are refused (owner decision D9).** V3 §6 allows upper- and lower-case letters, and the
 storage path is `<root>/profiles/<profile>/` exactly as typed. On case-insensitive filesystems (the Windows
 and macOS defaults) `work` and `WORK` would silently share one directory, and with it one agent's
-credentials; on Linux they would be two profiles. So `adapter::plan` (§5.1 step 5, before dry run and before
-lazy creation; §5.1 step 5 (b)) lists `<root>/profiles/` when it exists and fails with `ProfileCaseConflict`
+credentials; on Linux they would be two profiles. So `adapter::plan` (§5.1 step 5 (b), before dry run and before
+lazy creation) lists `<root>/profiles/` when it exists and fails with `ProfileCaseConflict`
 (exit 4, naming the existing entry) if any entry's name - directory, file or symlink alike, since any of
 them blocks a same-named directory on a case-insensitive filesystem - equals the requested profile under
 ASCII case-insensitive comparison but not byte-for-byte. Entries whose names are not valid UTF-8 are skipped. A missing
@@ -334,7 +336,8 @@ arguments:    ["--foo", "bar"]
   `<redacted>`. As a backstop, any override whose name contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD`,
   `CREDENTIAL` or `AUTH` (ASCII case-insensitive) is also redacted. SP1's `fake` declares none; the SP2
   adapter contract makes the declaration mandatory for every override.
-- `--verbose` on a real launch renders the same lines to stderr, each prefixed `agent-profile: `. Every
+- `--verbose` on a real launch renders the same lines to stderr, each prefixed `agent-profile: `, built after
+  §5.1 step 7's lazy creation so the directory is never reported as "(would be created)". Every
   `--verbose` and diagnostic write uses `writeln!` on `std::io::stderr()` and ignores the result (never
   `eprintln!`, which panics on a broken pipe and would turn the exit status into 101).
 
@@ -411,7 +414,7 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_STDIN=1` | Read all of stdin before reporting; `"stdin"` holds it (non-UTF-8 = fixture error 125) |
 | `FAKE_AGENT_STDERR=<text>` | Write `<text>` to stderr after reporting |
 | `FAKE_AGENT_SLEEP_MS=<u64>` | After printing and flushing the report, sleep that long, then exit with the requested code |
-| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every `FAKE_AGENT_*` variable removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null, and report its PID as `"sleeper_pid"`. On Windows a spawned process also inherits every inheritable handle, including the pipes the fixture's own stdout and stderr are attached to (measured in the prototype), so a test must never wait for the wrapper's pipes to close while a sleeper runs |
+| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every fixture control variable (the seven `FAKE_AGENT_*` variables this table and SP0 define) removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null, and report its PID as `"sleeper_pid"`. On Windows a spawned process also inherits every inheritable handle, including the pipes the fixture's own stdout and stderr are attached to (measured in the prototype), so a test must never wait for the wrapper's pipes to close while a sleeper runs |
 | `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): BEFORE printing the report, install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that outlives a wrapper that failed to survive the event |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
@@ -475,11 +478,15 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
 - Lazy init: the profile directory exists after a launch; a regular file at that path gives `ProfileDir`
   (exit 4) and no launch.
 - Concurrent lazy init: 8 simultaneous first launches of one profile all exit 0.
+- `--verbose`: a real launch prints the seven report lines on stderr, each prefixed `agent-profile: `, without
+  "(would be created)", and the agent still runs.
+- Dry run of a not-installed agent: with no override and an empty `PATH`, `fake work --dry-run` exits 3 with
+  nothing on stdout.
 - Case-only twin: with `<root>/profiles/work/` present, `fake WORK` and `fake WORK --dry-run` both exit 4
   with `ProfileCaseConflict` naming `work`, and the byte-exact entry names listed from `<root>/profiles/` are
   exactly `["work"]` afterwards (a `WORK` existence check would be meaningless on case-insensitive
   filesystems); `fake work` still launches. A unit test inside `src/bin/fake-agent.rs` asserts that the
-  sleeper's command removes every `FAKE_AGENT_*` variable except its own `FAKE_AGENT_SLEEP_MS`.
+  sleeper's command removes every fixture control variable except its own `FAKE_AGENT_SLEEP_MS`.
 - Stdio: stdin bytes reach `"stdin"`; `FAKE_AGENT_STDERR` text appears on the wrapper's stderr.
 - Errors: each §4.3 row with a non-zero exit; explicit executable missing (3); empty `PATH` and no override
   (3); corrupt configuration (4, file untouched); a `.cmd` override (6); an override pointing at a non-
@@ -543,7 +550,7 @@ Windows 11 Pro 10.0.26200, non-interactive agent shell, 2026-09-14; probe source
   attribute, ping ran 30 s (exit 0). With `SetConsoleCtrlHandler(NULL, FALSE)` in the driver, the wrapper
   exited with `-1073741510` (`0xC000013A`) after 2.1 s.
 
-M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step 1.
+M2 was first measured locally; the prototype then passed the same tests on GitHub's Windows runner (§10 step 1).
 
 ## 10. Delivery
 

@@ -18,22 +18,25 @@ Every code block below is copied byte-for-byte from a prototype of the whole des
 
 Rules for every task:
 
-1. **Step 0 - state check.** On branch `sp1-core-launch`, run `git status --short` (expect no output) and confirm the previous task's commit is `HEAD` (`git log --oneline -1`). If a file this task *modifies* does not match the description, STOP and report `STATE_MISMATCH: <what>`.
+1. **Step 0 - state check.** On branch `sp1-core-launch`, run `git status --short` (expect no output). `HEAD` must be the previous task's commit; for Task 1 it is the commit that added this plan or a later documentation commit (`git log --oneline -1` shows a `docs:` subject). Then check the "Before" fact listed for every file the task modifies. If any check fails, STOP and report `STATE_MISMATCH: <what>`.
 2. **Byte-exact files.** Write each file with exactly the content shown: the whole file, not a merge. The gate includes `cargo fmt --all -- --check`, so do not reformat. Do not "improve" any code or test.
 3. **Shape-divergence stop.** If making the code compile would change the shape, type or encoding of anything shown, STOP and report `[original] -> [yours] because <reason>`. "It compiles" is not a justification.
 4. **Oracle.** The named tests pin the behaviour. If a test fails, fix the code to match the test and the design; never edit a test to match the code.
 5. **Gate.** Run the gate exactly as written; do not add flags.
 6. **Mutant.** After committing, apply the mutant, run the command, confirm the named test FAILS, then restore with `git checkout -- <file>` and confirm `git status --short` prints nothing.
+7. **Toolchain drift.** `rust-toolchain.toml` pins `stable`. If a gate fails with a clippy lint or compiler diagnostic in code copied from this plan (a newer stable than the verified one), STOP and report the diagnostic; do not change the code to silence it.
+8. **Windows desktop.** From Task 10 on, every full-workspace test run on Windows opens short-lived console windows; do not type into them while tests run.
 
 Gate commands (every task after its own checks):
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
+typos
 cargo nextest run --workspace --no-tests=pass
 ```
 
-Expected: `cargo fmt` prints nothing; clippy prints no warnings; nextest ends with `N tests run: N passed`, 0 failed.
+Expected: `cargo fmt` and `typos` print nothing; clippy prints no warnings; nextest ends with `N tests run: N passed`, 0 failed.
 
 ## File structure
 
@@ -76,9 +79,9 @@ Expected: `cargo fmt` prints nothing; clippy prints no warnings; nextest ends wi
 Adds every SP1 dependency once, then the `name` module: `ProfileName`, `AgentId`, `Platform` and the reserved words. The Windows-only rules are a `Platform` parameter so every CI OS tests both rule sets.
 
 **Files:**
-- Modify (replace whole file): `Cargo.toml`
-- Modify (replace whole file): `crates/agent-profile/Cargo.toml`
-- Modify (replace whole file): `crates/agent-profile/src/name.rs`
+- Modify (replace whole file): `Cargo.toml` - Before: contains `toml = "1.1"` and does not contain `toml_edit`
+- Modify (replace whole file): `crates/agent-profile/Cargo.toml` - Before: its `[dependencies]` section lists only `clap` and `serde_json`
+- Modify (replace whole file): `crates/agent-profile/src/name.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -491,8 +494,8 @@ Expected: `git status --short` prints nothing.
 One `Error` enum whose `exit_code()` is the single mapping to the V3 §33 exit codes.
 
 **Files:**
-- Create: `crates/agent-profile/src/error.rs`
-- Modify (replace whole file): `crates/agent-profile/src/lib.rs`
+- Create: `crates/agent-profile/src/error.rs` - Before: the file does not exist
+- Modify (replace whole file): `crates/agent-profile/src/lib.rs` - Before: contains `pub mod config;` and does not contain `pub mod error;`
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -791,8 +794,8 @@ Expected: `git status --short` prints nothing.
 `AppRoot` (the `AGENT_PROFILE_HOME` override or `~/.agent-profile`), `Config::load` with the strict schema, and `config::update` over the crate-private `update_with` (bounded lock wait, best-effort temp sweep, validate before and after the edit, sync, persist, Unix directory sync). The unit tests inside `config` cover the injected failed replacement and the reader-during-write barrier; `tests/config.rs` covers the public API, including the Windows sharing-violation replace failure.
 
 **Files:**
-- Modify (replace whole file): `crates/agent-profile/src/config.rs`
-- Create: `crates/agent-profile/tests/config.rs`
+- Modify (replace whole file): `crates/agent-profile/src/config.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
+- Create: `crates/agent-profile/tests/config.rs` - Before: the file does not exist
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -1520,8 +1523,8 @@ Expected: `git status --short` prints nothing.
 The explicit override, then a hand-rolled `PATH` search; `.bat` and `.cmd` are refused because std runs batch files through `cmd.exe`.
 
 **Files:**
-- Create: `crates/agent-profile/src/exe.rs`
-- Modify (replace whole file): `crates/agent-profile/src/lib.rs`
+- Create: `crates/agent-profile/src/exe.rs` - Before: the file does not exist
+- Modify (replace whole file): `crates/agent-profile/src/lib.rs` - Before: contains `pub mod error;` and does not contain `pub mod exe;`
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -1768,9 +1771,9 @@ Expected: `git status --short` prints nothing.
 Adds the `pid` report key and the `FAKE_AGENT_STDIN`, `FAKE_AGENT_STDERR`, `FAKE_AGENT_SLEEP_MS`, `FAKE_AGENT_SPAWN_SLEEPER` and `FAKE_AGENT_CTRL_C_EXIT` control variables; grows `tests/support/mod.rs` with `FIXTURE_VARS`, `WRAPPER_VARS`, `Root`, `non_utf8` and `report`; and adds the fixture smoke tests. The two SP0 stub-CLI smoke tests stay unchanged in this task; Task 9 replaces them together with the CLI.
 
 **Files:**
-- Modify (replace whole file): `crates/agent-profile/src/bin/fake-agent.rs`
-- Modify (replace whole file): `crates/agent-profile/tests/support/mod.rs`
-- Modify (replace whole file): `crates/agent-profile/tests/smoke.rs`
+- Modify (replace whole file): `crates/agent-profile/src/bin/fake-agent.rs` - Before: does not contain `FAKE_AGENT_SLEEP_MS`
+- Modify (replace whole file): `crates/agent-profile/tests/support/mod.rs` - Before: does not contain `FIXTURE_VARS`
+- Modify (replace whole file): `crates/agent-profile/tests/smoke.rs` - Before: does not contain `fake_agent_reports_its_pid`
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -2357,10 +2360,10 @@ Expected: `git status --short` prints nothing.
 `LaunchPlan::command` is the one conversion both launchers use. Unix replaces the process with `exec`; Windows joins a kill-on-close job, installs the control handler, spawns, publishes the job and a `SYNCHRONIZE` duplicate of the child handle, waits, releases the job and returns the full exit code. The debug-only pause hook is compiled in only under `debug_assertions`. Its behaviour tests arrive in Task 10, once the CLI can launch.
 
 **Files:**
-- Modify (replace whole file): `crates/agent-profile/src/launch/mod.rs`
-- Create: `crates/agent-profile/src/launch/unix.rs`
-- Create: `crates/agent-profile/src/launch/windows.rs`
-- Create: `crates/agent-profile/tests/launch_plan.rs`
+- Modify (replace whole file): `crates/agent-profile/src/launch/mod.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
+- Create: `crates/agent-profile/src/launch/unix.rs` - Before: the file does not exist
+- Create: `crates/agent-profile/src/launch/windows.rs` - Before: the file does not exist
+- Create: `crates/agent-profile/tests/launch_plan.rs` - Before: the file does not exist
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -2707,8 +2710,8 @@ Expected: `git status --short` prints nothing.
 The V3 §12 `Resolution` types with an explicit-only stub, and `adapter::plan` with one arm, `fake`, compiled only under `debug_assertions`: discovery, then the case-only-twin check, then the plan with the `FAKE_AGENT_HOME` override. `ensure_profile_dir` does the §9.1 lazy creation.
 
 **Files:**
-- Modify (replace whole file): `crates/agent-profile/src/resolve.rs`
-- Modify (replace whole file): `crates/agent-profile/src/adapter/mod.rs`
+- Modify (replace whole file): `crates/agent-profile/src/resolve.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
+- Modify (replace whole file): `crates/agent-profile/src/adapter/mod.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -3067,7 +3070,7 @@ Expected: `git status --short` prints nothing.
 The report lines shared by `--dry-run` (stdout) and `--verbose` (stderr), with adapter-declared and name-based redaction.
 
 **Files:**
-- Modify (replace whole file): `crates/agent-profile/src/output.rs`
+- Modify (replace whole file): `crates/agent-profile/src/output.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -3291,10 +3294,10 @@ Expected: `git status --short` prints nothing.
 The Clap surface (reserved words as not-yet-implemented subcommands, `external_subcommand` for `<agent> ...`), the ordered nine-check splitter, the §5.1 data flow and the single exit path in `main.rs`. The SP0 stub-CLI smoke tests are replaced: `help_exits_zero_and_shows_launch_usage` replaces the scaffold help test, and `tests/launch.rs` covers every non-zero behaviour row.
 
 **Files:**
-- Modify (replace whole file): `crates/agent-profile/src/cli.rs`
-- Modify (replace whole file): `crates/agent-profile/src/main.rs`
-- Modify (replace whole file): `crates/agent-profile/tests/smoke.rs`
-- Create: `crates/agent-profile/tests/launch.rs`
+- Modify (replace whole file): `crates/agent-profile/src/cli.rs` - Before: contains only `//!` doc-comment lines (the SP0 empty module)
+- Modify (replace whole file): `crates/agent-profile/src/main.rs` - Before: contains `SP0 scaffold`
+- Modify (replace whole file): `crates/agent-profile/tests/smoke.rs` - Before: contains `help_exits_zero_and_says_scaffold`
+- Create: `crates/agent-profile/tests/launch.rs` - Before: the file does not exist
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -3308,7 +3311,7 @@ use std::io::{self, Write};
 
 use clap::{Args, Parser, Subcommand};
 
-use crate::adapter;
+use crate::adapter::{self, PlannedLaunch};
 use crate::config::{AppRoot, Config};
 use crate::error::{Error, Result};
 use crate::launch::{self, LaunchOutcome};
@@ -3562,17 +3565,18 @@ fn run_agent(argv: Vec<OsString>) -> Result<i32> {
         .map_err(|error| with_unknown_configured(error, Some(&config), &known))?;
 
     // Step 6.
-    let lines = output::report_lines(&planned, &resolution);
     if dry_run {
+        let lines = output::report_lines(&planned, &resolution);
         write_out(&lines.iter().map(|line| format!("{line}\n")).collect::<String>())?;
         return Ok(0);
     }
 
-    // Step 7.
+    // Step 7. The verbose report is built after lazy creation, so it never says "(would be created)".
     adapter::ensure_profile_dir(&planned)?;
+    let planned = PlannedLaunch { profile_dir_exists: true, ..planned };
     if verbose {
         let mut stderr = io::stderr();
-        for line in &lines {
+        for line in &output::report_lines(&planned, &resolution) {
             let _ = writeln!(stderr, "agent-profile: {line}");
         }
         let _ = stderr.flush();
@@ -4070,6 +4074,30 @@ fn dry_run_reports_every_field_and_launches_nothing() {
 }
 
 #[test]
+fn dry_run_of_an_agent_that_is_not_installed_fails_like_a_launch() {
+    let root = Root::empty();
+    let output =
+        root.agent_profile(["fake", "work", "--dry-run"]).env("PATH", "").output().unwrap();
+    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn verbose_launch_reports_to_stderr_after_creating_the_profile_directory() {
+    let root = Root::new();
+    let output = root.agent_profile(["fake", "work", "--verbose"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let text = stderr(&output);
+    let report: Vec<&str> =
+        text.lines().filter(|line| line.starts_with("agent-profile: ")).collect();
+    assert_eq!(report.len(), 7, "{text}");
+    assert!(report[0].starts_with("agent-profile: agent:"), "{text}");
+    assert!(text.contains("agent-profile: environment:  FAKE_AGENT_HOME="), "{text}");
+    assert!(!text.contains("(would be created)"), "{text}");
+    assert!(support::report(&output.stdout).get("pid").is_some());
+}
+
+#[test]
 fn launch_creates_the_profile_directory_lazily() {
     let root = Root::new();
     assert!(!root.profile_dir("work").exists());
@@ -4282,7 +4310,7 @@ cargo nextest run -p agent-profile --lib cli::
 cargo nextest run -p agent-profile --test smoke --test launch
 ```
 
-Expected: every `cli::tests::*` test passes (9 tests); every smoke test (17 on Windows, 18 on Unix) and every `tests/launch.rs` test (20 on Windows, 21 on Unix) passes, 0 failed.
+Expected: every `cli::tests::*` test passes (9 tests); every smoke test (17 on Windows, 18 on Unix) and every `tests/launch.rs` test (22 on Windows, 23 on Unix) passes, 0 failed.
 
 - [ ] **Step 6: Run the gate** (see "Gate commands").
 
@@ -4325,8 +4353,8 @@ Expected: `git status --short` prints nothing.
 `console-driver` runs the wrapper in a fresh console and sends Ctrl-C or Ctrl-Break after a readiness signal; the tests prove the handled-agent exit codes 42 and 43, the default `0xC000013A`, the swallowed pre-spawn window, no orphan after the wrapper is killed, background survival after a normal exit, and no agent after a kill before spawn. These tests passed on GitHub's Windows runner in prototype run 34853308762. If any of them fails only on CI, STOP and ask the owner (design §10 step 1).
 
 **Files:**
-- Create: `crates/agent-profile/src/bin/console-driver.rs`
-- Create: `crates/agent-profile/tests/windows_console.rs`
+- Create: `crates/agent-profile/src/bin/console-driver.rs` - Before: the file does not exist
+- Create: `crates/agent-profile/tests/windows_console.rs` - Before: the file does not exist
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -4718,7 +4746,7 @@ fn killing_the_wrapper_before_spawn_starts_no_agent() {
 cargo nextest run --no-tests=pass -p agent-profile --test windows_console
 ```
 
-Expected: Windows: all 8 `tests/windows_console.rs` tests pass. Unix: the file is `cfg(windows)`, so 0 tests run and `--no-tests=pass` makes the command succeed (it opens short-lived console windows on a Windows desktop).
+Expected: Windows: all 8 `tests/windows_console.rs` tests pass; they open short-lived console windows on the desktop, so do not type into them. Unix: the file is `cfg(windows)`, so 0 tests run and `--no-tests=pass` makes the command succeed.
 
 - [ ] **Step 4: Run the gate** (see "Gate commands").
 
@@ -4761,8 +4789,8 @@ Expected: `git status --short` prints nothing.
 README status and configuration location; TODO.md trades the four settled SP1 decisions for the SP2 shim decision and names `console-driver` in the install debt.
 
 **Files:**
-- Modify (replace whole file): `README.md`
-- Modify (replace whole file): `TODO.md`
+- Modify (replace whole file): `README.md` - Before: contains `**Status: scaffold.**`
+- Modify (replace whole file): `TODO.md` - Before: contains `## SP1 open decisions`
 
 - [ ] **Step 0: State check** (rule 1).
 
@@ -4925,17 +4953,17 @@ git commit -m "docs: describe SP1 in the README and settle its TODO items" -m "C
 
 ### Task 12: Whole-branch verification
 
-No code changes. Run each command from the repository root on `sp1-core-launch`:
+No code changes. Run each command from the repository root on `sp1-core-launch`, in bash (Git Bash on Windows; the `VAR=value command` form does not work in PowerShell or cmd):
 
 ```bash
 just check
 cargo deny check
 cargo +1.98 check --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 cargo build --release --locked --bin agent-profile
-target/release/agent-profile fake work
+EMPTY_HOME="$(mktemp -d)"; AGENT_PROFILE_HOME="$EMPTY_HOME" target/release/agent-profile fake work; echo "exit=$?"
 ```
 
-Expected: the first five exit 0. The release binary knows no agents: the last command prints `agent-profile: error: unknown agent `fake` (no agents are available in this build)` and exits 2 (on Windows the binary is `target\release\agent-profile.exe`). Report any deviation; do not fix it inside this task.
+Expected: the first five exit 0. The release binary knows no agents: with an empty temporary `AGENT_PROFILE_HOME` (so the owner's real configuration is never read), the last command prints exactly `agent-profile: error: unknown agent `fake` (no agents are available in this build)` and `exit=2`. Report any deviation; do not fix it inside this task.
 
 After Task 12 the branch goes through the owner-directed reviews (capstone and test audit on subagent reviewers), then a PR to `main` with each outward step confirmed by the owner.
