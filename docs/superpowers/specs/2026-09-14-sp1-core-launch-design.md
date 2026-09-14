@@ -357,18 +357,19 @@ In this order:
 1. **Job.** `CreateJobObjectW`; `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` plus the
    breakaway flag inherited from the job the wrapper was started in; `AssignProcessToJobObject(GetCurrentProcess())`.
    Any failure: `Launch` (exit 6) before a child exists. `CREATE_BREAKAWAY_FROM_JOB` fails with access denied when
-   the creator's innermost job lacks `JOB_OBJECT_LIMIT_BREAKAWAY_OK` (measured, os error 5), so the new job copies
-   that one flag: outside any job it is allowed; inside a job it is allowed exactly when that job
-   (`IsProcessInJob`, then `QueryInformationJobObject` on the current job) allows it; if the query fails it is not
-   allowed. The agent's breakaway attempts therefore succeed or fail as under direct invocation (measured both
+   the creator's innermost job has neither `JOB_OBJECT_LIMIT_BREAKAWAY_OK` nor `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`
+   (measured, os error 5), so the new job mirrors that: outside any job breakaway is allowed; inside a job it is
+   allowed exactly when that job (`IsProcessInJob`, then `QueryInformationJobObject` on the current job) has either
+   flag, and the new job then gets `JOB_OBJECT_LIMIT_BREAKAWAY_OK` (never the silent flag, which would take the
+   agent itself out of the kill-on-close job); if the query fails it is not allowed. The agent's breakaway attempts therefore succeed or fail as under direct invocation (measured both
    ways: cargo test's job forbids breakaway, nextest's per-test job allows it). A process that breaks away has
    deliberately detached and is not killed.
 2. **Handler.** `SetConsoleCtrlHandler(Some(handler), TRUE)`. The child shares the console and receives
    every event itself. The handler:
    - `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`: return TRUE at once (the wrapper survives and keeps waiting).
    - `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`: if the child handle has been published
-     (step 3), wait on it with `WaitForSingleObject(child, INFINITE)`, then clear the job's limit flags
-     itself (the same call as step 5, on the published job handle), then block forever
+     (step 3), wait on it with `WaitForSingleObject(child, INFINITE)`, then set the job's limits to the
+     inherited breakaway flag itself (the same call as step 5, on the published job handle), then block forever
      (`std::thread::park` in a loop) and never return; if nothing has been published, return FALSE.
      Windows terminates the wrapper as soon as a close-type handler returns, so a handler that returned
      could kill the wrapper before the main thread's `process::exit(code)` and replace the agent's exit
@@ -383,7 +384,7 @@ In this order:
    would leave it.
 3. **Spawn** directly with `LaunchPlan::command().spawn()`. The child inherits job membership. Failure:
    `Launch` (exit 6). On success, publish two handles for the handler in a process-global
-   `OnceLock<Published>` where `Published { job: usize, child: usize }` holds raw handle values as `usize`
+   `OnceLock<Published>` where `Published { job: usize, child: usize, breakaway: u32 }` holds raw handle values as `usize` and the inherited breakaway flag
    (raw handles are not `Send`/`Sync`): `job` is the step-1 job handle, which the launcher keeps open until
    process exit; `child` is a `DuplicateHandle` copy of the child's process handle with `SYNCHRONIZE` access,
    owned by the global and never closed, so it stays valid after `Child` is dropped.
@@ -411,7 +412,7 @@ Consequences:
 
 ### 8.1 `fake-agent` fixture extensions (additive)
 
-The SP0 fixture contract (SP0 design §3.3) is unchanged, and the nine `fake_agent_*` smoke tests (including the helper test, which extends to the five new variables)
+The SP0 fixture contract (SP0 design §3.3) is unchanged, and the nine `fake_agent_*` smoke tests (including the helper test, which extends to the six new variables)
 stay as they are. The three stub-CLI smoke tests change with the CLI: `version_exits_zero` and
 `help_exits_zero_and_says_scaffold` keep their assertions except that `--help` no longer says "SP0
 scaffold" (the new help text is asserted instead), and `unimplemented_invocation_is_usage_error` is
@@ -428,7 +429,7 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): BEFORE printing the report, install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that outlives a wrapper that failed to survive the event |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
-`support::fake_agent()` additionally removes all five new variables.
+`support::fake_agent()` additionally removes all six new variables.
 
 ### 8.2 Unit tests (in-module)
 
@@ -585,6 +586,10 @@ M2 was first measured locally; the prototype then passed the same tests on GitHu
 ## 11. Known limits
 
 - The Windows event window from handler installation until the child attaches to the console (§7.6).
+- A caller job with `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`: under direct invocation the agent's ordinary children
+  silently leave that job; through the wrapper they stay in the wrapper's nested job and so remain subject to the
+  caller job's limits, including its kill-on-close (measured). Mirroring the silent flag would take the agent itself
+  out of the wrapper's job and lose the no-orphan guarantee, so this difference is accepted.
 - The close/logoff/shutdown handler path (§7.6 step 2) is argued from Microsoft's HandlerRoutine
   documentation and conhost's dispatch order (newest process first, `microsoft/terminal`
   `src/server/ProcessList.cpp`), not tested: CI cannot close a console window. Reported, unverified: in

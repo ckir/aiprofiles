@@ -43,8 +43,10 @@ static PUBLISHED: OnceLock<Published> = OnceLock::new();
 static LAUNCHED: AtomicBool = AtomicBool::new(false);
 
 /// `CREATE_BREAKAWAY_FROM_JOB` fails with access denied when the creating process's innermost job has neither
-/// `JOB_OBJECT_LIMIT_BREAKAWAY_OK` nor `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` (measured). The wrapper's job therefore copies that one flag from the job the
-/// wrapper was started in, so the agent's breakaway attempts succeed or fail exactly as under direct invocation.
+/// `JOB_OBJECT_LIMIT_BREAKAWAY_OK` nor `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` (measured). The wrapper's job
+/// therefore allows breakaway exactly when the job the wrapper was started in allows it, so the agent's breakaway
+/// attempts succeed or fail as under direct invocation. The silent flag is never copied: it would take the agent
+/// itself out of the wrapper's kill-on-close job.
 /// Outside any job, breakaway is allowed. If the caller's job cannot be queried, breakaway is not allowed: the
 /// agent then keeps every process inside the kill-on-close job.
 fn breakaway_flag(in_job: bool, caller_limits: Option<u32>) -> u32 {
