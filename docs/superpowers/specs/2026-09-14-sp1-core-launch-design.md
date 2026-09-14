@@ -115,10 +115,12 @@ Clap's own usage error (exit 2).
 | `<agent> --help`, `<agent> --version` | Launch-form usage text; version | 0 |
 | `<agent>` with no profile | The resolver stub returns `ResolutionSource::None`; error "no profile selected for `<agent>`" (V3 §11 no-profile condition) | 4 |
 | `<agent> <invalid profile>` | `InvalidProfileName`, stating the reason | 4 |
+| `<agent> <profile>` whose name differs only in case from an existing `profiles/` entry | `ProfileCaseConflict` naming the existing entry (§7.3), also under `--dry-run` | 4 |
 | `<agent> <profile> --dry-run` | Dry-run report (§7.4) | 0 |
 | `<agent> <profile>` | Launch (§7) | agent's status |
 
-When several rows apply, the order of checks in §4.2 rule 4 decides.
+When several rows apply, the order of checks in §4.2 rule 4 decides, then the order of steps in §5.1
+(profile validation, application root, configuration, resolution, then §5.1 step 5's sub-steps).
 
 ## 5. Module layout
 
@@ -131,10 +133,21 @@ The SP0 library already has one empty module per V3 §4 layer. SP1 fills them an
 | `config` | `AppRoot` (§6.1), `Config` strict read (§6.2), `config::update` writer (§6.4). | `error` |
 | `exe` | Executable discovery (§7.2). | `config`, `error` |
 | `resolve` | V3 §12 `Resolution` and `ResolutionSource` types verbatim; SP1 stub `resolve(agent, explicit)` returns `Explicit` or `None`. SP3 replaces the body, not the types. | `name` |
-| `adapter` | SP1-internal `plan(&AgentId, &Resolution, &AppRoot, &Config) -> Result<PlannedLaunch>`; one arm, `fake`, under `cfg(debug_assertions)`. No trait: SP2 designs it. | `exe`, `config`, `launch` |
+| `adapter` | SP1-internal `plan(&AgentId, &Resolution, &AppRoot, &Config) -> Result<PlannedLaunch>`; one arm, `fake`, under `cfg(debug_assertions)`; owns the case-only-twin check (§7.3). No trait: SP2 designs it. | `exe`, `config`, `launch`, `resolve`, `name`, `error` |
 | `launch` | `LaunchPlan` (V3 §4 struct, unchanged), `LaunchOutcome`, `launch/unix.rs`, `launch/windows.rs`. | `error` |
-| `output` | Dry-run and `--verbose` rendering, environment-value redaction. | `launch` |
+| `output` | Dry-run and `--verbose` rendering, environment-value redaction. | `adapter` (`PlannedLaunch`), `resolve`, `launch` |
 | `cli` | Clap types, splitter, dispatch; `pub fn run(args: impl IntoIterator<Item = OsString>) -> i32`. | all |
+
+**Public test surface.** Integration tests in `tests/` see only the public API, so these items are `pub`:
+every module listed above (`pub mod`); `LaunchPlan` with all four fields public (V3 §4) and
+`LaunchPlan::command`; `config::AppRoot::from_path(PathBuf) -> AppRoot` (tests build roots for temp
+directories without touching the process environment, since `std::env::set_var` is `unsafe` in edition
+2024); `config::AppRoot::resolve() -> Result<AppRoot>` (§6.1); `config::Config::load(&AppRoot) ->
+Result<Config>` with `Config::agent_executable(&self, id: &str) -> Option<&Path>`; and
+`config::update(&AppRoot, edit) -> Result<()>`. Crate-private, for unit tests inside `config`:
+`update_with(root: &AppRoot, edit, before_persist: impl FnOnce() -> Result<()>, replace: impl FnOnce(&Path,
+&Path) -> std::io::Result<()>) -> Result<()>`, where `update` calls it with a no-op `before_persist` and the
+real `persist` as `replace`.
 
 `PlannedLaunch` carries the `LaunchPlan` plus what dry run reports but the launcher does not need: the
 profile directory, whether it exists, the executable's origin (`Configured` or `Path`) and a one-line
@@ -152,7 +165,8 @@ exit path. The Windows launcher returns `LaunchOutcome::Exited(code)` up through
 3. Resolve the application root; load the configuration.
 4. `resolve::resolve`. (From SP3 a resolver may also produce a profile from a mapping; a name read from
    configuration is validated when it is read, so every `ProfileName` reaching step 5 is valid by type.)
-5. `adapter::plan`: discover the executable; compute `<root>/profiles/<profile>/fake`; build
+5. `adapter::plan`, in this order: (a) discover the executable (§7.2; exit 3 or 6 on failure); (b) the
+   case-only-twin check (§7.3; exit 4); (c) compute `<root>/profiles/<profile>/fake`; (d) build
    `LaunchPlan { executable, args: opaque, env: [("FAKE_AGENT_HOME", dir)], cwd: None }`.
 6. With `--dry-run`: render the report and exit 0. Nothing is created. Executable discovery still runs, so
    a dry run of an agent that is not installed fails with exit 3, exactly like a launch.
@@ -195,15 +209,15 @@ executable = "/absolute/path/to/fake-agent"
 |---|---|---|
 | `Usage { message }` | Grammar violation (§4.2) | 2 |
 | `NotYetImplemented { command }` | Reserved command or `--json` | 2 |
-| `UnknownAgent { agent, known }` | Agent word not in this build | 2 |
-| `AgentNotInstalled { agent, reason }` | `reason` is `NotOnPath` or `ExplicitMissing(path)` | 3 |
+| `UnknownAgent { agent, known, unknown_configured }` | Agent word not in this build; `unknown_configured` lists `agents.<id>` tables for ids this build does not know (empty when the configuration did not load) | 2 |
+| `AgentNotInstalled { agent, reason, unknown_configured }` | `reason` is `NotOnPath` or `ExplicitMissing(path)`; `unknown_configured` as above | 3 |
 | `InvalidProfileName { name, reason }` | V3 §6 | 4 |
 | `NoProfile { agent }` | Resolution returned `None` | 4 |
 | `AppRoot { message }` | §6.1 | 4 |
 | `ConfigInvalid { path, key, detail }` | §6.2 | 4 |
 | `ConfigWrite { path, source }` | Lock, temp-file, sync or replace failure | 4 |
 | `ProfileDir { path, source }` | Cannot create, or exists but is not a directory | 4 |
-| `ProfileCaseConflict { requested, existing }` | A profile directory whose name differs from the requested profile only in ASCII letter case already exists (§7.3) | 4 |
+| `ProfileCaseConflict { requested, existing }` | An entry in `<root>/profiles/` whose name differs from the requested profile only in ASCII letter case already exists (§7.3) | 4 |
 | `UnsupportedExecutable { path }` | `.bat` or `.cmd` | 6 |
 | `Launch { executable, source }` | `exec` or spawn failure; Windows job or handler setup failure | 6 |
 | `Io { context, source }` | Anything else, e.g. writing the dry-run report fails | 1 |
@@ -278,9 +292,10 @@ pub enum LaunchOutcome {
 storage path is `<root>/profiles/<profile>/` exactly as typed. On case-insensitive filesystems (the Windows
 and macOS defaults) `work` and `WORK` would silently share one directory, and with it one agent's
 credentials; on Linux they would be two profiles. So `adapter::plan` (§5.1 step 5, before dry run and before
-lazy creation) lists `<root>/profiles/` when it exists and fails with `ProfileCaseConflict` (exit 4, naming
-the existing directory) if an entry's name equals the requested profile under ASCII case-insensitive
-comparison but not byte-for-byte. Entries whose names are not valid UTF-8 are skipped. A missing
+lazy creation; §5.1 step 5 (b)) lists `<root>/profiles/` when it exists and fails with `ProfileCaseConflict`
+(exit 4, naming the existing entry) if any entry's name - directory, file or symlink alike, since any of
+them blocks a same-named directory on a case-insensitive filesystem - equals the requested profile under
+ASCII case-insensitive comparison but not byte-for-byte. Entries whose names are not valid UTF-8 are skipped. A missing
 `profiles/` directory means no conflict. The check is read-only, so a dry run reports the same error.
 
 `std::fs::create_dir_all(dir)`, then `std::fs::metadata(dir)?.is_dir()` (which follows symlinks, so a
@@ -331,10 +346,14 @@ In this order:
    - `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`: return TRUE at once (the wrapper survives and keeps waiting).
    - `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`: if the child handle has been published
      (step 3), wait on it with `WaitForSingleObject(child, INFINITE)`, then clear the job's limit flags
-     itself (the same call as step 5, on the published job handle), then return TRUE; if nothing has been
-     published, return FALSE. Windows terminates the wrapper as soon as a close-type handler returns and
-     bounds the wait with its own timeout (Microsoft HandlerRoutine "Timeouts"), so the main thread may
-     never reach step 5 on this path; the handler therefore does step 5's work before returning. Without the
+     itself (the same call as step 5, on the published job handle), then block forever
+     (`std::thread::park` in a loop) and never return; if nothing has been published, return FALSE.
+     Windows terminates the wrapper as soon as a close-type handler returns, so a handler that returned
+     could kill the wrapper before the main thread's `process::exit(code)` and replace the agent's exit
+     status; by never returning, the handler lets the main thread (which wakes from the same child exit)
+     finish steps 5-6 and exit with the agent's code, while Windows' own close timeout (Microsoft
+     HandlerRoutine "Timeouts") remains the backstop if the main thread is stuck. Clearing the limit in the
+     handler as well covers that backstop case; two threads clearing the same limit is harmless. Without the
      wait, the wrapper would exit at once and its job would kill the agent mid-cleanup; without the clear,
      the job would kill processes the agent left running. (In practice only `CTRL_CLOSE_EVENT` reaches an
      interactive console application; the logoff and shutdown branches are defensive.) The wrapper never calls
@@ -382,7 +401,7 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_STDIN=1` | Read all of stdin before reporting; `"stdin"` holds it (non-UTF-8 = fixture error 125) |
 | `FAKE_AGENT_STDERR=<text>` | Write `<text>` to stderr after reporting |
 | `FAKE_AGENT_SLEEP_MS=<u64>` | After printing and flushing the report, sleep that long, then exit with the requested code |
-| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with only `FAKE_AGENT_SLEEP_MS=<u64>` set and its stdin, stdout and stderr all null (so it holds none of the wrapper's pipes), and report its PID as `"sleeper_pid"` |
+| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every `FAKE_AGENT_*` variable removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null (so it holds none of the wrapper's pipes), and report its PID as `"sleeper_pid"` |
 | `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): BEFORE printing the report, install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that outlives a wrapper that failed to survive the event |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
@@ -423,7 +442,7 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
 - Failed replacement, two tests with one assertion (`ConfigWrite`, previous content byte-identical, no
   `.config.toml.*.tmp` left):
   - All OSes (unit test in `config`): `update` is implemented over a crate-private
-    `update_with(root, edit, replace)` whose `replace` step is injectable; the test injects a replace step
+    `update_with` (signature in §5) whose `replace` step is injectable; the test injects a replace step
     that returns an error, so step 7 fails deterministically after steps 1-6 succeeded.
   - Windows (integration): the test holds `config.toml` open with `OpenOptionsExt::share_mode` granting
     only `FILE_SHARE_READ` (no `FILE_SHARE_DELETE`), so step 4's read succeeds and the real rename in step 7
@@ -447,8 +466,10 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
   (exit 4) and no launch.
 - Concurrent lazy init: 8 simultaneous first launches of one profile all exit 0.
 - Case-only twin: with `<root>/profiles/work/` present, `fake WORK` and `fake WORK --dry-run` both exit 4
-  with `ProfileCaseConflict` naming `work`, and no `WORK` directory is created on any OS; `fake work` still
-  launches.
+  with `ProfileCaseConflict` naming `work`, and the byte-exact entry names listed from `<root>/profiles/` are
+  exactly `["work"]` afterwards (a `WORK` existence check would be meaningless on case-insensitive
+  filesystems); `fake work` still launches. A fixture-level smoke test asserts the sleeper spawned by
+  `FAKE_AGENT_SPAWN_SLEEPER` reports no `"sleeper_pid"` of its own.
 - Stdio: stdin bytes reach `"stdin"`; `FAKE_AGENT_STDERR` text appears on the wrapper's stderr.
 - Errors: each §4.3 row with a non-zero exit; explicit executable missing (3); empty `PATH` and no override
   (3); corrupt configuration (4, file untouched); a `.cmd` override (6); an override pointing at a non-
@@ -466,7 +487,8 @@ exits 125 on non-Windows). The driver is started with `CREATE_NEW_CONSOLE`, call
 `SetConsoleCtrlHandler(NULL, FALSE)` and installs a swallowing handler for itself, runs the wrapper against a
 sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, and writes a result file.
 The driver never uses `CREATE_NEW_PROCESS_GROUP` for the wrapper (that flag sets the ignore-Ctrl-C
-attribute). It captures the wrapper's stdout and stderr and sends an event only after a readiness signal:
+attribute). It captures the wrapper's stdout and stderr, draining each pipe on its own thread from the moment
+of spawning (so a full pipe can never block the wrapper), and sends an event only after a readiness signal:
 for agent-running tests, after the complete fake-agent report line has been read (the fixture installs its
 handler before printing it); for the swallowed-window test, after the pause marker line has been read.
 
@@ -525,12 +547,13 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 4. `README.md`/`ROADMAP.md`: SP1 row state updated when merged; README gains the `AGENT_PROFILE_HOME` note.
 5. Gates unchanged: `just check`, CI matrix, capstone, test audit.
 
-## 11. Stand-downs and known limits
+## 11. Known limits
 
 - The Windows event window from handler installation until the child attaches to the console (§7.6).
 - The close/logoff/shutdown handler path (§7.6 step 2) is argued from Microsoft's HandlerRoutine
   documentation, not tested: CI cannot close a console window.
 - `std::fs::rename` is assumed atomic on Windows (§6.4).
+- Release builds of SP1 know no agents; every launch in a release build is `UnknownAgent`.
 - The case-only-twin check (§7.3) is not atomic with directory creation: two simultaneous first launches of
   `work` and `WORK` on a case-sensitive filesystem can both pass it. Not defended; it needs two conflicting
   names launched in the same instant.
@@ -542,8 +565,16 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 
 ## 12. Stand-downs
 
-Findings from the AGY-AFTER panel that were not folded, one line each. Rounds 1-2 ran on the agy peer; round
-3 ran on three independent subagent reviewers at the owner's direction after the peer hit quota failures.
+Findings from the AGY-AFTER panel that were not folded, one line each. Rounds 1-2 ran on the agy peer; rounds
+3-5 ran on independent subagent reviewers at the owner's direction after the peer hit quota failures.
+
+- DISCARDED-BELOW-FLOOR: "a lone `-` is classified as an option token" - §4.2 rule 3 defines every element
+  beginning with `-` as an option token and check 5 rejects it deterministically; no implementer divergence.
+- DISCARDED-BELOW-FLOOR: "`--dry-run=yes` is rejected" - §4.2 check 5 compares option tokens by exact string;
+  no implementer divergence.
+- DISCARDED-BELOW-FLOOR: "the default-agent Ctrl-C test alone cannot distinguish a working wrapper" - the
+  handled-agent Ctrl-C and Ctrl-Break tests (§8.4) are the discriminating tests; the default-agent test only
+  pins exit-code propagation.
 
 - DISCARDED-BELOW-FLOOR: "no dedicated shell-metacharacter passthrough test" - shell mediation is excluded
   structurally: §7.1 builds the child only through `LaunchPlan::command` (`std::process::Command`, no shell),
@@ -567,4 +598,3 @@ Findings from the AGY-AFTER panel that were not folded, one line each. Rounds 1-
   durability is unconfirmed, and the message states that the replace happened.
 - REJECTED: "the concurrent lazy-init test proves nothing" - V3 §9.1 requires exactly idempotent
   `create_dir_all` with a directory check for a single resource; the test targets that contract.
-- Release builds of SP1 know no agents; every launch in a release build is `UnknownAgent`.
