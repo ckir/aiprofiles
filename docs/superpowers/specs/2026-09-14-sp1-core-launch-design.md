@@ -84,6 +84,8 @@ Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`.
    - an element that begins with `-` must be a wrapper option; anything else is a usage error;
    - wrapper options may appear anywhere after the agent word;
    - at most one bare word may remain, and it must be valid UTF-8 (a non-UTF-8 word is a usage error);
+   - an empty string is a bare word (it does not begin with `-`); as a profile it fails V3 §6 with
+     `InvalidProfileName` (exit 4);
    - a second bare word is a usage error: "agent arguments must follow `--`".
 5. If the bare word equals a reserved word (ASCII case-insensitive), the invocation is an agent-scoped
    command. Otherwise it is a profile name and goes through §6 validation of V3.
@@ -135,9 +137,10 @@ exit path. The Windows launcher returns `LaunchOutcome::Exited(code)` up through
 ### 5.1 Launch data flow
 
 1. Parse (§4).
-2. Validate the profile name.
+2. If a profile word was given, validate it (V3 §6) before anything touches the filesystem.
 3. Resolve the application root; load the configuration.
-4. `resolve::resolve`.
+4. `resolve::resolve`. (From SP3 a resolver may also produce a profile from a mapping; a name read from
+   configuration is validated when it is read, so every `ProfileName` reaching step 5 is valid by type.)
 5. `adapter::plan`: discover the executable; compute `<root>/profiles/<profile>/fake`; build
    `LaunchPlan { executable, args: opaque, env: [("FAKE_AGENT_HOME", dir)], cwd: None }`.
 6. With `--dry-run`: render the report and exit 0. Nothing is created. Executable discovery still runs, so
@@ -204,15 +207,19 @@ library-level only in SP1 (no CLI command writes configuration yet).
 2. Open or create `<root>/config.toml.lock` and call `File::lock()`. Any error: `ConfigWrite`, nothing written.
    The lock file is never deleted or replaced.
 3. Delete files in the root named `.config.toml.*.tmp`. Under the lock no writer is active, so they are
-   leftovers of crashed writers.
+   leftovers of crashed writers. The sweep is best-effort: a deletion error is ignored (and mentioned only
+   under `--verbose` once a CLI command writes), so an undeletable leftover never blocks a write.
 4. Read `config.toml` (missing = empty document), parse it with `toml_edit` and validate it against §6.2.
    Invalid: `ConfigInvalid`, file untouched.
 5. Apply `edit`; validate the result against §6.2. Invalid: `ConfigInvalid`, file untouched.
 6. Create a `tempfile::Builder` temp file in the root with prefix `.config.toml.` and suffix `.tmp`; write
    the document; `sync_all`.
-7. `persist` onto `config.toml`. On Unix, open the root directory and `sync_all` it. Any error:
-   `ConfigWrite`; the temp file is removed; the previous `config.toml` is untouched. There is no
-   non-atomic fallback (V3 §18.1).
+7. `persist` onto `config.toml`. A `persist` error: `ConfigWrite`; the temp file is removed; the previous
+   `config.toml` is untouched. There is no non-atomic fallback (V3 §18.1).
+7a. After a successful `persist`, on Unix open the root directory and `sync_all` it. The new configuration
+   is already the active file at this point, so a failure here must NOT claim the old file survived: it is
+   `ConfigWrite` with the message "configuration replaced, but the directory could not be synced; the change
+   may not survive a power loss".
 8. Release the lock (drop).
 
 **§18.1 assumption, documented:** SP1 treats `std::fs::rename` as the platform's atomic replace on all three
@@ -241,7 +248,8 @@ pub enum LaunchOutcome {
 
 1. Explicit override `agents.<id>.executable`: must exist and be a file, else
    `AgentNotInstalled { ExplicitMissing(path) }` (exit 3).
-2. Otherwise search `PATH` in order for the adapter's executable name (`fake-agent` for `fake`). Unix: a
+2. Otherwise search `PATH` in order (hand-rolled: `std::env::var_os("PATH")` split with
+   `std::env::split_paths`; empty entries skipped; no new crate) for the adapter's executable name (`fake-agent` for `fake`). Unix: a
    regular file (after following symlinks) with at least one of the owner, group or other execute bits set. Windows: `<name>.exe`. Not found: `AgentNotInstalled { NotOnPath }`.
 3. A resolved path whose extension is `.bat` or `.cmd` (ASCII case-insensitive, any platform) is
    `UnsupportedExecutable` (exit 6). No shell is ever involved.
@@ -271,8 +279,11 @@ arguments:    ["--foo", "bar"]
 - `(would be created)` appears only when the directory does not exist.
 - Arguments are rendered with Rust `{:?}` string quoting; a non-UTF-8 argument is rendered lossily followed
   by ` (non-UTF-8)`.
-- Redaction: when an override variable's name contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD` or `CREDENTIAL`
-  (ASCII case-insensitive), its value renders as `<redacted>`.
+- Redaction (V3 §22 "Secret-bearing environment values must not be printed"): `PlannedLaunch` carries a
+  `sensitive_env: Vec<OsString>` list declared by the adapter; a listed variable's value renders as
+  `<redacted>`. As a backstop, any override whose name contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD`,
+  `CREDENTIAL` or `AUTH` (ASCII case-insensitive) is also redacted. SP1's `fake` declares none; the SP2
+  adapter contract makes the declaration mandatory for every override.
 - `--verbose` on a real launch renders the same lines to stderr, each prefixed `agent-profile: `.
 
 ### 7.5 Unix (V3 §23.1)
@@ -434,5 +445,24 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 - `std::fs::rename` is assumed atomic on Windows (§6.4).
 - `File::lock` may be advisory; every writer is `agent-profile` itself. A user deleting `config.toml.lock`
   during a write can break mutual exclusion; not defended.
-- Dry-run redaction is name-based; SP1's only override (`FAKE_AGENT_HOME`) carries no secret.
+- Dry-run and `--verbose` render paths from the invoking user's own environment (`AGENT_PROFILE_HOME`,
+  `PATH`) and configuration without escaping terminal control characters; that input is the user's own,
+  not repository-controlled (V3 §1, §36), and opaque arguments are already rendered with `{:?}` quoting.
+
+## 12. Stand-downs
+
+Findings from the AGY-AFTER panel that were not folded, one line each.
+
+- DISCARDED-BELOW-FLOOR: terminal escape sequences in dry-run output via `AGENT_PROFILE_HOME` - unreachable
+  as an attack because that variable is set by the invoking user (§6.1), outside V3 §36's
+  repository-controlled trust boundary.
+- REJECTED: "Windows readers without `FILE_SHARE_DELETE` block the rename" - std's default share mode is
+  `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE` (`library/std/src/sys/fs/windows.rs:210`).
+- REJECTED: "self-assigning to a job fails inside an existing job" - Microsoft `AssignProcessToJobObject`:
+  since Windows 8 the target job "must be empty or ... in the hierarchy of nested jobs ... and it cannot have
+  UI limits set"; the SP1 job is new, empty and has no UI limits.
+- REJECTED: "`std::env::home_dir` is deprecated" - compiled with `#![deny(deprecated)]` on Rust 1.98
+  without a diagnostic (driver measurement, 2026-09-14).
+- REJECTED: "the concurrent lazy-init test proves nothing" - V3 §9.1 requires exactly idempotent
+  `create_dir_all` with a directory check for a single resource; the test targets that contract.
 - Release builds of SP1 know no agents; every launch in a release build is `UnknownAgent`.
