@@ -67,7 +67,10 @@ agent-profile <agent> <reserved-agent-word> ...
 agent-profile --help | --version
 ```
 
-Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`.
+Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`, `-V`/`--version` (after the agent word,
+`--version` prints the version and exits 0, exactly like the top-level form). Options placed BEFORE the agent
+word are parsed by Clap at the top level, which knows only `--help` and `--version`; anything else there is
+Clap's own usage error (exit 2).
 
 ### 4.2 Parsing rules
 
@@ -83,7 +86,12 @@ Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`.
 4. Before the cut:
    - an element that begins with `-` must be a wrapper option; anything else is a usage error;
    - wrapper options may appear anywhere after the agent word;
-   - at most one bare word may remain, and it must be valid UTF-8 (a non-UTF-8 word is a usage error);
+   - if the FIRST bare word equals a reserved word (ASCII case-insensitive), the invocation is an
+     agent-scoped command and every later element before the cut belongs to that command: rule 5 applies
+     at once and the bare-word count below is not checked (so `claude create work` is
+     `NotYetImplemented`, never a usage error);
+   - otherwise at most one bare word may remain, and it must be valid UTF-8 (a non-UTF-8 word is a usage
+     error);
    - an empty string is a bare word (it does not begin with `-`); as a profile it fails V3 §6 with
      `InvalidProfileName` (exit 4);
    - a second bare word is a usage error: "agent arguments must follow `--`".
@@ -106,7 +114,8 @@ Wrapper options: `--dry-run`, `--verbose`, `--json`, `-h`/`--help`.
 | `<agent> <profile>` | Launch (§7) | agent's status |
 
 Precedence when several apply: `-h`/`--help` anywhere before `--` first (launch-form usage, exit 0, even for
-an unknown agent), then usage errors from rule 4 of §4.2, then `--json`, then unknown agent, then reserved
+an unknown agent), then `-V`/`--version` (exit 0), then reserved-word routing of the first bare word, then
+usage errors from rule 4 of §4.2, then `--json`, then unknown agent, then reserved
 word, then profile validation.
 
 ## 5. Module layout
@@ -204,8 +213,10 @@ Once the agent has started, its exit status is the wrapper's exit status (V3 §3
 library-level only in SP1 (no CLI command writes configuration yet).
 
 1. Create the root directory if missing.
-2. Open or create `<root>/config.toml.lock` and call `File::lock()`. Any error: `ConfigWrite`, nothing written.
-   The lock file is never deleted or replaced.
+2. Open or create `<root>/config.toml.lock` and acquire the exclusive lock with `File::try_lock()`, retrying
+   every 50 ms for at most 10 s. Timeout: `ConfigWrite` "another agent-profile process holds
+   `<root>/config.toml.lock`; retry, or check for a stuck process". Any other error: `ConfigWrite`. Nothing is
+   written in either case. The lock file is never deleted or replaced.
 3. Delete files in the root named `.config.toml.*.tmp`. Under the lock no writer is active, so they are
    leftovers of crashed writers. The sweep is best-effort: a deletion error is ignored (and mentioned only
    under `--verbose` once a CLI command writes), so an undeletable leftover never blocks a write.
@@ -251,6 +262,9 @@ pub enum LaunchOutcome {
 2. Otherwise search `PATH` in order (hand-rolled: `std::env::var_os("PATH")` split with
    `std::env::split_paths`; empty entries skipped; no new crate) for the adapter's executable name (`fake-agent` for `fake`). Unix: a
    regular file (after following symlinks) with at least one of the owner, group or other execute bits set. Windows: `<name>.exe`. Not found: `AgentNotInstalled { NotOnPath }`.
+   When `config.toml` has `agents.<id>` tables for ids this build does not know, every `AgentNotInstalled`
+   message lists them ("config.toml also configures unknown agents: `fakr`"), so a misspelled table is
+   visible at the moment it matters.
 3. A resolved path whose extension is `.bat` or `.cmd` (ASCII case-insensitive, any platform) is
    `UnsupportedExecutable` (exit 6). No shell is ever involved.
 
@@ -404,6 +418,11 @@ sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, 
 - Normal completion and non-zero exit through the job path.
 - No orphan: kill the wrapper mid-sleep; the fake agent's PID is gone within a bounded wait.
 - Background survival: after a normal exit, `"sleeper_pid"` is still alive; the test then kills it.
+- Every PID a test learns (fake agent, sleeper, wrapper) is held by a drop guard that kills it if still alive,
+  so a panicking assertion cannot leak processes onto the runner.
+- `GenerateConsoleCtrlEvent(event, 0)` targets every process attached to the CALLER's console. Only
+  `console-driver`, running in its own `CREATE_NEW_CONSOLE` console, may call it; the test process itself
+  must never share that console, or the event would reach the test runner.
 - Terminated before child creation: the debug-only hook `AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS`
   (`cfg(all(windows, debug_assertions))`, read only by the Windows launcher, sleeps immediately before
   step 3; unparsable values are ignored) lets the test kill the wrapper in that window;
@@ -463,6 +482,9 @@ Findings from the AGY-AFTER panel that were not folded, one line each.
   UI limits set"; the SP1 job is new, empty and has no UI limits.
 - REJECTED: "`std::env::home_dir` is deprecated" - compiled with `#![deny(deprecated)]` on Rust 1.98
   without a diagnostic (driver measurement, 2026-09-14).
+- REJECTED: "directory-sync failure after a successful replace should not be exit 4" - V3 §33 has no
+  I/O-warning class; `4 profile/configuration error` is the closest code for a configuration write whose
+  durability is unconfirmed, and the message states that the replace happened.
 - REJECTED: "the concurrent lazy-init test proves nothing" - V3 §9.1 requires exactly idempotent
   `create_dir_all` with a directory check for a single resource; the test targets that contract.
 - Release builds of SP1 know no agents; every launch in a release build is `UnknownAgent`.
