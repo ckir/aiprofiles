@@ -54,6 +54,7 @@ Each fork was consulted with the agy peer first (AGY-FIRST); the owner decided.
 | D6 | CLI parsing: Clap derive for top-level reserved words, `external_subcommand` capturing `<agent> …`, a hand-written splitter for the rest. | ALIGNED (consult breached review-only; owner waived the re-run; driver re-verified) | Measured: `external_subcommand` yields `["claude","work","--dry-run","--","--dry-run"]` verbatim. |
 | D7 | Unknown keys inside a known configuration table are a configuration error. | recommended lenient reads; owner chose strict | A misspelled key fails loudly instead of surfacing as "agent not installed". |
 | D8 | Executable discovery refuses `.bat` and `.cmd`. | ALIGNED | `library/std/src/sys/process/windows.rs` runs batch files through `cmd.exe` (V3 §23.2 forbids shell mediation). |
+| D9 | A profile whose name differs from an existing profile directory only in letter case is refused (§7.3). | not consulted (peer on quota failure; found by the round-4 subagent panel); owner chose refusal over case-folding, lowercase-only names, or documenting the limit | Case-insensitive default filesystems on Windows and macOS would otherwise merge two profiles into one directory. |
 
 ## 4. Command surface
 
@@ -202,6 +203,7 @@ executable = "/absolute/path/to/fake-agent"
 | `ConfigInvalid { path, key, detail }` | §6.2 | 4 |
 | `ConfigWrite { path, source }` | Lock, temp-file, sync or replace failure | 4 |
 | `ProfileDir { path, source }` | Cannot create, or exists but is not a directory | 4 |
+| `ProfileCaseConflict { requested, existing }` | A profile directory whose name differs from the requested profile only in ASCII letter case already exists (§7.3) | 4 |
 | `UnsupportedExecutable { path }` | `.bat` or `.cmd` | 6 |
 | `Launch { executable, source }` | `exec` or spawn failure; Windows job or handler setup failure | 6 |
 | `Io { context, source }` | Anything else, e.g. writing the dry-run report fails | 1 |
@@ -271,6 +273,15 @@ pub enum LaunchOutcome {
    `UnsupportedExecutable` (exit 6). No shell is ever involved.
 
 ### 7.3 Lazy profile directory (V3 §9, §9.1)
+
+**Case-only twins are refused (owner decision D9).** V3 §6 allows upper- and lower-case letters, and the
+storage path is `<root>/profiles/<profile>/` exactly as typed. On case-insensitive filesystems (the Windows
+and macOS defaults) `work` and `WORK` would silently share one directory, and with it one agent's
+credentials; on Linux they would be two profiles. So `adapter::plan` (§5.1 step 5, before dry run and before
+lazy creation) lists `<root>/profiles/` when it exists and fails with `ProfileCaseConflict` (exit 4, naming
+the existing directory) if an entry's name equals the requested profile under ASCII case-insensitive
+comparison but not byte-for-byte. Entries whose names are not valid UTF-8 are skipped. A missing
+`profiles/` directory means no conflict. The check is read-only, so a dry run reports the same error.
 
 `std::fs::create_dir_all(dir)`, then `std::fs::metadata(dir)?.is_dir()` (which follows symlinks, so a
 symlink to a directory counts) must be true, else `ProfileDir`. An already-exists race is success once the path is verified to be a directory.
@@ -435,6 +446,9 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
 - Lazy init: the profile directory exists after a launch; a regular file at that path gives `ProfileDir`
   (exit 4) and no launch.
 - Concurrent lazy init: 8 simultaneous first launches of one profile all exit 0.
+- Case-only twin: with `<root>/profiles/work/` present, `fake WORK` and `fake WORK --dry-run` both exit 4
+  with `ProfileCaseConflict` naming `work`, and no `WORK` directory is created on any OS; `fake work` still
+  launches.
 - Stdio: stdin bytes reach `"stdin"`; `FAKE_AGENT_STDERR` text appears on the wrapper's stderr.
 - Errors: each §4.3 row with a non-zero exit; explicit executable missing (3); empty `PATH` and no override
   (3); corrupt configuration (4, file untouched); a `.cmd` override (6); an override pointing at a non-
@@ -517,6 +531,9 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 - The close/logoff/shutdown handler path (§7.6 step 2) is argued from Microsoft's HandlerRoutine
   documentation, not tested: CI cannot close a console window.
 - `std::fs::rename` is assumed atomic on Windows (§6.4).
+- The case-only-twin check (§7.3) is not atomic with directory creation: two simultaneous first launches of
+  `work` and `WORK` on a case-sensitive filesystem can both pass it. Not defended; it needs two conflicting
+  names launched in the same instant.
 - `File::lock` may be advisory; every writer is `agent-profile` itself. A user deleting `config.toml.lock`
   during a write can break mutual exclusion; not defended.
 - Dry-run and `--verbose` render paths from the invoking user's own environment (`AGENT_PROFILE_HOME`,
