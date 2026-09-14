@@ -199,8 +199,9 @@ fn processes_the_agent_left_running_survive_a_normal_exit() {
 
 #[test]
 fn breakaway_process_creation_matches_direct_invocation() {
-    // CREATE_BREAKAWAY_FROM_JOB succeeds only if every job around the caller allows breakaway. Whatever the test
-    // runner's own jobs allow, the wrapper must not change the outcome (V3 §24): compare against a direct run.
+    // CREATE_BREAKAWAY_FROM_JOB fails when the creator's innermost job forbids breakaway. Whatever the test
+    // runner's own job allows (cargo test's job forbids it, nextest's per-test job allows it, both measured), the
+    // wrapper must not change the outcome (V3 §24): compare against a direct run.
     let env = [("FAKE_AGENT_SPAWN_SLEEPER", "1000"), ("FAKE_AGENT_BREAKAWAY", "1")];
     let mut direct = support::fake_agent();
     let root = Root::new();

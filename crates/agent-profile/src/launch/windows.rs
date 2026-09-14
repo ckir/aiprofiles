@@ -4,7 +4,7 @@
 use std::io::{self, Write};
 use std::mem::{size_of, zeroed};
 use std::os::windows::io::AsRawHandle;
-use std::ptr::null;
+use std::ptr::{null, null_mut};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -17,9 +17,9 @@ use windows_sys::Win32::System::Console::{
     SetConsoleCtrlHandler,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectExtendedLimitInformation, SetInformationJobObject,
+    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, INFINITE, WaitForSingleObject};
 use windows_sys::core::BOOL;
@@ -31,6 +31,8 @@ use crate::error::{Error, Result};
 struct Published {
     job: usize,
     child: usize,
+    /// The job's limit flags once released: the inherited breakaway flag only.
+    breakaway: u32,
 }
 
 static PUBLISHED: OnceLock<Published> = OnceLock::new();
@@ -39,12 +41,46 @@ static PUBLISHED: OnceLock<Published> = OnceLock::new();
 /// the same process is refused instead of silently running without its close-event guarantees.
 static LAUNCHED: AtomicBool = AtomicBool::new(false);
 
-/// Job limits while the agent runs: kill everything if the wrapper dies, but let the agent create processes with
-/// `CREATE_BREAKAWAY_FROM_JOB`, exactly as it could when started directly.
-const WHILE_RUNNING: u32 = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+/// `CREATE_BREAKAWAY_FROM_JOB` fails with access denied when the creating process's innermost job lacks
+/// `JOB_OBJECT_LIMIT_BREAKAWAY_OK` (measured). The wrapper's job therefore copies that one flag from the job the
+/// wrapper was started in, so the agent's breakaway attempts succeed or fail exactly as under direct invocation.
+/// Outside any job, breakaway is allowed. If the caller's job cannot be queried, breakaway is not allowed: the
+/// agent then keeps every process inside the kill-on-close job.
+fn breakaway_flag(in_job: bool, caller_limits: Option<u32>) -> u32 {
+    match (in_job, caller_limits) {
+        (false, _) => JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        (true, Some(limits)) => limits & JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        (true, None) => 0,
+    }
+}
 
-/// Job limits after the agent exits: nothing is killed, and breakaway stays allowed for what the agent left running.
-const RELEASED: u32 = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+/// The breakaway flag of the job this process is running in, per `breakaway_flag`.
+fn inherited_breakaway_flag() -> u32 {
+    let mut in_job = FALSE;
+    // SAFETY: a null job handle asks whether the process is in any job; `in_job` is a valid out pointer.
+    if unsafe { IsProcessInJob(GetCurrentProcess(), null_mut(), &mut in_job) } == FALSE {
+        return breakaway_flag(true, None);
+    }
+    if in_job == FALSE {
+        return breakaway_flag(false, None);
+    }
+    // SAFETY: an all-zero JOBOBJECT_EXTENDED_LIMIT_INFORMATION is a valid out buffer of the right size.
+    let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+    // SAFETY: a null job handle queries the job this process is associated with; the buffer and size match.
+    let queried = unsafe {
+        QueryInformationJobObject(
+            null_mut(),
+            JobObjectExtendedLimitInformation,
+            (&mut info as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            null_mut(),
+        )
+    };
+    if queried == FALSE {
+        return breakaway_flag(true, None);
+    }
+    breakaway_flag(true, Some(info.BasicLimitInformation.LimitFlags))
+}
 
 /// Debug-only hook: sleep this many milliseconds immediately before spawning (design §8.4).
 #[cfg(debug_assertions)]
@@ -55,13 +91,15 @@ pub(super) fn launch(plan: &LaunchPlan, verbose: bool) -> Result<LaunchOutcome> 
         |source: io::Error| Error::Launch { executable: plan.executable.clone(), source };
     claim_single_launch().map_err(launch_error)?;
 
-    // 1. Job: the wrapper joins a kill-on-close job, so its children die if it is killed.
+    // 1. Job: the wrapper joins a kill-on-close job, so its children die if it is killed. Breakaway is allowed in
+    // the new job exactly when the job the wrapper started in allows it.
+    let breakaway = inherited_breakaway_flag();
     // SAFETY: plain Win32 calls with valid arguments; the job handle stays open until process exit.
     let job = unsafe { CreateJobObjectW(null(), null()) };
     if job.is_null() {
         return Err(launch_error(io::Error::last_os_error()));
     }
-    if !set_limits(job, WHILE_RUNNING) {
+    if !set_limits(job, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | breakaway) {
         return Err(launch_error(io::Error::last_os_error()));
     }
     // SAFETY: `job` is a valid job handle and `GetCurrentProcess` is always valid.
@@ -99,14 +137,15 @@ pub(super) fn launch(plan: &LaunchPlan, verbose: bool) -> Result<LaunchOutcome> 
         )
     };
     if duplicated != FALSE {
-        let _ = PUBLISHED.set(Published { job: job as usize, child: duplicate as usize });
+        let _ =
+            PUBLISHED.set(Published { job: job as usize, child: duplicate as usize, breakaway });
     }
 
     // 4. Wait.
     let status = child.wait().map_err(launch_error)?;
 
     // 5. Release the job so processes the agent left running survive the wrapper's exit.
-    if !set_limits(job, RELEASED) && verbose {
+    if !set_limits(job, breakaway) && verbose {
         let _ = writeln!(
             io::stderr(),
             "agent-profile: could not release the job object: {}",
@@ -148,7 +187,7 @@ unsafe extern "system" fn handler(event: u32) -> BOOL {
             Some(published) => {
                 // SAFETY: `child` is an owned SYNCHRONIZE duplicate that is never closed.
                 unsafe { WaitForSingleObject(published.child as HANDLE, INFINITE) };
-                set_limits(published.job as HANDLE, RELEASED);
+                set_limits(published.job as HANDLE, published.breakaway);
                 // Never return: returning lets Windows terminate the wrapper before `main` exits with the
                 // agent's code. Windows' own close timeout remains the backstop.
                 loop {
@@ -174,10 +213,14 @@ mod tests {
     }
 
     #[test]
-    fn breakaway_stays_allowed_in_both_job_states() {
-        assert_ne!(WHILE_RUNNING & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, 0);
-        assert_eq!(RELEASED & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, 0);
-        assert_ne!(WHILE_RUNNING & JOB_OBJECT_LIMIT_BREAKAWAY_OK, 0);
-        assert_ne!(RELEASED & JOB_OBJECT_LIMIT_BREAKAWAY_OK, 0);
+    fn breakaway_mirrors_the_callers_job() {
+        const OTHER: u32 = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        assert_eq!(breakaway_flag(false, None), JOB_OBJECT_LIMIT_BREAKAWAY_OK);
+        assert_eq!(
+            breakaway_flag(true, Some(OTHER | JOB_OBJECT_LIMIT_BREAKAWAY_OK)),
+            JOB_OBJECT_LIMIT_BREAKAWAY_OK
+        );
+        assert_eq!(breakaway_flag(true, Some(OTHER)), 0);
+        assert_eq!(breakaway_flag(true, None), 0);
     }
 }
