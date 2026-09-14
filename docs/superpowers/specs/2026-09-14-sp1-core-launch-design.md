@@ -185,7 +185,7 @@ exit path. The Windows launcher returns `LaunchOutcome::Exited(code)` up through
 
 - `AGENT_PROFILE_HOME` set: it must be non-empty and an absolute path; that path is the root.
 - Unset: `std::env::home_dir()` joined with `.agent-profile`.
-- Empty or relative `AGENT_PROFILE_HOME`, or no home directory: `AppRoot` error (exit 4) advising to set
+- Empty or relative `AGENT_PROFILE_HOME`, or no home directory, or a relative home directory (for example a relative `USERPROFILE`, which `std::env::home_dir` returns verbatim): `AppRoot` error (exit 4) advising to set
   `AGENT_PROFILE_HOME` to an absolute path.
 - Resolving the root never creates it.
 
@@ -352,8 +352,13 @@ success the agent replaces the wrapper: same PID, exit status and stdio; no wrap
 
 In this order:
 
-1. **Job.** `CreateJobObjectW`; `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`;
-   `AssignProcessToJobObject(GetCurrentProcess())`. Any failure: `Launch` (exit 6) before a child exists.
+0. **Once per process.** A second launch in the same process is refused with `Launch` (exit 6): the control
+   handler and its published handles describe exactly one child.
+1. **Job.** `CreateJobObjectW`; `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+   JOB_OBJECT_LIMIT_BREAKAWAY_OK`; `AssignProcessToJobObject(GetCurrentProcess())`. Any failure: `Launch` (exit
+   6) before a child exists. Breakaway stays allowed because a job without it makes every
+   `CREATE_BREAKAWAY_FROM_JOB` process creation inside it fail with access denied (measured, os error 5), which
+   direct invocation does not do; a process that breaks away has deliberately detached and is not killed.
 2. **Handler.** `SetConsoleCtrlHandler(Some(handler), TRUE)`. The child shares the console and receives
    every event itself. The handler:
    - `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`: return TRUE at once (the wrapper survives and keeps waiting).
@@ -379,7 +384,7 @@ In this order:
    process exit; `child` is a `DuplicateHandle` copy of the child's process handle with `SYNCHRONIZE` access,
    owned by the global and never closed, so it stays valid after `Child` is dropped.
 4. **Wait.**
-5. **Release the job.** `SetInformationJobObject` with no limit flags, so processes the agent left running
+5. **Release the job.** `SetInformationJobObject` with only `JOB_OBJECT_LIMIT_BREAKAWAY_OK`, so processes the agent left running
    survive the wrapper's exit. A failure is reported only under `--verbose`; it does not change the exit code.
 6. **Return** `LaunchOutcome::Exited(code)` with the child's full 32-bit exit code; `main` passes it to
    `std::process::exit` (§5), which preserves all 32 bits (M2). The job handle is closed by that exit.
@@ -414,7 +419,8 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_STDIN=1` | Read all of stdin before reporting; `"stdin"` holds it (non-UTF-8 = fixture error 125) |
 | `FAKE_AGENT_STDERR=<text>` | Write `<text>` to stderr after reporting |
 | `FAKE_AGENT_SLEEP_MS=<u64>` | After printing and flushing the report, sleep that long, then exit with the requested code |
-| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every fixture control variable (the seven `FAKE_AGENT_*` variables this table and SP0 define) removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null, and report its PID as `"sleeper_pid"`. On Windows a spawned process also inherits every inheritable handle, including the pipes the fixture's own stdout and stderr are attached to (measured in the prototype), so a test must never wait for the wrapper's pipes to close while a sleeper runs |
+| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with every fixture control variable (the eight `FAKE_AGENT_*` variables this table and SP0 define) removed from its environment and then `FAKE_AGENT_SLEEP_MS=<u64>` set (so the copy never spawns another sleeper), with its stdin, stdout and stderr all null, and report its PID as `"sleeper_pid"`. On Windows a spawned process also inherits every inheritable handle, including the pipes the fixture's own stdout and stderr are attached to (measured in the prototype), so a test must never wait for the wrapper's pipes to close while a sleeper runs |
+| `FAKE_AGENT_BREAKAWAY=1` | Windows only (a fixture error elsewhere): spawn the `FAKE_AGENT_SPAWN_SLEEPER` sleeper with `CREATE_BREAKAWAY_FROM_JOB` |
 | `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): BEFORE printing the report, install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that outlives a wrapper that failed to survive the event |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
@@ -521,6 +527,9 @@ handler before printing it); for the swallowed-window test, after the pause mark
   and the wrapper exits exactly 7 (an event that reached a running agent would have produced `0xC000013A`
   instead).
 - Normal completion and non-zero exit through the job path.
+- Breakaway equivalence: a fake agent spawning its sleeper with `FAKE_AGENT_BREAKAWAY=1` exits with the same code
+  directly and through the wrapper. (If the test runner's own jobs forbid breakaway both runs fail alike and the
+  test cannot discriminate; on this machine under nextest removing `JOB_OBJECT_LIMIT_BREAKAWAY_OK` made it fail.)
 - No orphan: kill the wrapper mid-sleep; the fake agent has exited within a bounded wait, checked by waiting
   on its process handle (`WaitForSingleObject`) or `GetExitCodeProcess`, never by "the PID can be opened".
 - Background survival: the test reads the report line, waits for the wrapper process (never for its pipes,
