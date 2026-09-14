@@ -8,8 +8,9 @@ A local, privacy-first Rust CLI for selecting and launching profiles for multipl
 Agent Profile never copies credentials, extracts tokens, sends telemetry or trusts
 repository-controlled profile selection.
 
-**Status: scaffold.** The workspace, tooling and CI exist; no profile behaviour is implemented yet. The
-authoritative design is
+**Status: core and launcher (SP1).** Profile-name validation, configuration, and the explicit launch path
+(`exec` on Unix, a supervised child on Windows) exist. No real agent adapter ships yet, so release builds
+know no agents; see [ROADMAP.md](ROADMAP.md). The authoritative design is
 [`agent-profile-implementation-spec-v3.md`](agent-profile-implementation-spec-v3.md).
 
 ## Architecture
@@ -34,14 +35,18 @@ Coding Agent
 
 Adapters produce a `LaunchPlan`; they never spawn processes.
 
-## Usage (planned)
+## Usage
 
 ```text
 agent-profile <agent> <profile> [WRAPPER OPTIONS] [-- <agent args...>]
 agent-profile <agent> [WRAPPER OPTIONS] [-- <agent args...>]
 ```
 
-Everything after `--` is passed to the agent untouched. Profile resolution order: explicit profile >
+Everything after `--` is passed to the agent untouched. `--dry-run` shows what would be launched without
+launching or creating anything.
+
+Configuration and profiles live in `~/.agent-profile/` (`%USERPROFILE%\.agent-profile\` on Windows). Set
+`AGENT_PROFILE_HOME` to an absolute path to use another directory. Profile resolution order: explicit profile >
 agent-specific repository mapping > repository-wide mapping > global default > none.
 
 ## Planned adapters — not yet implemented or evidence-verified

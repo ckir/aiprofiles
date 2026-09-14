@@ -2,18 +2,12 @@
 
 Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 
-## SP1 open decisions
+## SP2 open decisions
 
-- [ ] **Windows Ctrl-C mechanism** (spec §23.2, §24). Verify against Microsoft's documentation whether
-      `SetConsoleCtrlHandler(NULL, TRUE)` is inherited by child processes. If it is, using it would make
-      the launched agent ignore Ctrl-C. Candidate mechanism: a handler routine in the wrapper plus a job
-      object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` for the no-orphan requirement. The observable
-      behaviour in §24 is the oracle.
-- [ ] **Application root** (spec §7). Choose the platform-appropriate location (and whether to use a
-      crate for it), keeping it injectable for tests.
-- [ ] **Configuration lock and atomic replace** (spec §18). Choose the file-lock mechanism, and how to get
-      a guaranteed atomic replace on Windows; §18.1 forbids a silent non-atomic fallback.
-- [ ] **Structured error types** and their mapping to the §33 exit codes.
+- [ ] **Launching `.cmd`/`.bat` shims without shell mediation** (spec §20, §23.2). npm installs agents on
+      Windows as `<name>.cmd` shims, and Rust's `std::process::Command` runs batch files through `cmd.exe`.
+      SP1 refuses `.bat` and `.cmd` executables outright (SP1 design D8); SP2 must decide how a real adapter
+      launches a shim-installed agent directly.
 
 ## SP3 open decisions
 
@@ -27,8 +21,8 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       protection is applied during SP0 (design §4.1).
 - [ ] The MSRV (1.98) is not checked in CI; verify by hand with
       `cargo +1.98 check --workspace --all-targets`. Decide whether to add a CI job.
-- [ ] `cargo install --path crates/agent-profile` also installs the `fake-agent` test fixture binary.
-      Not reachable from any gate or release (release.yml builds `--bin agent-profile`); revisit if
+- [ ] `cargo install --path crates/agent-profile` also installs the `fake-agent` and `console-driver` test
+      binaries. Not reachable from any gate or release (release.yml builds `--bin agent-profile`); revisit if
       source installs are ever documented.
 
 ## Scaffold follow-ups
