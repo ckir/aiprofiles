@@ -25,6 +25,10 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       binaries. Not reachable from any gate or release (release.yml builds `--bin agent-profile`); revisit if
       source installs are ever documented.
 
+- [ ] `console-driver` (test-only) drains the wrapper's stdout and stderr to EOF with no timeout; a descendant
+      that inherits those pipes (for example a `FAKE_AGENT_SPAWN_SLEEPER` sleeper) keeps the driver alive past its
+      60 s exit timeout. No current test combines a console event with a sleeper; bound the drains before adding one.
+
 ## Scaffold follow-ups
 
 - [ ] Run `lefthook install` in each clone
