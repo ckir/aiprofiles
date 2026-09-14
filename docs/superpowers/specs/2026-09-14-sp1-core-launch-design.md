@@ -83,20 +83,24 @@ Clap's own usage error (exit 2).
    lossily in the message.
 3. The splitter cuts the remaining elements at the FIRST `--`. Everything after that `--` is opaque
    agent input: kept as `OsString`, never inspected, reordered or re-encoded. Later `--` tokens are opaque.
-4. Before the cut:
-   - an element that begins with `-` must be a wrapper option; anything else is a usage error;
-   - wrapper options may appear anywhere after the agent word;
-   - if the FIRST bare word equals a reserved word (ASCII case-insensitive), the invocation is an
-     agent-scoped command and every later element before the cut belongs to that command: rule 5 applies
-     at once and the bare-word count below is not checked (so `claude create work` is
-     `NotYetImplemented`, never a usage error);
-   - otherwise at most one bare word may remain, and it must be valid UTF-8 (a non-UTF-8 word is a usage
-     error);
-   - an empty string is a bare word (it does not begin with `-`); as a profile it fails V3 §6 with
-     `InvalidProfileName` (exit 4);
-   - a second bare word is a usage error: "agent arguments must follow `--`".
-5. If the bare word equals a reserved word (ASCII case-insensitive), the invocation is an agent-scoped
-   command. Otherwise it is a profile name and goes through §6 validation of V3.
+   The elements before the cut are the *pre-cut elements*. A pre-cut element that begins with `-` is an
+   *option token*; every other pre-cut element, including the empty string, is a *bare word*.
+4. The splitter then applies these checks IN THIS ORDER; the first that matches decides the outcome:
+   1. Any option token is `-h` or `--help`: launch-form usage text, exit 0.
+   2. Any option token is `-V` or `--version`: the version, exit 0.
+   3. The agent word is not a known agent of this build: `UnknownAgent` (exit 2). Matching is exact and
+      case-sensitive (`Fake` is not `fake`, consistent with the lowercase `AgentId` syntax); a non-UTF-8
+      agent word never matches and is rendered lossily.
+   4. The first bare word equals a reserved word (ASCII case-insensitive): `NotYetImplemented` for
+      "`<agent> <word>`" (exit 2). Every other pre-cut element, option tokens included, is ignored, so
+      `fake create work` and `fake create --bogus` both give `NotYetImplemented`.
+   5. Any option token is not one of `--dry-run`, `--verbose`, `--json`: `Usage` (exit 2).
+   6. There are two or more bare words: `Usage` "agent arguments must follow `--`" (exit 2).
+   7. `--json` is present: `NotYetImplemented` for "`--json`" (exit 2).
+   8. The single bare word is not valid UTF-8: `Usage` (exit 2).
+   9. Otherwise the invocation is a launch: no bare word means no explicit profile (§5.1 step 4 then gives
+      `NoProfile`, exit 4); one bare word is the explicit profile, validated by V3 §6 in §5.1 step 2 (the
+      empty string fails with `InvalidProfileName`, exit 4).
 
 ### 4.3 Behaviour in SP1
 
@@ -104,19 +108,16 @@ Clap's own usage error (exit 2).
 |---|---|---|
 | Top-level reserved word | "`<word>` is not yet implemented" | 2 |
 | `<agent> <reserved word> ...` | "`<agent> <word>` is not yet implemented" | 2 |
-| Unknown agent | Usage error listing the known agents; a build with none says "no agents are available in this build" | 2 |
+| Unknown agent | Usage error listing the known agents; a build with none says "no agents are available in this build". If the configuration loads and has `agents.<id>` tables for ids this build does not know, the message lists them too; a configuration that fails to load does not change this error. | 2 |
 | `--json` anywhere before `--` | "`--json` is not yet implemented" | 2 |
 | Unknown option before `--`, or a second bare word | Usage error | 2 |
-| `<agent> --help` | Launch-form usage text | 0 |
+| `<agent> --help`, `<agent> --version` | Launch-form usage text; version | 0 |
 | `<agent>` with no profile | The resolver stub returns `ResolutionSource::None`; error "no profile selected for `<agent>`" (V3 §11 no-profile condition) | 4 |
 | `<agent> <invalid profile>` | `InvalidProfileName`, stating the reason (reserved words included) | 4 |
 | `<agent> <profile> --dry-run` | Dry-run report (§7.4) | 0 |
 | `<agent> <profile>` | Launch (§7) | agent's status |
 
-Precedence when several apply: `-h`/`--help` anywhere before `--` first (launch-form usage, exit 0, even for
-an unknown agent), then `-V`/`--version` (exit 0), then reserved-word routing of the first bare word, then
-usage errors from rule 4 of §4.2, then `--json`, then unknown agent, then reserved
-word, then profile validation.
+When several rows apply, the order of checks in §4.2 rule 4 decides.
 
 ## 5. Module layout
 
@@ -241,7 +242,8 @@ OSes. No Microsoft document states that `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`
 
 ### 7.1 Shared
 
-`LaunchPlan` becomes a `std::process::Command`: `executable`; `args` as given; `.env(k, v)` for each override
+`LaunchPlan::command(&self) -> std::process::Command` is the single conversion both launchers use:
+`executable`; `args` as given; `.env(k, v)` for each override
 (the child starts from the inherited environment, overrides win: V3 §22); `.current_dir` only when `cwd` is
 `Some`; stdin, stdout and stderr inherited. The wrapper never modifies its own environment. `--verbose`
 output is flushed before launching.
@@ -313,30 +315,45 @@ In this order:
 
 1. **Job.** `CreateJobObjectW`; `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`;
    `AssignProcessToJobObject(GetCurrentProcess())`. Any failure: `Launch` (exit 6) before a child exists.
-2. **Handler.** `SetConsoleCtrlHandler(Some(handler), TRUE)`; the handler returns TRUE for `CTRL_C_EVENT`
-   and `CTRL_BREAK_EVENT`, FALSE for every other event (close, logoff, shutdown keep default processing).
-   The child shares the console and receives the events itself. The wrapper never calls
+2. **Handler.** `SetConsoleCtrlHandler(Some(handler), TRUE)`. The child shares the console and receives
+   every event itself. The handler:
+   - `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`: return TRUE at once (the wrapper survives and keeps waiting).
+   - `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`: if the child's process handle has been
+     published (step 3), wait on it with `WaitForSingleObject(handle, INFINITE)`, then return TRUE; if not,
+     return FALSE. Windows still terminates the wrapper when a close-type handler returns, and bounds the
+     wait with its own timeout (Microsoft HandlerRoutine "Timeouts"). Without the wait, the wrapper would
+     exit at once and its job would kill the agent in the middle of the agent's own cleanup, which direct
+     invocation does not do. The wrapper never calls
    `SetConsoleCtrlHandler(NULL, …)`: an inherited "ignore Ctrl-C" attribute is left as direct invocation
    would leave it.
-3. **Spawn** directly with `Command::spawn`. The child inherits job membership. Failure: `Launch` (exit 6).
+3. **Spawn** directly with `LaunchPlan::command().spawn()`. The child inherits job membership. Failure:
+   `Launch` (exit 6). On success, publish the child's raw process handle in a process-global
+   `OnceLock` for the handler.
 4. **Wait.**
 5. **Release the job.** `SetInformationJobObject` with no limit flags, so processes the agent left running
    survive the wrapper's exit. A failure is reported only under `--verbose`; it does not change the exit code.
 6. **Return** `LaunchOutcome::Exited(code)` with the child's full 32-bit exit code; `main` passes it to
    `std::process::exit` (§5), which preserves all 32 bits (M2). The job handle is closed by that exit.
 
-Consequences, each tested (§8.4):
-- Wrapper terminated while waiting: the job handle closes, the agent is killed; no orphan.
-- Ctrl-C or Ctrl-Break before step 2: the wrapper dies by default processing; no child exists.
-- Ctrl-C or Ctrl-Break between steps 2 and 3: swallowed; the agent still starts. This window is documented,
-  not engineered away.
-- Normal exit: background processes survive (M1 "clear").
+Consequences:
+- Wrapper terminated while waiting: the job handle closes, the agent is killed; no orphan. (Tested.)
+- Ctrl-C or Ctrl-Break while the agent runs: the agent handles it exactly as under direct invocation; the
+  wrapper survives and returns the agent's exit code. (Tested with an agent that handles the event.)
+- Ctrl-Break before step 2, or Ctrl-C before step 2 unless the "ignore Ctrl-C" attribute was inherited: the
+  wrapper dies by default processing; no child exists. (Not separately tested; "terminated before child
+  creation" is tested by killing the wrapper.)
+- An event from step 2 until the child has attached to the console (inside `CreateProcessW`): swallowed;
+  the agent still starts. This is the one documented difference from direct invocation (V3 §24), and it is
+  tested with the debug pause hook.
+- Console window closed: the agent gets its normal close-event cleanup time. (Not tested: CI cannot close a
+  console window; see §11.)
+- Normal exit: background processes survive (M1 "clear"). (Tested.)
 
 ## 8. Testing
 
 ### 8.1 `fake-agent` fixture extensions (additive)
 
-The SP0 fixture contract (SP0 design §3.3) is unchanged, and the nine `fake_agent_*` smoke tests (including the helper test, which extends to the four new variables)
+The SP0 fixture contract (SP0 design §3.3) is unchanged, and the nine `fake_agent_*` smoke tests (including the helper test, which extends to the five new variables)
 stay as they are. The three stub-CLI smoke tests change with the CLI: `version_exits_zero` and
 `help_exits_zero_and_says_scaffold` keep their assertions except that `--help` no longer says "SP0
 scaffold" (the new help text is asserted instead), and `unimplemented_invocation_is_usage_error` is
@@ -348,10 +365,11 @@ replaced by the §4.3 table tests, because `claude work` and `zzz-unknown` becom
 | `FAKE_AGENT_STDIN=1` | Read all of stdin before reporting; `"stdin"` holds it (non-UTF-8 = fixture error 125) |
 | `FAKE_AGENT_STDERR=<text>` | Write `<text>` to stderr after reporting |
 | `FAKE_AGENT_SLEEP_MS=<u64>` | After printing and flushing the report, sleep that long, then exit with the requested code |
-| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with only `FAKE_AGENT_SLEEP_MS=<u64>` set (no report is expected from it; its stdout is null) and report its PID as `"sleeper_pid"` |
+| `FAKE_AGENT_SPAWN_SLEEPER=<u64>` | Before reporting, spawn a copy of itself with only `FAKE_AGENT_SLEEP_MS=<u64>` set and its stdin, stdout and stderr all null (so it holds none of the wrapper's pipes), and report its PID as `"sleeper_pid"` |
+| `FAKE_AGENT_CTRL_C_EXIT=<u8>` | Windows only (a fixture error elsewhere): install a console handler that, on `CTRL_C_EVENT` or `CTRL_BREAK_EVENT`, sleeps 300 ms and then exits with `<u8>` - an agent that survives the event long enough to prove the wrapper waited |
 
 Any unparsable value of these variables is a fixture error (exit 125, empty stdout). The SP0 helper
-`support::fake_agent()` additionally removes all four new variables.
+`support::fake_agent()` additionally removes all five new variables.
 
 ### 8.2 Unit tests (in-module)
 
@@ -367,7 +385,8 @@ Any unparsable value of these variables is a fixture error (exit 125, empty stdo
 
 ### 8.3 `tests/config.rs` (V3 §34 "Configuration")
 
-- Valid TOML; invalid TOML; unknown key; relative `executable`: each read reports `ConfigInvalid`.
+- Valid TOML: the read succeeds and `agents.fake.executable` has the configured value.
+- Invalid TOML; unknown key; relative `executable`: each read reports `ConfigInvalid`.
 - Corrupt file refused by `update`, byte-identical afterwards.
 - Comments and key order preserved across `update`.
 - Concurrent writers: N threads each add a distinct agent table; all N present afterwards. Threads are a
@@ -375,7 +394,11 @@ Any unparsable value of these variables is a fixture error (exit 125, empty stdo
   belong to the open file description and `LockFileEx` locks to the handle, so two handles in one
   process contend exactly as two processes do.
 - Stale-writer race: writer B's edit is applied to writer A's result, never to a pre-A snapshot.
-- Reader during writes: a loop of reads while writers run never sees a parse failure.
+- Reader during writes, with a deterministic overlap: `update_with` also takes a crate-private hook that runs
+  after the temp file is written and synced and before `persist`. The test's hook blocks on a barrier until
+  a reader thread has read `config.toml` at least once, and the reader must see the complete PREVIOUS
+  content; after `update` returns, a read sees the complete NEW content. A read never observes the temp
+  file's content or a partial file.
 - Failed replacement, two tests with one assertion (`ConfigWrite`, previous content byte-identical, no
   `.config.toml.*.tmp` left):
   - All OSes (unit test in `config`): `update` is implemented over a crate-private
@@ -408,15 +431,28 @@ Any unparsable value of these variables is a fixture error (exit 125, empty stdo
   executable or garbage file (6).
 - Unix: the reported `"pid"` equals the wrapper child's PID (proves `exec`).
 
+`tests/launch_plan.rs` pins `LaunchPlan::command` independently of any adapter, because SP1's only adapter
+uses `cwd: None`: it builds a `LaunchPlan` for `CARGO_BIN_EXE_fake-agent` with `cwd: Some(<temp dir>)`, one
+environment override replacing an inherited value, and args including `--` and a space, spawns
+`plan.command()`, and asserts the reported `cwd`, `env` and `argv`. A second case with `cwd: None` asserts
+the child inherits the test's working directory.
+
 `tests/windows_console.rs` (`cfg(windows)`) uses a helper binary `src/bin/console-driver.rs` (a stub that
 exits 125 on non-Windows). The driver is started with `CREATE_NEW_CONSOLE`, calls
 `SetConsoleCtrlHandler(NULL, FALSE)` and installs a swallowing handler for itself, runs the wrapper against a
 sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, and writes a result file.
 
-- Ctrl-C: wrapper exit code `0xC000013A` well before the sleep ends.
-- Ctrl-Break: the same with `CTRL_BREAK_EVENT` (expected code recorded by the plan's first task).
+- Ctrl-C, handled agent: fake agent with `FAKE_AGENT_CTRL_C_EXIT=42` and a long sleep; after `CTRL_C_EVENT`
+  the wrapper exits 42. A wrapper without a working handler would die first (default processing exits
+  `0xC000013A`) and its job would kill the agent, so this is the test that proves §7.6 step 2.
+- Ctrl-Break, handled agent: the same with `CTRL_BREAK_EVENT` and `FAKE_AGENT_CTRL_C_EXIT=43`, exit 43.
+- Ctrl-C, default agent: without `FAKE_AGENT_CTRL_C_EXIT`, the wrapper exits `0xC000013A` well before the
+  sleep ends (the agent's own default code, propagated).
+- Swallowed window: with `AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS`, the driver sends `CTRL_C_EVENT` during
+  the pause; the fake-agent report still appears and the wrapper returns the agent's exit code.
 - Normal completion and non-zero exit through the job path.
-- No orphan: kill the wrapper mid-sleep; the fake agent's PID is gone within a bounded wait.
+- No orphan: kill the wrapper mid-sleep; the fake agent has exited within a bounded wait, checked by waiting
+  on its process handle (`WaitForSingleObject`) or `GetExitCodeProcess`, never by "the PID can be opened".
 - Background survival: after a normal exit, `"sleeper_pid"` is still alive; the test then kills it.
 - Every PID a test learns (fake agent, sleeper, wrapper) is held by a drop guard that kills it if still alive,
   so a panicking assertion cannot leak processes onto the runner.
@@ -460,7 +496,9 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 
 ## 11. Stand-downs and known limits
 
-- The Windows Ctrl-C window between handler installation and spawn (§7.6).
+- The Windows event window from handler installation until the child attaches to the console (§7.6).
+- The close/logoff/shutdown handler path (§7.6 step 2) is argued from Microsoft's HandlerRoutine
+  documentation, not tested: CI cannot close a console window.
 - `std::fs::rename` is assumed atomic on Windows (§6.4).
 - `File::lock` may be advisory; every writer is `agent-profile` itself. A user deleting `config.toml.lock`
   during a write can break mutual exclusion; not defended.
@@ -470,7 +508,15 @@ M2 was measured locally only. GitHub's Windows runner is unproven; see §10 step
 
 ## 12. Stand-downs
 
-Findings from the AGY-AFTER panel that were not folded, one line each.
+Findings from the AGY-AFTER panel that were not folded, one line each. Rounds 1-2 ran on the agy peer; round
+3 ran on three independent subagent reviewers at the owner's direction after the peer hit quota failures.
+
+- DISCARDED-BELOW-FLOOR: "no dedicated shell-metacharacter passthrough test" - shell mediation is excluded
+  structurally: §7.1 builds the child only through `LaunchPlan::command` (`std::process::Command`, no shell),
+  and §7.2 step 3 refuses the only extensions std routes through `cmd.exe`.
+- DISCARDED-BELOW-FLOOR: "the terminated-before-creation test passes trivially if the kill lands before the
+  pause" - that outcome is still termination before child creation (V3 §24), so it cannot turn a broken
+  launcher green; the swallowed-window test (§8.4) exercises the pause itself.
 
 - DISCARDED-BELOW-FLOOR: terminal escape sequences in dry-run output via `AGENT_PROFILE_HOME` - unreachable
   as an attack because that variable is set by the invoking user (§6.1), outside V3 §36's
