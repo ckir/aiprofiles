@@ -194,7 +194,7 @@ mod tests {
             ("a\u{7f}", '\u{7f}'),
             ("a:b", ':'),
             ("a*b", '*'),
-            ("caf\u{e9}", '\u{e9}'),
+            ("x\u{e9}", '\u{e9}'),
         ] {
             assert_eq!(unix(name), Err(InvalidReason::BadChar(bad)), "{name:?}");
             assert_eq!(windows(name), Err(InvalidReason::BadChar(bad)), "{name:?}");

@@ -52,15 +52,20 @@ pub fn plan(
     match agent.as_str() {
         #[cfg(debug_assertions)]
         "fake" => fake::plan(profile, root, config, args, path_var),
-        other => Err(Error::UnknownAgent {
-            agent: other.to_owned(),
-            known: known_agents().into_iter().map(String::from).collect(),
-            unknown_configured: Vec::new(),
-        }),
+        other => {
+            // Release builds know no agent, so these inputs are unused there.
+            let _ = (profile, root, config, args, path_var);
+            Err(Error::UnknownAgent {
+                agent: other.to_owned(),
+                known: known_agents().into_iter().map(String::from).collect(),
+                unknown_configured: Vec::new(),
+            })
+        }
     }
 }
 
 /// Refuses a profile whose name differs from an existing `profiles/` entry only in ASCII case (design §7.3).
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 fn check_case_twins(root: &AppRoot, profile: &ProfileName) -> Result<()> {
     let Ok(entries) = fs::read_dir(root.profiles_dir()) else {
         return Ok(());
