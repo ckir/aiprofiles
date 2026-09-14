@@ -8,6 +8,12 @@
 //! events itself, runs the program with piped stdout and stderr drained on separate threads, waits for the
 //! readiness signal, sends the event to its whole console, waits for the program, and writes
 //! `{"exit_code": N, "stdout": "...", "stderr": "..."}` (or `{"error": "...", ...}`) to the result file.
+//!
+//! Two optional modes, set through the driver's own environment:
+//! - `CONSOLE_DRIVER_JOB_LIMITS=<u32>`: before running the program, the driver joins a new job with exactly these
+//!   limit flags, so the program starts inside a caller job whose limits the test controls.
+//! - `CONSOLE_DRIVER_IGNORE_CTRL_C=1`: the driver sets the inherited "ignore Ctrl-C" attribute instead of clearing
+//!   it, so the program inherits it.
 
 #[cfg(not(windows))]
 fn main() -> std::process::ExitCode {
@@ -38,6 +44,11 @@ mod windows {
     use windows_sys::Win32::System::Console::{
         CTRL_BREAK_EVENT, CTRL_C_EVENT, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler,
     };
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
     use windows_sys::core::BOOL;
 
     const PAUSE_MARKER: &str = "agent-profile: debug: paused before spawn";
@@ -65,13 +76,29 @@ mod windows {
             return Err(format!("unknown readiness {readiness:?}"));
         }
 
+        let ignore_ctrl_c = match std::env::var_os("CONSOLE_DRIVER_IGNORE_CTRL_C") {
+            None => false,
+            Some(value) if value == "1" => true,
+            Some(value) => {
+                return Err(format!("CONSOLE_DRIVER_IGNORE_CTRL_C must be 1, got {value:?}"));
+            }
+        };
         // SAFETY: plain Win32 calls; `swallow` is a valid routine for the life of the process.
         unsafe {
-            if SetConsoleCtrlHandler(None, FALSE) == FALSE
+            let ignore = if ignore_ctrl_c { TRUE } else { FALSE };
+            if SetConsoleCtrlHandler(None, ignore) == FALSE
                 || SetConsoleCtrlHandler(Some(swallow), TRUE) == FALSE
             {
                 return Err(format!("SetConsoleCtrlHandler: {}", std::io::Error::last_os_error()));
             }
+        }
+
+        if let Some(value) = std::env::var_os("CONSOLE_DRIVER_JOB_LIMITS") {
+            let limits = value
+                .to_str()
+                .and_then(|v| v.parse::<u32>().ok())
+                .ok_or_else(|| format!("CONSOLE_DRIVER_JOB_LIMITS must be a u32, got {value:?}"))?;
+            join_job(limits)?;
         }
 
         let mut child = Command::new(program)
@@ -133,6 +160,33 @@ mod windows {
         }
         std::fs::write(&result_file, result.to_string())
             .map_err(|e| format!("cannot write the result: {e}"))
+    }
+
+    /// Joins a new job with exactly `limits`; the job handle stays open until the driver exits.
+    fn join_job(limits: u32) -> Result<(), String> {
+        let error = |what: &str| format!("{what}: {}", std::io::Error::last_os_error());
+        // SAFETY: plain Win32 calls with valid arguments; an all-zero limit structure is valid.
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return Err(error("CreateJobObjectW"));
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = limits;
+            if SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            ) == FALSE
+            {
+                return Err(error("SetInformationJobObject"));
+            }
+            if AssignProcessToJobObject(job, GetCurrentProcess()) == FALSE {
+                return Err(error("AssignProcessToJobObject"));
+            }
+        }
+        Ok(())
     }
 
     /// Reads a pipe to the end on its own thread, signalling once when `is_ready` matches a line.

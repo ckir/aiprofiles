@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_profile::config::{self, AppRoot, Config};
 use agent_profile::error::Error;
@@ -153,6 +153,49 @@ fn a_waiting_writer_edits_the_first_writers_result() {
     first.join().unwrap();
     let config = Config::load(&root).unwrap();
     assert_eq!(config.configured_agents().collect::<Vec<_>>(), ["first", "second"]);
+}
+
+#[test]
+fn update_times_out_while_another_handle_holds_the_lock() {
+    let (_dir, root) = root();
+    let previous = format!("[agents.fake]\nexecutable = {:?}\n", absolute("old"));
+    std::fs::write(root.config_path(), &previous).unwrap();
+    let holder = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.path().join("config.toml.lock"))
+        .unwrap();
+    holder.lock().unwrap();
+
+    // A watchdog, so a regression that retries forever fails instead of hanging the suite.
+    let (done_tx, done_rx) = mpsc::channel();
+    let writer_root = root.clone();
+    let started = Instant::now();
+    thread::spawn(move || {
+        let result = config::update(&writer_root, |doc| {
+            set_agent(doc, "fake", &absolute("new"));
+            Ok(())
+        });
+        let _ = done_tx.send(result);
+    });
+    let result =
+        done_rx.recv_timeout(Duration::from_secs(30)).expect("update did not give up within 30 s");
+    let elapsed = started.elapsed();
+
+    match result {
+        Err(Error::ConfigWrite { source, .. }) => assert!(
+            source
+                .to_string()
+                .contains("another agent-profile process holds the configuration lock"),
+            "{source}"
+        ),
+        other => panic!("{other:?}"),
+    }
+    assert!(elapsed >= Duration::from_secs(9), "gave up after {elapsed:?}, before the 10 s bound");
+    assert_eq!(std::fs::read_to_string(root.config_path()).unwrap(), previous);
+    drop(holder);
 }
 
 #[test]

@@ -12,6 +12,9 @@ use std::time::Duration;
 use support::Root;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+use windows_sys::Win32::System::JobObjects::{
+    JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
+};
 use windows_sys::Win32::System::Threading::{
     CREATE_NEW_CONSOLE, OpenProcess, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
 };
@@ -71,19 +74,29 @@ impl Drop for ProcessGuard {
 
 /// Runs `agent-profile fake work` under `console-driver` in a new console and returns its result.
 fn drive(event: &str, readiness: &str, env: &[(&str, &str)]) -> serde_json::Value {
+    drive_program(env!("CARGO_BIN_EXE_agent-profile"), &["fake", "work"], event, readiness, env)
+}
+
+/// Runs `program args` under `console-driver` in a new console and returns its result. `drive` runs the wrapper;
+/// tests that compare against direct invocation run `fake-agent` itself through the same driver mode.
+fn drive_program(
+    program: &str,
+    args: &[&str],
+    event: &str,
+    readiness: &str,
+    env: &[(&str, &str)],
+) -> serde_json::Value {
     let root = Root::new();
     let result = root.path().join("result.json");
     let mut command = Command::new(env!("CARGO_BIN_EXE_console-driver"));
-    command
-        .arg(&result)
-        .arg(event)
-        .arg(readiness)
-        .arg(env!("CARGO_BIN_EXE_agent-profile"))
-        .args(["fake", "work"]);
+    command.arg(&result).arg(event).arg(readiness).arg(program).args(args);
     for name in support::FIXTURE_VARS.iter().chain(support::WRAPPER_VARS.iter()) {
         command.env_remove(name);
     }
-    command.env("AGENT_PROFILE_HOME", root.path());
+    command
+        .env_remove("CONSOLE_DRIVER_JOB_LIMITS")
+        .env_remove("CONSOLE_DRIVER_IGNORE_CTRL_C")
+        .env("AGENT_PROFILE_HOME", root.path());
     for (name, value) in env {
         command.env(name, value);
     }
@@ -219,6 +232,41 @@ fn breakaway_process_creation_matches_direct_invocation() {
         String::from_utf8_lossy(&direct.stderr),
         String::from_utf8_lossy(&wrapped.stderr)
     );
+}
+
+#[test]
+fn breakaway_follows_a_controlled_caller_job() {
+    // The caller job's limits are set by the test, so the expected outcome does not depend on the test runner's
+    // own job. The direct run proves the fixture really requests breakaway (it must fail without a breakaway flag).
+    let cases =
+        [(0, 125), (JOB_OBJECT_LIMIT_BREAKAWAY_OK, 0), (JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK, 0)];
+    for (limits, expected) in cases {
+        let limits = limits.to_string();
+        let env = [
+            ("FAKE_AGENT_SPAWN_SLEEPER", "1000"),
+            ("FAKE_AGENT_BREAKAWAY", "1"),
+            ("CONSOLE_DRIVER_JOB_LIMITS", limits.as_str()),
+        ];
+        let direct = drive_program(env!("CARGO_BIN_EXE_fake-agent"), &[], "none", "none", &env);
+        assert_eq!(exit_code(&direct), expected, "direct, caller job limits {limits}: {direct}");
+        let wrapped = drive("none", "none", &env);
+        assert_eq!(exit_code(&wrapped), expected, "wrapped, caller job limits {limits}: {wrapped}");
+    }
+}
+
+#[test]
+fn an_inherited_ignore_ctrl_c_attribute_reaches_the_agent_unchanged() {
+    // With the attribute inherited, a direct agent never sees Ctrl-C: its handler would exit 42, but it sleeps
+    // to completion and exits 0. The wrapper must leave the attribute alone (design §7.6 step 2).
+    let env = [
+        ("CONSOLE_DRIVER_IGNORE_CTRL_C", "1"),
+        ("FAKE_AGENT_CTRL_C_EXIT", "42"),
+        ("FAKE_AGENT_SLEEP_MS", "3000"),
+    ];
+    let direct = drive_program(env!("CARGO_BIN_EXE_fake-agent"), &[], "ctrl-c", "report", &env);
+    assert_eq!(exit_code(&direct), 0, "direct: {direct}");
+    let wrapped = drive("ctrl-c", "report", &env);
+    assert_eq!(exit_code(&wrapped), 0, "wrapped: {wrapped}");
 }
 
 #[test]

@@ -418,6 +418,16 @@ mod tests {
     }
 
     #[test]
+    fn unknown_option_is_reported_before_extra_bare_words() {
+        match split_err(&["fake", "work", "extra", "--bogus"]) {
+            Error::Usage { message } => {
+                assert!(message.starts_with("unknown option \"--bogus\""), "{message}")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
     fn json_is_not_yet_implemented() {
         for items in [&["fake", "work", "--json"][..], &["fake", "--json"]] {
             match split_err(items) {

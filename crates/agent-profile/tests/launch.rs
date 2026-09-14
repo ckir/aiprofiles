@@ -123,6 +123,22 @@ fn verbose_launch_reports_to_stderr_after_creating_the_profile_directory() {
 }
 
 #[test]
+fn dry_run_of_an_existing_profile_omits_would_be_created() {
+    let root = Root::new();
+    let first = root.agent_profile(["fake", "work"]).output().unwrap();
+    assert_eq!(first.status.code(), Some(0), "{}", stderr(&first));
+    assert!(root.profile_dir("work").is_dir());
+    let output = root.agent_profile(["fake", "work", "--dry-run"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let text = stdout(&output);
+    let environment: Vec<&str> =
+        text.lines().filter(|line| line.starts_with("environment:")).collect();
+    assert_eq!(environment.len(), 1, "{text}");
+    assert!(environment[0].contains("FAKE_AGENT_HOME="), "{text}");
+    assert!(!text.contains("(would be created)"), "{text}");
+}
+
+#[test]
 fn launch_creates_the_profile_directory_lazily() {
     let root = Root::new();
     assert!(!root.profile_dir("work").exists());
@@ -212,10 +228,16 @@ fn behaviour_table_rows_with_non_zero_exits() {
 }
 
 #[test]
-fn bare_invocation_is_a_usage_error() {
+fn bare_invocation_prints_top_level_help_to_stderr_only() {
     let root = Root::new();
     let output = root.agent_profile(Vec::<&str>::new()).output().unwrap();
     assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty(), "{}", stdout(&output));
+    assert!(
+        stderr(&output).contains("Usage: agent-profile <agent> <profile>"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]

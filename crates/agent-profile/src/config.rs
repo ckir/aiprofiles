@@ -344,6 +344,22 @@ mod tests {
     }
 
     #[test]
+    fn non_utf8_home_override_is_an_app_root_error() {
+        #[cfg(unix)]
+        let value = {
+            use std::os::unix::ffi::OsStringExt;
+            OsString::from_vec(vec![0x66, 0xff])
+        };
+        #[cfg(windows)]
+        let value = {
+            use std::os::windows::ffi::OsStringExt;
+            OsString::from_wide(&[0x66, 0xD800])
+        };
+        let error = AppRoot::resolve_from(Some(value), None).unwrap_err();
+        assert!(matches!(error, Error::AppRoot { .. }), "{error:?}");
+    }
+
+    #[test]
     fn app_root_defaults_to_dot_agent_profile_in_home() {
         let home = std::env::temp_dir();
         let root = AppRoot::resolve_from(None, Some(home.clone())).unwrap();
