@@ -452,6 +452,9 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
 - Invalid TOML; unknown key; relative `executable`: each read reports `ConfigInvalid`.
 - Corrupt file refused by `update`, byte-identical afterwards.
 - Comments and key order preserved across `update`.
+- Lock timeout: with `config.toml.lock` held by another handle, `update` gives up after the 10 s bound with
+  `ConfigWrite` ("another agent-profile process holds the configuration lock"), guarded by a 30 s watchdog, and
+  `config.toml` is unchanged.
 - Concurrent writers: N threads each add a distinct agent table; all N present afterwards. Threads are a
   valid proxy for processes here because each `update` opens its own lock-file handle: `flock` locks
   belong to the open file description and `LockFileEx` locks to the handle, so two handles in one
@@ -484,6 +487,9 @@ In `tests/config.rs` unless a bullet says "unit test inside `config`".
 - Environment: inherited `FAKE_AGENT_HOME=/wrong` is replaced by the profile directory; the test process's
   environment is unchanged afterwards.
 - Exit status: `FAKE_AGENT_EXIT=7` gives 7.
+- Dry run of an existing profile: after one launch, `--dry-run` reports the `FAKE_AGENT_HOME` line without
+  "(would be created)".
+- Bare invocation: exit 2, nothing on stdout, the top-level usage on stderr.
 - Dry run: exit 0, no fake-agent report on stdout, profile directory not created, report contains every
   §7.4 field.
 - Lazy init: the profile directory exists after a launch; a regular file at that path gives `ProfileDir`
@@ -512,7 +518,10 @@ the child inherits the test's working directory.
 
 `tests/windows_console.rs` (`cfg(windows)`) uses a helper binary `src/bin/console-driver.rs` (a stub that
 exits 125 on non-Windows) with the command line
-`console-driver <result-file> <none|ctrl-c|ctrl-break> <none|report|pause-marker> <program> [args...]`. The driver is started with `CREATE_NEW_CONSOLE`, calls
+`console-driver <result-file> <none|ctrl-c|ctrl-break> <none|report|pause-marker> <program> [args...]` and two
+optional modes set in its environment: `CONSOLE_DRIVER_JOB_LIMITS=<u32>` (the driver joins a new job with exactly those
+limits before running the program) and `CONSOLE_DRIVER_IGNORE_CTRL_C=1` (the driver sets, instead of clearing, the
+inherited "ignore Ctrl-C" attribute). The driver is started with `CREATE_NEW_CONSOLE`, calls
 `SetConsoleCtrlHandler(NULL, FALSE)` and installs a swallowing handler for itself, runs the wrapper against a
 sleeping fake agent, sends the event with `GenerateConsoleCtrlEvent(event, 0)`, and writes a result file.
 The driver never uses `CREATE_NEW_PROCESS_GROUP` for the wrapper (that flag sets the ignore-Ctrl-C
@@ -532,6 +541,12 @@ handler before printing it); for the swallowed-window test, after the pause mark
   and the wrapper exits exactly 7 (an event that reached a running agent would have produced `0xC000013A`
   instead).
 - Normal completion and non-zero exit through the job path.
+- Breakaway under a controlled caller job: through `CONSOLE_DRIVER_JOB_LIMITS`, with no breakaway flag both a direct
+  fake agent and the wrapper exit 125 (proving the fixture really requests breakaway), and with
+  `JOB_OBJECT_LIMIT_BREAKAWAY_OK` or `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` both exit 0. Independent of the test
+  runner's own job, so the always-allow and never-allow mutants both fail under nextest.
+- Inherited ignore-Ctrl-C: with `CONSOLE_DRIVER_IGNORE_CTRL_C=1`, a fake agent whose handler would exit 42 sleeps to
+  completion and exits 0 both directly and through the wrapper, which therefore does not clear the attribute.
 - Breakaway equivalence: a fake agent spawning its sleeper with `FAKE_AGENT_BREAKAWAY=1` exits with the same code
   directly and through the wrapper. Measured under both harnesses: a
   never-allow mutant fails it under nextest and an always-allow mutant fails it under cargo test. A unit test
