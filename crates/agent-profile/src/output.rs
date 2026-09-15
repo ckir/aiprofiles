@@ -73,7 +73,7 @@ pub fn report_lines(
             lines.push(if index == 0 { line("creates", value) } else { continuation(value) });
         }
     }
-    let args: Vec<String> = planned.plan.args.iter().map(|arg| render_arg(arg)).collect();
+    let args = render_args(&planned.plan.args);
     lines.push(line("arguments", format!("[{}]", args.join(", "))));
     for note in &planned.notes {
         lines.push(line("note", note.clone()));
@@ -85,8 +85,79 @@ fn is_sensitive(key: &OsStr, declared: &[std::ffi::OsString]) -> bool {
     if declared.iter().any(|name| name == key) {
         return true;
     }
-    let upper = key.to_string_lossy().to_ascii_uppercase();
+    has_sensitive_part(&key.to_string_lossy())
+}
+
+fn has_sensitive_part(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
     SENSITIVE_NAME_PARTS.iter().any(|part| upper.contains(part))
+}
+
+/// How one opaque argument is shown (spec §26 "Sensitive values must be redacted", §36).
+enum Shown {
+    Verbatim,
+    /// The argument's value is replaced: `prefix<redacted>`.
+    Redacted(String),
+    /// The argument is a secret-named option without `=`: the next argument is its value.
+    HidesNext,
+}
+
+/// Renders the opaque arguments for the report. Only the report is redacted; the launched arguments never
+/// change. Redaction is a shallow name rule, never a parser: a `--option` whose name holds a sensitive part
+/// hides its value (`--api-key=<redacted>`, or the next argument), `--no-*` switches take no value, and any
+/// `NAME=value` whose NAME holds a sensitive part hides the value. Every argument is scanned, including after
+/// a `--`, because hiding too much only costs readability.
+fn render_args(args: &[std::ffi::OsString]) -> Vec<String> {
+    let mut rendered = Vec::with_capacity(args.len());
+    let mut hide_next = false;
+    for arg in args {
+        if hide_next {
+            hide_next = false;
+            rendered.push(format!("{:?}", "<redacted>"));
+            continue;
+        }
+        rendered.push(match classify(&arg.to_string_lossy()) {
+            Shown::Verbatim => render_arg(arg),
+            Shown::Redacted(prefix) => format!("{:?}", format!("{prefix}<redacted>")),
+            Shown::HidesNext => {
+                hide_next = true;
+                render_arg(arg)
+            }
+        });
+    }
+    rendered
+}
+
+fn classify(text: &str) -> Shown {
+    if let Some(option) = text.strip_prefix("--").filter(|option| !option.is_empty()) {
+        let (name, value) = match option.split_once('=') {
+            Some((name, value)) => (name, Some(value)),
+            None => (option, None),
+        };
+        if !name.starts_with("no-") && has_sensitive_part(name) {
+            return match value {
+                Some(_) => Shown::Redacted(format!("--{name}=")),
+                None => Shown::HidesNext,
+            };
+        }
+        if let Some(variable) = value.and_then(sensitive_assignment) {
+            return Shown::Redacted(format!("--{name}={variable}="));
+        }
+        return Shown::Verbatim;
+    }
+    match sensitive_assignment(text) {
+        Some(variable) => Shown::Redacted(format!("{variable}=")),
+        None => Shown::Verbatim,
+    }
+}
+
+/// `NAME` when `text` is `NAME=value` with an identifier NAME holding a sensitive part.
+fn sensitive_assignment(text: &str) -> Option<&str> {
+    let (name, _) = text.split_once('=')?;
+    let mut chars = name.chars();
+    let identifier = chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|rest| rest.is_ascii_alphanumeric() || rest == '_');
+    (identifier && has_sensitive_part(name)).then_some(name)
 }
 
 fn render_arg(arg: &OsStr) -> String {
@@ -198,6 +269,57 @@ mod tests {
         assert_eq!(&lines[9..], ["note:         first note", "note:         second note"]);
         let verbose = report_lines(&planned, &resolution(), ReportMode::Verbose);
         assert_eq!(verbose.last().unwrap(), "note:         second note");
+    }
+
+    #[test]
+    fn sensitive_argument_values_are_redacted_in_the_report_only() {
+        let args: Vec<std::ffi::OsString> = [
+            "--api-key",
+            "anthropic=sk-1",
+            "--openai-api-key=sk-2",
+            "--set-env",
+            "ANTHROPIC_API_KEY=sk-3",
+            "--set-env=OPENAI_API_KEY=sk-4",
+            "--",
+            "GITHUB_TOKEN=sk-5",
+            "--no-auth-check",
+            "visible",
+            "--model",
+            "gpt",
+            "path=a=b",
+            "--Auth-Token",
+            "--also-hidden",
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+        assert_eq!(
+            render_args(&args),
+            [
+                r#""--api-key""#,
+                r#""<redacted>""#,
+                r#""--openai-api-key=<redacted>""#,
+                r#""--set-env""#,
+                r#""ANTHROPIC_API_KEY=<redacted>""#,
+                r#""--set-env=OPENAI_API_KEY=<redacted>""#,
+                r#""--""#,
+                r#""GITHUB_TOKEN=<redacted>""#,
+                r#""--no-auth-check""#,
+                r#""visible""#,
+                r#""--model""#,
+                r#""gpt""#,
+                r#""path=a=b""#,
+                r#""--Auth-Token""#,
+                r#""<redacted>""#,
+            ]
+        );
+        let mut planned = planned(Vec::new(), vec![], true);
+        planned.plan.args = args.clone();
+        let text = report_lines(&planned, &resolution(), ReportMode::Verbose).join("\n");
+        for secret in ["sk-1", "sk-2", "sk-3", "sk-4", "sk-5", "also-hidden"] {
+            assert!(!text.contains(secret), "{text}");
+        }
+        assert_eq!(planned.plan.args, args, "the launched arguments never change");
     }
 
     #[test]

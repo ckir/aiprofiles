@@ -108,6 +108,31 @@ fn dry_run_of_an_agent_that_is_not_installed_fails_like_a_launch() {
 }
 
 #[test]
+fn secret_argument_values_reach_the_agent_but_never_the_report() {
+    let root = Root::new();
+    let args =
+        ["fake", "work", "--verbose", "--", "--api-key", "sk-live-1", "OPENAI_API_KEY=sk-live-2"];
+    let output = root.agent_profile(args).output().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(
+        support::report(&output.stdout)["argv"],
+        serde_json::json!(["--api-key", "sk-live-1", "OPENAI_API_KEY=sk-live-2"])
+    );
+    let text = stderr(&output);
+    assert!(!text.contains("sk-live"), "{text}");
+    assert!(text.contains(r#"["--api-key", "<redacted>", "OPENAI_API_KEY=<redacted>"]"#), "{text}");
+
+    let dry = root
+        .agent_profile(["fake", "work", "--dry-run", "--", "--api-key=sk-live-3"])
+        .output()
+        .unwrap();
+    assert_eq!(dry.status.code(), Some(0), "{}", stderr(&dry));
+    let text = stdout(&dry);
+    assert!(!text.contains("sk-live"), "{text}");
+    assert!(text.contains(r#"["--api-key=<redacted>"]"#), "{text}");
+}
+
+#[test]
 fn verbose_launch_reports_to_stderr_after_creating_the_profile_directory() {
     let root = Root::new();
     let output = root.agent_profile(["fake", "work", "--verbose"]).output().unwrap();
