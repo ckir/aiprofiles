@@ -17,7 +17,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crate::config::{AppRoot, Config};
+use crate::config::{AppRoot, Config, check_case_twins};
 use crate::error::{Error, Result};
 use crate::exe::{self, Origin};
 use crate::launch::LaunchPlan;
@@ -236,24 +236,6 @@ fn has_kind(path: &Path, kind: PathKind) -> bool {
         PathKind::Dir => metadata.is_dir(),
         PathKind::File { .. } => metadata.is_file(),
     })
-}
-
-/// Refuses a profile whose name differs from an existing `profiles/` entry only in ASCII case (SP1 design §7.3).
-fn check_case_twins(root: &AppRoot, profile: &ProfileName) -> Result<()> {
-    let Ok(entries) = fs::read_dir(root.profiles_dir()) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
-        if name != profile.as_str() && name.eq_ignore_ascii_case(profile.as_str()) {
-            return Err(Error::ProfileCaseConflict {
-                requested: profile.to_string(),
-                existing: name.to_owned(),
-            });
-        }
-    }
-    Ok(())
 }
 
 /// Ensures every path, ignoring `existed`, so a path created or removed after planning is still handled.
