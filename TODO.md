@@ -21,7 +21,8 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       and so is its temp-file `sync_all` before the rename (durability needs crash injection to observe).
 - [ ] Report argument redaction is a name rule: it misses secrets passed positionally, in inline JSON, in
       `key=value` or `Name: value` forms without a sensitive name part, or under an option abbreviation without
-      the sensitive part, and it hides harmless values such as `--map-tokens 1024`.
+      the sensitive part, or in an option name whose sensitive part is split by an invalid UTF-8 byte (the rule
+      matches the lossy text), and it hides harmless values such as `--map-tokens 1024`.
 - [ ] `ArgumentConflict` echoes the whole matched argument; redact it before any conflict option can carry a secret.
 - [ ] The Codex "new profile starts logged out" note keys on the home directory being absent, so a present but
       empty home gives no note.
