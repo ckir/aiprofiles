@@ -1,6 +1,6 @@
 # SP2 — Adapter architecture gate: design
 
-**Status:** sections approved by the owner on 2026-09-15; written spec under panel review (rounds 1–3 folded).
+**Status:** sections approved by the owner on 2026-09-15; written spec under panel review (rounds 1–4 folded).
 **Branch:** `sp2-adapters` (from `main` at `10166af`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` (called "V3" below). Where this document and V3
 disagree, V3 wins; report the conflict instead of resolving it silently.
@@ -70,14 +70,15 @@ crates/agent-profile/src/adapter/
   mod.rs       trait Adapter, REAL_ADAPTERS, registry(), lookup, PlanContext, PlannedLaunch, ProfilePath,
                PathKind, shared helpers (plan helpers, ensure_paths, write_new_file), conflict scan,
                case-twin check
-crates/agent-profile/src/output.rs
-               ReportMode added to report_lines
   metadata.rs  AdapterMetadata, AdapterEvidence, SupportLevel, Capability, CapabilityState, CapabilityClaim,
                EnvOverride, ConflictOption, ProfilePresence
   claude.rs    Claude Code
   codex.rs     Codex CLI
   aider.rs     Aider
   fake.rs      debug-only test agent (moved out of mod.rs)
+crates/agent-profile/src/output.rs   ReportMode added to report_lines
+crates/agent-profile/src/exe.rs      relative PATH skip, shim forms; doc comment updated beyond "batch file"
+crates/agent-profile/src/error.rs    ArgumentConflict; UnsupportedExecutable fields and message
 ```
 
 ### 4.2 Types
@@ -193,20 +194,25 @@ initialization (4) → launch (6).
 
 Both plan helpers return a `PlannedLaunch` with empty `notes`; the adapter adds its notes afterwards.
 
-- `env_dir_plan(adapter, ctx, var, mechanism)`: discovers `metadata().executable`, checks case twins, takes
-  the directory from `adapter.paths()` (`vec![(<root>/profiles/<p>/<agent>, PathKind::Dir)]`), sets `var` to
-  it, passes `args` verbatim, `cwd: None`. Used by Claude, Codex, Fake.
-- `config_file_arg_plan(adapter, ctx, flag, mechanism)`: discovers, checks case twins, takes
+- `env_dir_plan(adapter, ctx, var)`: discovers `metadata().executable`, checks case twins, takes the
+  directory from `adapter.paths()` (`vec![(<root>/profiles/<p>/<agent>, PathKind::Dir)]`), sets `var` to it,
+  passes `args` verbatim, `cwd: None`, `mechanism = format!("environment variable {var}")`. Used by Claude,
+  Codex, Fake.
+- `config_file_arg_plan(adapter, ctx, flag)`: discovers, checks case twins, takes
   `vec![(<dir>, PathKind::Dir), (<file>, PathKind::File { contents })]` from `adapter.paths()`, prepends
-  `flag <file>` to `args`, no environment overrides. Used by Aider.
+  `flag <file>` to `args`, no environment overrides, `mechanism = format!("argument {flag} {}", file.display())`.
+  Used by Aider.
 - `ensure_paths(&[ProfilePath])`: the shared `initialize()` body, ignoring `existed` (a path created or
   removed between plan and initialize is still handled).
   - `Dir`: `create_dir_all`, then `fs::metadata` (follows symlinks) must report a directory.
   - `File`: if `fs::metadata` reports a file, done. Otherwise `write_new_file(path, contents)`, a small
-    lock-free writer in `adapter/mod.rs`: a `tempfile::Builder` temp file with prefix `.<file name>.` and
-    suffix `.tmp` in the same directory, `write_all`, `sync_all`, `persist_noclobber`, then (Unix) `sync_all`
-    on the directory. Any persist error is success when `fs::metadata` now reports a file (a concurrent
-    launch won); otherwise it is `ProfileDir`. There is no sweep: without a lock a sweep could delete another
+    lock-free writer in `adapter/mod.rs`, implemented as `write_new_file_with(path, contents, before_persist)`
+    with a no-op hook (the same test-seam pattern as SP1's `config::update_with`): a `tempfile::Builder` temp
+    file in the same directory named `<file name>.<random>.tmp` (for Aider `.aider.conf.yml.<random>.tmp`),
+    `write_all`, `sync_all`, `before_persist()`, `persist_noclobber`, then (Unix) `sync_all` on the directory.
+    Any persist error is success when `fs::metadata` now reports a file (a concurrent launch won); otherwise
+    it is `ProfileDir`. A directory-sync failure after a successful persist is `ProfileDir` with the SP1-style
+    message `file created, but the directory could not be synced; it may not survive a power loss`. There is no sweep: without a lock a sweep could delete another
     launch's live temp file, and a leftover temp from a killed launch is inert because Aider reads only
     `.aider.conf.yml`. A concurrent launch never sees a partial file, and a power loss cannot leave a
     zero-length file under the final name (V3 §9.1). SP1's `config.rs` is unchanged.
@@ -363,8 +369,9 @@ bullet runs on every row unless it names specific adapters.
   `upstream_version`, `source_url` non-empty; every `long` spelling starts with `--`; `REAL_ADAPTERS` ids are
   exactly `claude, codex, aider`, each `Proven`.
 - **Paths contract:** `paths()` equals the `path` and `kind` of `plan().paths`, in order.
-- **Presence contract:** `Absent` before `initialize()`; `Materialized` after, with no executable configured
-  or present anywhere (the signature takes no `PATH`); `Absent` for the case-only twin `WORK` of a materialized `work`
+- **Presence contract:** `Absent` before `initialize()`; `Materialized` after `plan()` and `initialize()`
+  with a configured executable, and still `Materialized` once that executable and `config.toml` are deleted;
+  `Absent` for the case-only twin `WORK` of a materialized `work`
   on every platform (the twin check reads directory entries, so this is filesystem-independent). Aider only:
   `Absent` again when the file is removed while the directory stays (the only multi-path row, so it alone
   pins that presence requires every path).
@@ -403,9 +410,16 @@ Plus:
 - conflict scan: every match form in §6, the `--` stop, non-UTF-8 bytes.
 - `output`: `creates`, `note` and markers in `DryRun`; none of the markers in `Verbose`.
 - `error`: `ArgumentConflict` maps to 2; exit-code table test extended.
-- `ensure_paths`: concurrent calls on a new Aider file never observe a partial file (writer threads plus a
-  reader asserting the content is `{}\n` whenever the file exists); a leftover `.aider.conf.yml.*.tmp` file in
-  the directory never becomes the config file and does not stop creation.
+- `write_new_file_with` (deterministic, via the hook):
+  - inside `before_persist`, the final name does not exist yet (kills a create-then-write writer);
+  - inside `before_persist`, create the target with other bytes: the call returns `Ok` and the bytes are
+    unchanged (kills dropping the "file now exists" fallback and kills an overwriting `persist`, on every
+    platform);
+  - inside `before_persist`, create a directory at the target: `ProfileDir`.
+- `ensure_paths`: concurrent calls on a new Aider file all return `Ok` and never observe a partial file
+  (writer threads plus a reader asserting the content is `{}\n` whenever the file exists); a leftover
+  `.aider.conf.yml.<random>.tmp` file in the directory never becomes the config file and does not stop
+  creation.
 - Sensitive declarations: a test-only adapter in `adapter/mod.rs` tests declares
   `EnvOverride { name: "PROFILE_SESSION_HANDLE", sensitive: true }` (no SP1 backstop substring) and sets it;
   its `PlannedLaunch.sensitive_env` is exactly that name and `report_lines` renders `<redacted>` for it.
