@@ -8,9 +8,9 @@ A local, privacy-first Rust CLI for selecting and launching profiles for multipl
 Agent Profile never copies credentials, extracts tokens, sends telemetry or trusts
 repository-controlled profile selection.
 
-**Status: core and launcher (SP1).** Profile-name validation, configuration, and the explicit launch path
-(`exec` on Unix, a supervised child on Windows) exist. No real agent adapter ships yet, so release builds
-know no agents; see [ROADMAP.md](ROADMAP.md). The authoritative design is
+**Status: architecture gate (SP2).** Profile-name validation, configuration, the explicit launch path
+(`exec` on Unix, a supervised child on Windows) and three evidence-backed adapters (Claude Code, Codex CLI,
+Aider) exist; see [ROADMAP.md](ROADMAP.md). The authoritative design is
 [`agent-profile-implementation-spec-v3.md`](agent-profile-implementation-spec-v3.md).
 
 ## Architecture
@@ -49,15 +49,28 @@ Configuration and profiles live in `~/.agent-profile/` (`%USERPROFILE%\.agent-pr
 `AGENT_PROFILE_HOME` to an absolute path to use another directory. Profile resolution order: explicit profile >
 agent-specific repository mapping > repository-wide mapping > global default > none.
 
+## Supported agents
+
+Every profile lives under `<root>/profiles/<profile>/<agent>/` and is created on first launch. Each row is
+backed by an evidence entry (verified 2026-09-15); a state weaker than `Supported` means exactly what its
+reason says.
+
+| Agent | Mechanism | Support | Config isolation | Credential isolation | State isolation |
+|---|---|---|---|---|---|
+| Claude Code 2.1.270 (`claude`) | `CLAUDE_CONFIG_DIR` | Proven | Supported (project `.claude/` settings still layer on top) | Conditional (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and similar variables bypass it) | NotGuaranteed (history and project state moving with the directory is community-sourced only) |
+| Codex CLI 0.153.4 (`codex`) | `CODEX_HOME` | Proven | Supported (project-level configuration layering is not measured) | Conditional (`OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` bypass it) | Conditional (`CODEX_SQLITE_HOME`) |
+| Aider 0.86.2 (`aider`) | `--config <profile>/.aider.conf.yml` | Proven | NotGuaranteed (home, repository and working-directory `.aider.conf.yml`, `.env` and `AIDER_*` still apply) | NotSupported | NotSupported |
+
+A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
+and its abbreviations) are refused before launch. On Windows an agent must be a native `.exe`: an npm or pnpm
+`.cmd` shim is refused, and the error names the `[agents.<id>] executable` setting to use instead.
+
 ## Planned adapters — not yet implemented or evidence-verified
 
-Each adapter ships only with a verified evidence entry and capability declaration. Until then, the
-mechanisms below are the specification's starting point, not a claim about isolation.
+The mechanisms below are the specification's starting point, not a claim about isolation.
 
 | Agent | Primary mechanism | Intended semantic tier |
 |---|---|---|
-| Claude Code | `CLAUDE_CONFIG_DIR` | Profile/environment isolation, with credential caveats |
-| Codex CLI | native `--profile` / `CODEX_HOME` | Native profile |
 | Gemini CLI | `GEMINI_CLI_HOME` | Home/state isolation |
 | GitHub Copilot CLI | `COPILOT_HOME` | Home/config isolation |
 | OpenCode | `OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG` | Config/home isolation |
@@ -66,7 +79,6 @@ mechanisms below are the specification's starting point, not a claim about isola
 | Kiro CLI | `KIRO_HOME` | Independent home/profile |
 | Cursor Agent CLI | `CURSOR_CONFIG_DIR` | Configuration selection |
 | Continue CLI | `--config` | Configuration selection |
-| Aider | `--config` | Configuration selection |
 | Amp | `--settings-file` | Settings selection |
 
 ## Workspace

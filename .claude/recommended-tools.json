@@ -64,5 +64,11 @@
     "why": "Lets actionlint check the shell inside workflow `run:` steps; actionlint disables that rule when shellcheck is not on PATH.",
     "install": "winget install koalaman.shellcheck",
     "in_path": "shellcheck"
+  },
+  {
+    "name": "Sandboxie-Plus",
+    "why": "The Windows sandbox for measuring real coding agents (CONTRIBUTING.md \"Measuring agent behaviour\"): adapter evidence is refreshed only inside a disposable box, never by installing agents on the host. Windows only; Linux and macOS contributors use the Podman/Bubblewrap or Tart/OrbStack recipes in CONTRIBUTING.md, and this check has no platform guard, so it lists Sandboxie-Plus as missing there.",
+    "install": "winget install Sandboxie.Plus",
+    "file_exists": "C:/Program Files/Sandboxie-Plus/Start.exe"
   }
 ]

@@ -75,6 +75,48 @@ platform-specific behaviour needs the test on the platform it concerns.
 Tests that launch an "agent" use the `fake-agent` fixture (`crates/agent-profile/src/bin/fake-agent.rs`),
 launched through `crates/agent-profile/tests/support`. Never launch a real coding agent from a test.
 
+Every adapter has a row in `crates/agent-profile/tests/adapter_contract.rs` and an end-to-end launch in
+`crates/agent-profile/tests/adapters_e2e.rs`; a new adapter without its row fails the suite.
+
+## Measuring agent behaviour
+
+Adapter evidence (`AdapterEvidence` in `crates/agent-profile/src/adapter/`) is refreshed only from measurements
+of the real agent, and those measurements run **inside a disposable sandbox, never on your own machine**.
+Nobody wants their machine filling up with coding agents they do not use, and a sandbox also behaves like a
+clean install. Agents you already use may be probed read-only on the host (`--help`, `--version`).
+
+**Windows: Sandboxie-Plus** (`winget install Sandboxie.Plus`).
+
+```powershell
+$sbie = 'C:\Program Files\Sandboxie-Plus'
+& "$sbie\SbieIni.exe" set AgentProbe Enabled y
+# Hide your real agent homes so the box behaves like a clean machine; add any other agent home you have.
+& "$sbie\SbieIni.exe" append AgentProbe ClosedFilePath '%USERPROFILE%\.claude'
+& "$sbie\SbieIni.exe" append AgentProbe ClosedFilePath '%USERPROFILE%\.codex'
+& "$sbie\Start.exe" /reload
+# Run a script inside the box; its exit code comes back, its writes stay in the box.
+& "$sbie\Start.exe" /box:AgentProbe /wait cmd /c "C:\path\to\probe.cmd > C:\m\out.txt 2>&1"
+Get-Content 'C:\Sandbox\<user>\AgentProbe\drive\C\m\out.txt'
+# Delete everything the box installed, then remove the box.
+& "$sbie\Start.exe" /box:AgentProbe /terminate
+& "$sbie\Start.exe" /box:AgentProbe delete_sandbox_silent
+& "$sbie\SbieIni.exe" set AgentProbe '*' ''
+& "$sbie\Start.exe" /reload
+```
+
+Pin interpreter versions an agent supports (for example `uv tool install --python 3.12 aider-chat`): an
+unsupported interpreter can start a long source build of native dependencies.
+
+**Linux:** rootless Podman or Docker (`podman run --rm`) for installs; Bubblewrap (`bwrap`) or Firejail with a
+private home for probing a host binary without exposing your real agent homes.
+
+**macOS:** Tart disposable macOS virtual machines when the behaviour is macOS-specific (for example the
+Keychain); OrbStack, Colima or Docker `--rm` for checks that do not depend on macOS. `sandbox-exec` is
+deprecated and can only deny writes, so it is not a substitute.
+
+Record each measurement in the adapter's `AdapterEvidence` (`verified_at`, `upstream_version`, `source_url`,
+`notes`) and in the design document's decision table.
+
 ## Commit messages
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/), because `git-cliff` generates
