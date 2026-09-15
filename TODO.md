@@ -2,12 +2,20 @@
 
 Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 
-## SP2 open decisions
+## SP2 known limits
 
-- [ ] **Launching `.cmd`/`.bat` shims without shell mediation** (spec §20, §23.2). npm installs agents on
-      Windows as `<name>.cmd` shims, and Rust's `std::process::Command` runs batch files through `cmd.exe`.
-      SP1 refuses `.bat` and `.cmd` executables outright (SP1 design D8); SP2 must decide how a real adapter
-      launches a shim-installed agent directly.
+- [x] **Launching `.cmd`/`.bat` shims without shell mediation** (spec §20, §23.2). Decided in SP2 (design D2):
+      shims are refused, never parsed; the error names the `[agents.<id>] executable` setting.
+- [ ] Aider conflict scan is shallow (spec §21): option values are not parsed, so a value equal to a conflicting
+      spelling (`--message --config`) is refused, and clustered short options (`-vc f`) are not detected.
+- [ ] Credential variables that bypass Claude Code and Codex isolation (SP2 design D8) are passed through
+      unchanged; decide in `doctor` (SP5) whether to warn.
+- [ ] Setting `[agents.codex] executable` to the npm-vendored `codex.exe` bypasses the npm launcher, which may put
+      bundled tools such as `rg` on `PATH`; measure in a sandbox before recommending it.
+- [ ] Creating the Aider config file needs a no-replace rename or hard links; a filesystem with neither fails
+      with exit 4. macOS smbfs, msdos and exfat are not measured.
+- [ ] A `.com` beside a `.exe` in one `PATH` directory is ignored although `cmd.exe` would prefer it.
+- [ ] The Unix directory-sync failure branch of the Aider file writer is untested (like SP1 `config.rs` step 7a).
 
 ## SP3 open decisions
 

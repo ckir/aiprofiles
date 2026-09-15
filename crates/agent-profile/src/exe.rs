@@ -77,6 +77,7 @@ fn search_path(
         }
         match search_dir(&dir, name) {
             Some(Hit::Native(path)) => return Ok(Found { path, origin: Origin::Path }),
+            #[cfg(windows)]
             Some(Hit::Unsupported(path)) => return Err(unsupported(agent, path, config_file)),
             None => {}
         }
@@ -84,8 +85,11 @@ fn search_path(
     Err(not_installed(agent, NotInstalledReason::NotOnPath { ignored_relative }))
 }
 
+/// What a `PATH` directory holds for an agent.
 enum Hit {
     Native(PathBuf),
+    /// A Windows form that needs a shell or interpreter (`.com`, `.cmd`, `.bat`, `.ps1`) and no `.exe`.
+    #[cfg(windows)]
     Unsupported(PathBuf),
 }
 
