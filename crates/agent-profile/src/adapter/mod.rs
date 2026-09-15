@@ -4,6 +4,8 @@
 //! SP1 has no adapter trait (SP2 designs it) and one test-only agent, `fake`, compiled only when debug
 //! assertions are on, so release builds contain no agent at all (design D1).
 
+pub mod metadata;
+
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
