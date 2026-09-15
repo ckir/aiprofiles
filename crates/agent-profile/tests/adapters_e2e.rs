@@ -153,6 +153,11 @@ fn setup_errors_win_over_a_conflict() {
     let mut command = relative.agent_profile(["aider", "work"].iter().chain(&conflict));
     let output = command.env("AGENT_PROFILE_HOME", "relative").env("PATH", "").output().unwrap();
     assert_eq!(output.status.code(), Some(4), "relative root: {}", stderr(&output));
+    assert!(
+        stderr(&output).contains("AGENT_PROFILE_HOME must be an absolute path"),
+        "{}",
+        stderr(&output)
+    );
 
     let corrupt = Root::empty();
     corrupt.write_config("[agents\n");
@@ -162,6 +167,7 @@ fn setup_errors_win_over_a_conflict() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(4), "corrupt config: {}", stderr(&output));
+    assert!(stderr(&output).contains("config.toml"), "{}", stderr(&output));
 
     let no_profile = Root::empty();
     let output = no_profile
@@ -171,6 +177,7 @@ fn setup_errors_win_over_a_conflict() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(4), "no profile: {}", stderr(&output));
+    assert!(stderr(&output).contains("no profile selected for `aider`"), "{}", stderr(&output));
 }
 
 #[test]

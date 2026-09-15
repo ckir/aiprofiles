@@ -391,14 +391,31 @@ mod tests {
 
     #[test]
     fn a_hidden_secret_option_still_hides_its_own_value() {
-        let args: Vec<std::ffi::OsString> =
-            ["--api-key", "--client-secret", "sk-live", "--model", "gpt"]
-                .into_iter()
-                .map(Into::into)
-                .collect();
+        let args: Vec<std::ffi::OsString> = [
+            "--api-key",
+            "--client-secret",
+            "sk-live",
+            "--model",
+            "gpt",
+            "--token",
+            "GITHUB_TOKEN=x",
+            "--shown",
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect();
         assert_eq!(
             render_args(&args),
-            [r#""--api-key""#, r#""<redacted>""#, r#""<redacted>""#, r#""--model""#, r#""gpt""#]
+            [
+                r#""--api-key""#,
+                r#""<redacted>""#,
+                r#""<redacted>""#,
+                r#""--model""#,
+                r#""gpt""#,
+                r#""--token""#,
+                r#""<redacted>""#,
+                r#""--shown""#,
+            ]
         );
     }
 
