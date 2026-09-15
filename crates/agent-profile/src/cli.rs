@@ -5,12 +5,12 @@ use std::io::{self, Write};
 
 use clap::{Args, Parser, Subcommand};
 
-use crate::adapter::{self, PlannedLaunch};
+use crate::adapter::{self, PlanContext};
 use crate::config::{AppRoot, Config};
 use crate::error::{Error, Result};
 use crate::launch::{self, LaunchOutcome};
 use crate::name::{AgentId, Platform, ProfileName, is_reserved_word};
-use crate::output;
+use crate::output::{self, ReportMode};
 use crate::resolve;
 
 const LAUNCH_USAGE: &str = "\
@@ -249,28 +249,39 @@ fn run_agent(argv: Vec<OsString>) -> Result<i32> {
     let config = Config::load(&root)?;
     let agent = AgentId::parse(&agent).expect("known agents are valid agent ids");
     let resolution = resolve::resolve(agent.clone(), profile);
-    if resolution.profile.is_none() {
+    let Some(profile) = resolution.profile.as_ref() else {
         return Err(Error::NoProfile { agent: agent.to_string() });
-    }
+    };
 
-    // Step 5.
+    // SP2 design §4.3 step 1: parsing already refused unknown agents.
+    let adapter = adapter::lookup(agent.as_str()).expect("known agents have an adapter");
+    // Step 2: a pure conflict scan, before executable discovery.
+    adapter::check_conflicts(adapter.metadata(), &opaque)?;
+    // Step 3: discovery, the case-only-twin check, the plan.
     let path_var = std::env::var_os("PATH");
-    let planned = adapter::plan(&agent, &resolution, &root, &config, opaque, path_var.as_deref())
+    let ctx = PlanContext {
+        profile,
+        root: &root,
+        config: &config,
+        args: &opaque,
+        path_var: path_var.as_deref(),
+    };
+    let planned = adapter
+        .plan(&ctx)
         .map_err(|error| with_unknown_configured(error, Some(&config), &known))?;
 
-    // Step 6.
+    // Step 4.
     if dry_run {
-        let lines = output::report_lines(&planned, &resolution);
+        let lines = output::report_lines(&planned, &resolution, ReportMode::DryRun);
         write_out(&lines.iter().map(|line| format!("{line}\n")).collect::<String>())?;
         return Ok(0);
     }
 
-    // Step 7. The verbose report is built after lazy creation, so it never says "(would be created)".
-    adapter::ensure_profile_dir(&planned)?;
-    let planned = PlannedLaunch { profile_dir_exists: true, ..planned };
+    // Step 5. The verbose report is rendered after initialization, so it never says "(would be created)".
+    adapter.initialize(&planned)?;
     if verbose {
         let mut stderr = io::stderr();
-        for line in &output::report_lines(&planned, &resolution) {
+        for line in &output::report_lines(&planned, &resolution, ReportMode::Verbose) {
             let _ = writeln!(stderr, "agent-profile: {line}");
         }
         let _ = stderr.flush();
