@@ -82,16 +82,17 @@ crates/agent-profile/src/adapter/
 ```rust
 pub trait Adapter: Sync {
     fn metadata(&self) -> &'static AdapterMetadata;
+    /// Pure: no filesystem access. Every path the adapter owns for `profile`, in creation order.
+    fn paths(&self, root: &AppRoot, profile: &ProfileName) -> Vec<(PathBuf, PathKind)>;
     /// Reads the filesystem at most; never writes. Discovers the executable, then refuses case-only twins.
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch>;
-    /// Reads the filesystem at most; never writes (V3 §8).
-    fn presence(&self, ctx: &PlanContext<'_>) -> ProfilePresence;
+    /// Reads the filesystem at most; never writes; never consults `PATH` or the executable (V3 §8).
+    fn presence(&self, root: &AppRoot, profile: &ProfileName) -> ProfilePresence;
     /// Ensures every path in `planned.paths`, in order; idempotent; never overwrites a file.
     fn initialize(&self, planned: &PlannedLaunch) -> Result<()>;
 }
 
-pub struct PlanContext<'a> {
-    pub agent: &'a AgentId,
+pub struct PlanContext<'a> {                   // the agent id is always `metadata().id`
     pub profile: &'a ProfileName,
     pub root: &'a AppRoot,
     pub config: &'a Config,
@@ -102,7 +103,7 @@ pub struct PlanContext<'a> {
 pub struct AdapterMetadata {
     pub id: &'static str,
     pub executable: &'static str,              // base name, without `.exe`
-    pub mechanism: &'static str,               // human text for the report
+    pub mechanism_summary: &'static str,       // path-free, e.g. "argument --config <file>"; used in messages
     pub support: SupportLevel,
     pub evidence: AdapterEvidence,
     pub capabilities: &'static [CapabilityClaim],
@@ -150,16 +151,20 @@ pub struct ProfilePath { pub path: PathBuf, pub kind: PathKind, pub existed: boo
 **Support level:** `Proven` requires an evidence entry, every capability claimed, and passing the contract
 suite (§8.1). All three real adapters are `Proven`; `fake` is `Experimental`.
 
-`PlannedLaunch` keeps its SP1 fields `plan`, `profile`, `profile_dir`, `executable_origin`, `mechanism`,
-`sensitive_env` (now filled from `metadata().env` entries with `sensitive: true`), replaces
-`profile_dir_exists` with `paths: Vec<ProfilePath>` (every path the adapter owns, in creation order, with
-whether it existed at plan time), and adds `notes: Vec<String>` (non-sensitive facts shown in the report).
+`PlannedLaunch` keeps its SP1 fields `plan`, `profile`, `profile_dir`, `executable_origin`, `mechanism` (the
+per-launch report text, as in SP1, e.g. `environment variable CODEX_HOME`), `sensitive_env` (now filled from
+`metadata().env` entries with `sensitive: true`), replaces `profile_dir_exists` with
+`paths: Vec<ProfilePath>` (built from `paths()`; `existed` is true exactly when `fs::metadata` reports the
+declared kind, so a directory where a file belongs is not "existing"), and adds `notes: Vec<String>`
+(non-sensitive facts shown in the report).
 
 `REAL_ADAPTERS: &[&dyn Adapter]` is exactly `[&Claude, &Codex, &Aider]` in every build. `registry()` returns
 `REAL_ADAPTERS` plus `&Fake` when `debug_assertions` is on. `known_agents()` is derived from `registry()`.
 
-**Presence** (V3 §8): `Materialized` when every `ProfilePath` exists with the right kind, otherwise `Absent`.
-No SP2 adapter reports `Known` (none has a native profile registry).
+**Presence** (V3 §8): `Absent` when the SP1 case-only-twin check would refuse the profile (so presence never
+disagrees with launch); otherwise `Materialized` when every path from `paths()` has the declared kind per
+`fs::metadata`, else `Absent`. It is independent of whether the agent is installed. No SP2 adapter reports
+`Known` (none has a native profile registry).
 
 ### 4.3 Launch data flow and error precedence
 
@@ -181,26 +186,34 @@ initialization (4) → launch (6).
 
 ### 4.4 Shared helpers
 
-- `env_dir_plan(ctx, var, subdir)`: discovers `metadata().executable`, checks case twins, sets
-  `var=<root>/profiles/<p>/<subdir>`, passes `args` verbatim, `cwd: None`, `paths = [Dir(<that dir>)]`. Used
-  by Claude, Codex, Fake.
-- `config_file_arg_plan(ctx, flag, subdir, file_name, contents)`: discovers, checks case twins, prepends
-  `flag <root>/profiles/<p>/<subdir>/<file_name>` to `args`, no environment overrides,
-  `paths = [Dir(<dir>), File(<file>, contents)]`. Used by Aider.
+- `env_dir_plan(adapter, ctx, var)`: discovers `metadata().executable`, checks case twins, takes the directory
+  from `adapter.paths()` (`[Dir(<root>/profiles/<p>/<agent>)]`), sets `var` to it, passes `args` verbatim,
+  `cwd: None`. Used by Claude, Codex, Fake (Fake adds its sensitive variable).
+- `config_file_arg_plan(adapter, ctx, flag)`: discovers, checks case twins, takes
+  `[Dir(<dir>), File(<file>, contents)]` from `adapter.paths()`, prepends `flag <file>` to `args`, no
+  environment overrides. Used by Aider.
 - `ensure_paths(&[ProfilePath])`: the shared `initialize()` body, ignoring `existed` (a path created or
   removed between plan and initialize is still handled).
   - `Dir`: `create_dir_all`, then `fs::metadata` (follows symlinks) must report a directory.
-  - `File`: if `fs::metadata` reports a file, done. Otherwise write `contents` to a `tempfile::NamedTempFile`
-    in the same directory and `persist_noclobber` it to the target; an `AlreadyExists` failure is success only
-    when `fs::metadata` now reports a file. A concurrent launch therefore never sees a partial file (V3 §9.1).
+  - `File`: if `fs::metadata` reports a file, done. Otherwise call `write_new_file(path, contents)`, a durable
+    no-clobber writer extracted from SP1's `config::update_with` steps 3, 6, 7 and 7a so both share one
+    implementation: best-effort sweep of `.<file name>.*` temp files in the target directory (SP1's
+    `TEMP_PREFIX` pattern, `.config.toml.` for the config and `.aider.conf.yml.` for Aider), a
+    `tempfile::Builder` temp file with that prefix in the same directory, `write_all`, `sync_all`,
+    `persist_noclobber`, then (Unix) `sync_all` on the directory. `persist_noclobber` failing with
+    `AlreadyExists` is success only when `fs::metadata` now reports a file. A concurrent launch never sees a
+    partial file, and a power loss cannot leave a zero-length file under the final name (V3 §9.1).
+    `config::update_with` keeps its replace semantics and its lock; only the temp, sync and sweep steps are
+    shared.
   - Every failure, including a dangling symlink or a directory where a file belongs, is
     `Error::ProfileDir { path, source }` (exit 4). SP1's `ensure_profile_dir` becomes the `Dir` case.
 
 ## 5. Adapters
 
 All profile data lives under `<root>/profiles/<p>/<agent>/`. Wrapper-owned variables override inherited
-ones (V3 §22). Every SP2 override is a directory path, so every `EnvOverride` is `sensitive: false`; the
-contract suite (§8.1) enforces that every variable a plan sets is declared.
+ones (V3 §22). Every override of the three real adapters is a directory path, so their `EnvOverride`s are
+`sensitive: false`; `fake` declares one sensitive override (§5.4). The contract suite (§8.1) enforces that
+every variable a plan sets is declared.
 
 ### 5.1 Claude Code (`claude`)
 
@@ -250,7 +263,10 @@ contract suite (§8.1) enforces that every variable a plan sets is declared.
 
 ### 5.4 Fake (`fake`, debug builds only)
 
-- **Mechanism:** `FAKE_AGENT_HOME=<root>/profiles/<p>/fake` via `env_dir_plan`, executable `fake-agent`.
+- **Mechanism:** `FAKE_AGENT_HOME=<root>/profiles/<p>/fake` via `env_dir_plan`, executable `fake-agent`, plus
+  `FAKE_AGENT_SESSION=<profile name>` declared `sensitive: true`. The name deliberately contains none of the
+  SP1 backstop substrings (`TOKEN`, `SECRET`, `KEY`, `PASSWORD`, `CREDENTIAL`, `AUTH`), so only the declaration
+  path can redact it; this is the one override that exercises that path.
 - **Conflicts:** `ConflictOption { long: &["--fake-profile"], short: None }`, so the conflict path has an
   end-to-end test without a real agent.
 - **Capabilities:** all `Unknown`, basis `test fixture`. **Evidence:** `fake-home-v1`, `measured`.
@@ -265,7 +281,7 @@ ASCII, which makes a byte-prefix comparison exact on all platforms. An opaque ar
 
 - The scan stops at the first `--` among the opaque arguments; later arguments are positional for the agent.
 - The first match fails with `Error::ArgumentConflict { agent: String, option: String, mechanism: &'static str }`
-  (`option` rendered lossily), exit 2:
+  (`option` rendered lossily, `mechanism` from `metadata().mechanism_summary`), exit 2:
   `` `--conf` conflicts with how agent-profile selects the aider profile (argument --config <file>); remove it
   from the agent arguments ``.
 
@@ -296,7 +312,9 @@ For each absolute `PATH` directory in order, check `<name>.exe`, `<name>.com`, `
   order above, exit 6.
 
 A later directory's `.exe` is never chosen over an earlier non-`.exe` form, because the user's shell would run
-that form. A configured `.cmd` or `.bat` gets the same error (SP1 D8, now with the agent and hint). Message:
+that form. A configured `.cmd`, `.bat` or `.ps1` gets the same error (SP1 D8 extended, now with the agent
+and hint); a configured `.com` is launched as a native program. When one directory holds several non-`.exe`
+forms, the error names the first in the order above. Message:
 `` `codex` resolves to C:\…\codex.cmd, which agent-profile cannot launch without a shell. Install the agent's
 native executable (for example the vendor's standalone installer) or set [agents.codex] executable =
 "<absolute path to a native .exe>" in <config_file> ``.
@@ -319,13 +337,14 @@ Unix discovery is unchanged apart from §7.1: npm shims there are executable scr
 
 ### 8.1 Library contract suite: `tests/adapter_contract.rs`
 
-One table row per `registry()` adapter (tests build with debug assertions, so `fake` is included); every
-assertion runs on every row.
+One table row per `registry()` adapter (tests build with debug assertions, so `fake` is included). Each
+bullet runs on every row unless it names specific adapters.
 
 - **Plan contract:** profile `work`, a configured executable, opaque args `["x", "a b"]` produce the exact
   `LaunchPlan` (executable, args, env, `cwd: None`), `paths`, `notes` and `mechanism` from §5.
 - **Declared environment:** every variable in the plan's `env` appears in `metadata().env`; `sensitive_env`
-  equals the declared sensitive names.
+  equals the declared sensitive names (for `fake`, exactly `["FAKE_AGENT_SESSION"]`, so a planner that ignores
+  the declarations fails); the `fake` dry-run report renders `FAKE_AGENT_SESSION=<redacted>`.
 - **Conflict contract:** each row lists refused and accepted argument vectors.
   Aider refused: `["--config","f"]`, `["--config=f"]`, `["--confi","f"]`, `["--conf","f"]`, `["--con=f"]`,
   `["-c","f"]`, `["-cf"]`, and on Unix a `--config=` argument with non-UTF-8 bytes after `=`.
@@ -336,8 +355,12 @@ assertion runs on every row.
   appears exactly once with a non-empty `basis`; `verified_at` is `YYYY-MM-DD`; `mechanism_id`,
   `upstream_version`, `source_url` non-empty; every `long` spelling starts with `--`; `REAL_ADAPTERS` ids are
   exactly `claude, codex, aider`, each `Proven`.
-- **Presence contract:** `Absent` before `initialize()`, `Materialized` after; `Absent` again when the Aider
-  file is removed.
+- **Paths contract:** `paths()` equals the `path` and `kind` of `plan().paths`, in order.
+- **Presence contract:** `Absent` before `initialize()`; `Materialized` after, also when evaluated with an
+  empty `PATH` and no configured executable; `Absent` for the case-only twin `WORK` of a materialized `work`
+  on every platform (the twin check reads directory entries, so this is filesystem-independent). Aider only:
+  `Absent` again when the file is removed while the directory stays (the only multi-path row, so it alone
+  pins that presence requires every path).
 - **Initialization contract:** idempotent; an existing Aider config file keeps its bytes; a new Aider file
   holds exactly `{}\n`; a file where a directory belongs, a directory where the Aider file belongs, and (Unix)
   a dangling symlink at the Aider file each give `ProfileDir`.
@@ -349,7 +372,9 @@ executable name (`.exe` on Windows), set `PATH` to only that absolute directory,
 `agent-profile <agent> work -- …` and assert from the fixture's echo:
 
 - argv as planned (Aider's `--config <path>` first);
-- the override variable equals the profile path even when the parent set it to `/wrong` (V3 §22);
+- `claude` and `codex`: the override variable equals the profile path even when the parent set it to
+  `/wrong` (V3 §22); `aider`: the injected `--config` value is the profile file even when the parent set
+  `AIDER_CONFIG_FILE=/wrong` (an unrelated variable, proving nothing else leaks into the planned arguments);
 - the working directory is inherited;
 - the fixture's exit code propagates;
 - the planned directory, and for Aider the config file with `{}\n`, exist afterwards.
@@ -364,13 +389,16 @@ Plus:
 ### 8.3 Unit tests
 
 - `exe`: relative entries skipped including Windows `\tools` and `C:tools`; `ignored_relative` counted;
-  Windows `.cmd`-only and `.ps1`-only directories refused with agent and config file; earlier shim beats a
-  later `.exe`; `.exe` beside `.cmd` found.
+  Windows `.cmd`-only and `.ps1`-only directories refused with agent and config file; a directory holding
+  both `.cmd` and `.ps1` names the `.cmd`; earlier shim beats a later `.exe`; `.exe` beside `.cmd` found;
+  configured `.ps1` refused.
 - conflict scan: every match form in §6, the `--` stop, non-UTF-8 bytes.
 - `output`: `creates`, `note` and markers in `DryRun`; none of the markers in `Verbose`.
 - `error`: `ArgumentConflict` maps to 2; exit-code table test extended.
 - `ensure_paths`: concurrent calls on a new Aider file never observe a partial file (two threads, the reader
-  asserts the content is `{}\n` whenever the file exists).
+  asserts the content is `{}\n` whenever the file exists); a stale `.aider.conf.yml.*` temp file in the Aider
+  directory is swept and never becomes the config file.
+- `config`: SP1's writer tests still pass against the shared temp/sync/sweep helper.
 
 Every new test must fail under a logic mutant of the behaviour it guards (PINNING-ASSERTION-STRENGTH).
 
@@ -406,4 +434,7 @@ Every new test must fail under a logic mutant of the behaviour it guards (PINNIN
   bundled tools such as `rg` to `PATH`; not measured. An agent with no native executable cannot be launched
   on Windows until its vendor ships one.
 - A `.com` beside a `.exe` in the same directory is ignored although `cmd.exe` would prefer it.
+- Creating the Aider file needs a no-replace rename or hard links. On a filesystem with neither (for example
+  some FUSE or virtual-machine shared folders) Aider profiles fail with `ProfileDir` (exit 4); Claude and Codex
+  are unaffected. Behaviour on macOS smbfs, msdos and exfat is not measured.
 - Evidence is static; drift detection belongs to `doctor` (later SP).
