@@ -25,7 +25,7 @@ Requires Rust 1.98+ (edition 2024). The toolchain is pinned by `rust-toolchain.t
 
 ```bash
 # One-time: install the dev tools
-cargo binstall -y cargo-nextest just lefthook cargo-deny typos-cli bacon git-cliff cargo-release cargo-mutants
+cargo binstall -y cargo-nextest just lefthook cargo-deny typos-cli bacon cargo-mutants
 lefthook install
 
 # Everyday
@@ -119,8 +119,9 @@ Record each measurement in the adapter's `AdapterEvidence` (`verified_at`, `upst
 
 ## Commit messages
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/), because `git-cliff` generates
-the changelog from them:
+We follow [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash-merged, so
+the **PR title** becomes the commit on `main`; a required check (`Conventional PR title`) enforces the form,
+because release-plz chooses the next version and writes the changelog from these commits:
 
 ```
 type(scope): description
@@ -157,16 +158,21 @@ For security issues, do **not** open a public issue; see [SECURITY.md](SECURITY.
 
 ## Releasing
 
-Releases use `cargo release` and follow [Semantic Versioning](https://semver.org/). All crates are
-versioned in lockstep.
+Releases are automated with [release-plz](https://release-plz.dev) (`release-plz.toml`,
+`.github/workflows/release-plz.yml`); nobody runs a release command locally.
 
-```bash
-just release patch    # bug fixes
-just release minor    # new features
-just release major    # breaking changes
-```
+1. Every push to `main` with a `feat`, `fix`, `perf` or `refactor` commit opens or updates a release PR titled
+   `chore: release vX.Y.Z`, which bumps the workspace version and updates `crates/agent-profile/CHANGELOG.md`.
+2. Review that PR like any other; edit the changelog text in it if needed. Merging it is the release.
+3. The merge tags `vX.Y.Z`, creates a GitHub release, and builds and uploads the binaries for Linux (x86_64,
+   aarch64), macOS (x86_64, aarch64) and Windows (x86_64).
 
-Pushing the resulting `v*` tag triggers the cross-platform release build.
+Until V3 v0.1 is complete (SP5), versions stay `0.0.x` and every release is marked as a pre-release. If a
+binary upload fails, rerun **Actions → Release binaries → Run workflow** with the release tag.
+
+The release PR is opened with the `RELEASE_PLZ_TOKEN` repository secret: a fine-grained personal access token
+for this repository with Contents and Pull requests read/write, so CI runs on the release PR. It expires; when
+release PRs stop appearing, renew it.
 
 ## Licence
 

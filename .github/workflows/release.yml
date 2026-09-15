@@ -1,18 +1,35 @@
-name: Release
+name: Release binaries
+
+# Builds `agent-profile` for every supported target and uploads the archives to an existing GitHub release.
+# - Called by release-plz.yml right after release-plz creates the release.
+# - Run by hand (Actions → Release binaries → Run workflow) with an existing tag to rebuild and re-upload
+#   after a failed run; `--clobber` replaces any archive already attached.
+# Only `--bin agent-profile` is built: the fake-agent test fixture never ships.
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build and upload to (for example v0.0.2)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and upload to (for example v0.0.2)
+        required: true
+        type: string
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
+  build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -34,13 +51,14 @@ jobs:
             target: x86_64-pc-windows-msvc
             archive: zip
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
 
       - name: Install cross linker
         if: matrix.cross
@@ -50,7 +68,6 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build
-        # --bin agent-profile only: the fake-agent test fixture never ships.
         run: cargo build --release --locked --target ${{ matrix.target }} --bin agent-profile
 
       - name: Package (tar.gz)
@@ -65,6 +82,8 @@ jobs:
           Compress-Archive -Path "target/${{ matrix.target }}/release/agent-profile.exe" -DestinationPath "agent-profile-${{ matrix.target }}.zip"
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: agent-profile-${{ matrix.target }}.*
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release upload "$TAG" "agent-profile-${{ matrix.target }}.${{ matrix.archive }}" --clobber --repo "$GITHUB_REPOSITORY"
