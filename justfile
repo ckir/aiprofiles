@@ -64,10 +64,6 @@ doc:
 hooks:
     lefthook install
 
-# Generate the changelog
-changelog:
-    git-cliff --output CHANGELOG.md
-
 # Mutation testing over the library
 mutants:
     cargo mutants --package agent-profile
@@ -75,8 +71,3 @@ mutants:
 # Clean build artifacts
 clean:
     cargo clean
-
-# Release: bump every crate in lockstep, tag, commit
-# Usage: just release <patch|minor|major>
-release VERSION_BUMP:
-    cargo release {{VERSION_BUMP}} --workspace --execute
