@@ -1,0 +1,28 @@
+# Disposable test environment for agent-profile (CONTRIBUTING.md "Testing in a sandbox").
+#
+# Built fresh for every run by sandbox/run.sh and deleted afterwards. It holds the toolchains a test needs
+# (Rust, Node/npm, Python/uv) but never a coding agent: probes install agents inside the running container, so
+# every measurement starts from a clean install.
+
+FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+
+ARG RUST_TOOLCHAIN=stable
+ARG NEXTEST_VERSION=0.9.144
+ARG UV_VERSION=0.12.15
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl git nodejs npm pkg-config python3 xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash probe
+USER probe
+WORKDIR /home/probe
+ENV PATH=/home/probe/.cargo/bin:/home/probe/.local/bin:$PATH \
+    NPM_CONFIG_PREFIX=/home/probe/.local \
+    CARGO_TERM_COLOR=never
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" \
+    && curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/linux" | tar zxf - -C /home/probe/.cargo/bin \
+    && curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_NO_MODIFY_PATH=1 sh

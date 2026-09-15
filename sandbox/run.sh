@@ -1,0 +1,128 @@
+#!/bin/sh
+# Runs a test workload in a disposable container and leaves nothing behind except its results.
+#
+# Usage: sandbox/run.sh test                      cargo nextest run --workspace on a copy of this checkout
+#        sandbox/run.sh probe <agent>              sandbox/probes/<agent>.sh (installs the agent inside)
+#        sandbox/run.sh [--net] shell              interactive shell, for writing or debugging a probe
+#
+# Engine: rootless Podman when installed, otherwise Docker; override with AGENT_PROFILE_SANDBOX_ENGINE.
+# `test` and `probe` have network (crates and agent installs need it); `shell` has none unless --net is given.
+# Results: target/sandbox/<mode>[-<agent>]-<timestamp>/ holds exit-code, output.log, diff.txt (the files the run
+# added, changed or deleted inside the container) and whatever the workload writes to /out.
+#
+# Cleanup, whatever happens: the container and its image are removed. With Podman every run uses its own
+# temporary image store, deleted at the end, so no image, layer or build cache survives. Docker keeps its
+# build cache in its own store; prefer Podman where that matters.
+
+set -eu
+
+usage() {
+    sed -n '4,6p' "$0" | sed 's/^# \{0,1\}//' >&2
+    exit 2
+}
+
+net=none
+if [ "${1:-}" = "--net" ]; then
+    net=
+    shift
+fi
+[ $# -ge 1 ] || usage
+mode=$1
+shift
+agent=
+case "$mode" in
+    test) [ $# -eq 0 ] || usage; net= ;;
+    shell) [ $# -eq 0 ] || usage ;;
+    probe)
+        [ $# -eq 1 ] || usage
+        net=
+        agent=$1
+        case "$agent" in
+            '' | *[!a-z0-9-]*) echo "sandbox: agent names are [a-z0-9-]" >&2; exit 2 ;;
+        esac
+        ;;
+    *) usage ;;
+esac
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+if [ "$mode" = probe ] && [ ! -f "$root/sandbox/probes/$agent.sh" ]; then
+    echo "sandbox: no probe script sandbox/probes/$agent.sh" >&2
+    exit 2
+fi
+
+engine=${AGENT_PROFILE_SANDBOX_ENGINE:-}
+if [ -z "$engine" ]; then
+    if command -v podman >/dev/null 2>&1; then engine=podman; else engine=docker; fi
+fi
+case "$engine" in
+    podman | docker) ;;
+    *) echo "sandbox: AGENT_PROFILE_SANDBOX_ENGINE must be podman or docker" >&2; exit 2 ;;
+esac
+command -v "$engine" >/dev/null 2>&1 || { echo "sandbox: $engine is not installed" >&2; exit 2; }
+
+stamp=$(date +%Y%m%d-%H%M%S)
+id="agent-profile-sandbox-$stamp-$$"
+out="$root/target/sandbox/$mode${agent:+-$agent}-$stamp"
+mkdir -p "$out"
+
+store=
+userns=
+if [ "$engine" = podman ]; then
+    store=$(mktemp -d "${TMPDIR:-/tmp}/agent-profile-sandbox.XXXXXX")
+    # The host user becomes the container's `probe` user, so /out is writable and its files stay yours.
+    userns=--userns=keep-id:uid=1000,gid=1000
+else
+    # The Docker daemon does not map users: let the container's uid 1000 write the results directory.
+    chmod a+rwx "$out"
+fi
+
+eng() {
+    if [ -n "$store" ]; then
+        podman --root "$store/root" --runroot "$store/run" "$@"
+    else
+        docker "$@"
+    fi
+}
+
+cleanup() {
+    status=$?
+    trap - EXIT
+    eng rm -f "$id" >/dev/null 2>&1 || true
+    eng rmi -f "$id" >/dev/null 2>&1 || true
+    if [ -n "$store" ]; then
+        eng unshare rm -rf "$store" >/dev/null 2>&1 || rm -rf "$store" >/dev/null 2>&1 || true
+        if [ -e "$store" ]; then echo "sandbox: could not delete $store" >&2; fi
+    fi
+    echo "sandbox: removed container and image $id${store:+ and image store $store}; results in $out" >&2
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+eng build --quiet --tag "$id" --file "$root/sandbox/Containerfile" "$root/sandbox" >/dev/null
+
+# The checkout is mounted read-only and copied without `target/`, so a run never writes to your tree.
+copy='mkdir -p /home/probe/work && tar -C /src --exclude=./target -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
+case "$mode" in
+    test) script="$copy && cargo nextest run --workspace --no-tests=pass" ;;
+    probe) script="$copy && sh sandbox/probes/$agent.sh" ;;
+    shell) script="$copy && exec bash" ;;
+esac
+
+set +e
+if [ "$mode" = shell ]; then
+    # shellcheck disable=SC2086 # $userns is empty or one flag
+    eng run -it --name "$id" ${net:+--network "$net"} $userns --security-opt label=disable \
+        --volume "$root:/src:ro" --volume "$out:/out" "$id" sh -c "$script"
+else
+    # shellcheck disable=SC2086
+    eng run --name "$id" ${net:+--network "$net"} $userns --security-opt label=disable \
+        --volume "$root:/src:ro" --volume "$out:/out" "$id" sh -c "$script" > "$out/output.log" 2>&1
+fi
+code=$(eng inspect --format '{{.State.ExitCode}}' "$id" 2>/dev/null || echo 125)
+set -e
+echo "$code" > "$out/exit-code"
+eng diff "$id" > "$out/diff.txt" 2>&1 || true
+[ "$mode" = shell ] || tail -n 20 "$out/output.log"
+echo "sandbox: exit code $code" >&2
+exit "$code"
