@@ -1,7 +1,7 @@
 name: PR title
 
-# PRs are squash-merged, so the PR title becomes the commit on main that release-plz reads to choose the
-# next version and write the changelog. This check (a required status check on main) keeps titles in
+# PRs are squash-merged with the squash commit title set to the PR title (repository setting), so the PR title
+# becomes the commit on main that release-plz reads to choose the next version and write the changelog. This check (a required status check on main) keeps titles in
 # Conventional Commits form, for example `feat(resolve): prefer the agent mapping`.
 #
 # Trigger is `pull_request`, not `pull_request_target`: the action only reads the PR title through the API

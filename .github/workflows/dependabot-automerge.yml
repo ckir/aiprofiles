@@ -3,7 +3,7 @@ name: Dependabot auto-merge
 # Turns on GitHub's native auto-merge for Dependabot PRs carrying only patch or
 # minor bumps. Auto-merge does NOT merge immediately — it waits for the required
 # status checks configured in main's branch protection (Format, Typos, Clippy,
-# Cargo deny, Docs build, and Test on all three OSes). If any check fails, the PR just sits
+# Cargo deny, Docs build, Test on all three OSes, and Conventional PR title). If any check fails, the PR just sits
 # there. Branch protection is therefore load-bearing: without required checks,
 # auto-merge would merge as soon as the PR is mergeable, which is immediately.
 #

@@ -16,8 +16,8 @@ git_tag_name = "v{{ version }}"
 git_release_name = "v{{ version }}"
 # Every release is a GitHub pre-release until V3 v0.1 is complete (SP5); versions stay 0.0.x until then.
 git_release_type = "pre"
-# Only user-visible changes open a release PR; Dependabot `chore(deps)` lockfile bumps, docs, tests and CI
-# changes wait for the next one.
+# Only `feat`/`fix`/`perf`/`refactor` commits that change files under crates/agent-profile open a release PR;
+# release-plz ignores commits that touch nothing in the package directory (Cargo.lock, CI, root docs).
 release_commits = "^(feat|fix|perf|refactor)(\\(.*\\))?!?:"
 
 [changelog]
@@ -29,7 +29,5 @@ commit_parsers = [
     { message = "^refactor", group = "Refactoring" },
     { message = "^docs", group = "Documentation" },
     { message = "^test", group = "Tests" },
-    { message = "^ci", group = "CI" },
-    { message = "^chore\\(deps\\)", group = "Dependencies" },
     { message = "^.*", group = "Other" },
 ]

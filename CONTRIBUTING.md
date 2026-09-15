@@ -119,9 +119,10 @@ Record each measurement in the adapter's `AdapterEvidence` (`verified_at`, `upst
 
 ## Commit messages
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash-merged, so
-the **PR title** becomes the commit on `main`; a required check (`Conventional PR title`) enforces the form,
-because release-plz chooses the next version and writes the changelog from these commits:
+We follow [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash-merged and
+the repository's squash commit title is set to the PR title, so the **PR title** becomes the commit on `main`; a
+required check (`Conventional PR title`) enforces its form, because release-plz chooses the next version and
+writes the changelog from these commits:
 
 ```
 type(scope): description
@@ -161,14 +162,24 @@ For security issues, do **not** open a public issue; see [SECURITY.md](SECURITY.
 Releases are automated with [release-plz](https://release-plz.dev) (`release-plz.toml`,
 `.github/workflows/release-plz.yml`); nobody runs a release command locally.
 
-1. Every push to `main` with a `feat`, `fix`, `perf` or `refactor` commit opens or updates a release PR titled
-   `chore: release vX.Y.Z`, which bumps the workspace version and updates `crates/agent-profile/CHANGELOG.md`.
-2. Review that PR like any other; edit the changelog text in it if needed. Merging it is the release.
+1. Every push to `main` with a `feat`, `fix`, `perf` or `refactor` commit that changes files under
+   `crates/agent-profile/` opens or updates a release PR titled `chore: release vX.Y.Z`, which bumps the
+   workspace version and updates `crates/agent-profile/CHANGELOG.md`. Commits that touch only files outside
+   the crate, including `Cargo.lock` and the root `Cargo.toml`, never open one; to ship such a change (for
+   example a security bump of a dependency), follow it with a `fix:` PR that changes a file under
+   `crates/agent-profile/`.
+2. Review that PR like any other. Edits pushed to it survive only until the next push to `main`: release-plz
+   then closes the PR and opens a fresh one without them. Merging it is the release.
 3. The merge tags `vX.Y.Z`, creates a GitHub release, and builds and uploads the binaries for Linux (x86_64,
    aarch64), macOS (x86_64, aarch64) and Windows (x86_64).
 
-Until V3 v0.1 is complete (SP5), versions stay `0.0.x` and every release is marked as a pre-release. If a
-binary upload fails, rerun **Actions → Release binaries → Run workflow** with the release tag.
+Until V3 v0.1 is complete (SP5), versions stay `0.0.x` and every release is marked as a pre-release.
+
+Recovery, all from the GitHub web UI:
+- A binary is missing from a release: **Actions → Release binaries → Run workflow** with the release tag.
+- The tag exists but the release does not (release creation failed after tagging; re-running the Release-plz
+  run is a silent no-op then): create the pre-release for that tag under **Releases → Draft a new release**,
+  publish it, then run **Release binaries** with the tag.
 
 The release PR is opened with the `RELEASE_PLZ_TOKEN` repository secret: a fine-grained personal access token
 for this repository with Contents and Pull requests read/write, so CI runs on the release PR. It expires; when
