@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn unknown_option_error_never_echoes_its_value() {
-        match split_err(&["fake", "work", "--openai-api-key=sk-secret"]) {
+        match split_err(&["fake", "work", "--openai-api-key=sk-secret=="]) {
             Error::Usage { message } => {
                 assert!(message.starts_with("unknown option \"--openai-api-key\";"), "{message}");
                 assert!(!message.contains("sk-secret"), "{message}");

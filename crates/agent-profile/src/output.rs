@@ -166,12 +166,12 @@ fn sensitive_value_prefix(text: &str) -> Option<String> {
     (header && has_sensitive_part(name)).then(|| format!("{name}: "))
 }
 
-/// `a`, `A_1` or `mcp_servers.gh.env.GITHUB_TOKEN`: identifiers joined by dots.
+/// `A_1`, `mcp_servers.gh.env.GITHUB_TOKEN` or `mcp_servers.chrome-devtools.http_headers.X-Api-Key`: TOML
+/// bare keys (letters, digits, `_`, `-`) joined by dots, as Codex `-c` dotted paths are.
 fn is_dotted_identifier(name: &str) -> bool {
     name.split('.').all(|segment| {
-        let mut chars = segment.chars();
-        chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-            && chars.all(|rest| rest.is_ascii_alphanumeric() || rest == '_')
+        !segment.is_empty()
+            && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     })
 }
 
@@ -308,6 +308,9 @@ mod tests {
             "--header",
             "Authorization: Bearer sk-9",
             "--header=X-Api-Key:sk-10",
+            "mcp_servers.chrome-devtools.env.GITHUB_TOKEN=sk-11",
+            "mcp_servers.gh.http_headers.X-Api-Key=sk-12",
+            "Proxy-Authorization: Basic sk-13:with-colon",
             "https://example.com/mcp",
             "a.b=c",
             "--Auth-Token",
@@ -338,6 +341,9 @@ mod tests {
                 r#""--header""#,
                 r#""Authorization: <redacted>""#,
                 r#""--header=X-Api-Key: <redacted>""#,
+                r#""mcp_servers.chrome-devtools.env.GITHUB_TOKEN=<redacted>""#,
+                r#""mcp_servers.gh.http_headers.X-Api-Key=<redacted>""#,
+                r#""Proxy-Authorization: <redacted>""#,
                 r#""https://example.com/mcp""#,
                 r#""a.b=c""#,
                 r#""--Auth-Token""#,
