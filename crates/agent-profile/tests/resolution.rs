@@ -132,6 +132,7 @@ fn current_resolve_and_status_agree_for_every_source() {
             stdout(&output)
         );
     };
+    configure(&root, None, "");
     explicit_launch();
 
     for (default, tables, profile, source) in [
