@@ -537,7 +537,7 @@ file with `gitdir` and `commondir`; a submodule `.git` file into `.git/modules/x
 another; a start inside `.git/objects`; no `.git` anywhere; a non-existent start; a start that is a file.
 Refusals, each asserting `Error::Repository` and never the parent root: an empty `.git` directory; `HEAD` as a
 directory; garbage in a `.git` file; a missing or stale `gitdir`; a `gitdir` without `HEAD`; a missing
-`commondir` target; a `.git` file or `commondir` over 64 KiB; a `.git` file with CRLF line endings (accepted); a `commondir` that is a directory; non-UTF-8
+`commondir` target; a `.git` file or `commondir` over 64 KiB; a `.git` file with CRLF line endings (accepted); a `commondir` that is a directory; an empty `commondir`; an unreadable `commondir` (Unix, mode 000); non-UTF-8
 content; a `gitdir` or `commondir` naming a UNC, `\\.\` or non-drive `\\?\` target, and one containing a NUL (both
 refused before any filesystem call, so the tests never touch a network). Unix only: a symlinked start, a dangling
 `.git` symlink, and a FIFO `commondir` (created with `mkfifo` through `Command`; `discover` runs on a thread and
@@ -560,7 +560,7 @@ the helper's `git rev-parse --show-toplevel`. For the broken nested layouts of D
   with and without `default_profile`; `repository` populated for every source.
 - `repo::target_allowed` table (Windows only; the NUL row on every platform): `\\server\share\x`, `//server/share/x`,
   `\/server/share/x`, `//./pipe/x`, `\\?\UNC\s\x`, `\\?\Volume{…}\x`, `\\?\GLOBALROOT\x`, the malformed
-  `\\evil\\share\x` (no prefix) refused; `C:\repo` joined with `\??\UNC\s\x` classified as the joined path; `C:\x`
+  `\\evil\\share\x` (no prefix) refused; `C:\repo` joined with `\??\UNC\s\x` classified as the joined path `C:\??\UNC\s\x` and allowed (local); `C:\x`
   and `\\?\C:\x` allowed; a
   UNC target on the same server and share as the repository directory allowed, a different share refused; a NUL
   refused.
