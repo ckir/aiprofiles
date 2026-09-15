@@ -53,6 +53,10 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       "cannot spawn the sleeper: Access is denied") but passes under `cargo nextest`, the gate: it assumes one process
       per test. Isolate it (for example a nextest-only marker or a child process) or document it.
 
+- [ ] Pin the actions in `.github/workflows/ci.yml` (`actions/checkout@v7`, `dtolnay/rust-toolchain@stable`,
+      `Swatinem/rust-cache@v2`, `EmbarkStudios/cargo-deny-action@v2`, `taiki-e/install-action@nextest`) to commit SHAs
+      with version comments, as the release and sandbox workflows already are.
+
 ## Scaffold follow-ups
 
 - [ ] Run `lefthook install` in each clone
