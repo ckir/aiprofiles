@@ -12,6 +12,8 @@ extend-exclude = [
 extend-ignore-re = [
     # Long hex digests (commit SHAs, hashes)
     "[0-9a-fA-F]{32,}",
+    # Short commit SHAs that typos splits into misspelled words
+    "7d4f6ba",
 ]
 
 [default.extend-words]

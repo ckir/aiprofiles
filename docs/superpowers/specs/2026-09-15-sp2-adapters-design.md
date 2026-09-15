@@ -1,6 +1,6 @@
 # SP2 — Adapter architecture gate: design
 
-**Status:** approved by the owner on 2026-09-15 after five panel rounds (on subagents); implemented by the SP2 plan (to be written).
+**Status:** approved by the owner on 2026-09-15 after five panel rounds (on subagents); implemented by the SP2 plan `docs/superpowers/plans/2026-09-15-sp2-adapters.md` (capstone GREEN at `2234636`, test audit folded).
 **Branch:** `sp2-adapters` (from `main` at `10166af`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` (called "V3" below). Where this document and V3
 disagree, V3 wins; report the conflict instead of resolving it silently.
