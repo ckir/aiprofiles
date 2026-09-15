@@ -49,6 +49,10 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       that inherits those pipes (for example a `FAKE_AGENT_SPAWN_SLEEPER` sleeper) keeps the driver alive past its
       60 s exit timeout. No current test combines a console event with a sleeper; bound the drains before adding one.
 
+- [ ] `sandbox/run.sh` picks the nextest download from the host `uname -m`; a Docker Desktop configured to build
+      for another platform (`DOCKER_DEFAULT_PLATFORM`, Rosetta x86_64 default) gets the wrong binary. Pass the
+      engine's build architecture instead if that setup is needed.
+
 ## Scaffold follow-ups
 
 - [ ] Run `lefthook install` in each clone

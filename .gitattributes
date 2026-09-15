@@ -1,0 +1,2 @@
+*.sh text eol=lf
+sandbox/Containerfile text eol=lf

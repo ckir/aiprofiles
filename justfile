@@ -44,6 +44,18 @@ check: fmt-check clippy typos test
 watch:
     bacon
 
+# Run the test suite in a disposable container (Podman or Docker; see CONTRIBUTING.md)
+sandbox-test:
+    sh sandbox/run.sh test
+
+# Install and probe one real agent in a disposable container: just probe claude
+probe AGENT:
+    sh sandbox/run.sh probe {{AGENT}}
+
+# Interactive shell in a disposable container, for writing a probe
+sandbox-shell:
+    sh sandbox/run.sh --net shell
+
 # Build the docs
 doc:
     cargo doc --workspace --no-deps --open
