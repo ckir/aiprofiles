@@ -74,10 +74,14 @@ if [ "$engine" = podman ]; then
     # The host user becomes the container's `probe` user, so /out is writable and its files stay yours.
     userns=--userns=keep-id:uid=1000,gid=1000
     # Remote Podman (a Podman machine, as on macOS) has no --root/--runroot; it keeps its own store.
-    if [ "$(podman info --format '{{.Host.ServiceIsRemote}}' 2>/dev/null)" != true ]; then
-        store=$(mktemp -d "${TMPDIR:-/var/tmp}/agent-profile-sandbox.XXXXXX")
-    else
+    if ! remote=$(podman info --format '{{.Host.ServiceIsRemote}}' 2>&1); then
+        echo "sandbox: podman info failed: $remote" >&2
+        exit 2
+    fi
+    if [ "$remote" = true ]; then
         echo "sandbox: remote Podman: the base image and build cache stay in the Podman machine" >&2
+    else
+        store=$(mktemp -d "${TMPDIR:-/var/tmp}/agent-profile-sandbox.XXXXXX")
     fi
 else
     # The Docker daemon does not map users: let the container's uid 1000 write the results directory.

@@ -115,7 +115,8 @@ each run also uses its own temporary image store under `$TMPDIR` or `/var/tmp`, 
 layer or cache survives; only a `kill -9` of the script can leave a store behind (remove it with
 `podman unshare rm -rf /var/tmp/agent-profile-sandbox.*`). With Docker, and with remote Podman such as Podman
 Desktop on macOS, the pulled base image and the build cache (toolchains, never agents) stay in the engine's store;
-remove them with `docker builder prune` and `docker image rm debian:trixie-slim` (or the `podman` equivalents).
+remove them with `docker builder prune` and `docker image rm` on the pinned `debian@sha256:…` base from
+`sandbox/Containerfile` (or the `podman` equivalents).
 Your checkout is mounted read-only and copied inside.
 
 ```bash
