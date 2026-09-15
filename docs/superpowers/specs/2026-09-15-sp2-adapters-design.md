@@ -350,7 +350,7 @@ Unix `PATH` discovery is unchanged apart from §7.1: npm shims there are executa
   owner approval; widened by capstone round 2): the `arguments` line hides the value of any `--option` whose
   name contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD`, `CREDENTIAL` or `AUTH` (ASCII case-insensitive, no
   exemption for `--no-*` names) — `--api-key=<redacted>`, or the following argument shown as `<redacted>`;
-  the value of any `NAME=value` (alone or as an option's value) whose dotted-identifier NAME contains one of
+  the value of any `NAME=value` (alone or as an option's value) whose dotted NAME of TOML bare keys (letters, digits, `_`, `-`) contains one of
   those parts (`mcp_servers.gh.env.GITHUB_TOKEN=<redacted>`); and the value of any `Name: value` header
   whose name contains one (`Authorization: <redacted>`). Every argument is scanned, including after a `--`.
   It is a shallow name rule shared with the environment backstop, not a parser, and only the report changes:
