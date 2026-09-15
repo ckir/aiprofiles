@@ -14,7 +14,7 @@
 
 ## How this plan was produced, and how to execute it
 
-Every code block below is copied byte-for-byte from a prototype of the whole design built against `e3f091d` (the SP3 design merged with `main` at `875ddc7`). The prototype passed on Windows (`cargo nextest run --workspace`: 219/219) and on Linux (WSL Ubuntu 26.04: 207/207), with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` (debug on both, release on Windows) and `typos` clean. The same prototype then passed every job of CI run 35008163339 (draft PR #17, closed unmerged): Windows 219/219, Linux 207/207, macOS 207/207, Clippy, Format, Typos, Cargo deny, the docs build and the PR title check. The plan was then replayed task by task in a fresh worktree from `e3f091d`, running the gate after every task (Windows counts 158, 177, 190, 193, 198, 204, 219, 219); the replayed tree equals the prototype byte for byte, and every mutant below was run against the prototype and made its named test fail.
+Every code block below is copied byte-for-byte from a prototype of the whole design built against `e3f091d` (the SP3 design merged with `main` at `875ddc7`). The prototype passed CI run 35008163339 (draft PR #17, closed unmerged): Windows 219/219, Linux 207/207, macOS 207/207, Clippy, Format, Typos, Cargo deny, the docs build and the PR title check. Plan panel round 1 then found that a `link` or `unlink` that changes nothing rewrote a CRLF or byte-order-mark `config.toml`; the fix and its test, plus a Unix test for a `.git` that is neither a directory nor a file, were folded into the prototype, which then passed locally on Windows (220/220) and Linux (WSL Ubuntu 26.04: 209/209) with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `typos` clean (macOS was not re-run for that fold). The plan was replayed task by task in a fresh worktree from `e3f091d`, running the gate after every task (Windows counts 158, 177, 191, 194, 199, 205, 220, 220); the replayed tree equals the prototype byte for byte, and every mutant below was run against the prototype and made its named test fail.
 
 Rules for every task:
 
@@ -1148,6 +1148,17 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_git_entry_that_is_neither_a_directory_nor_a_file_is_an_error() {
+        let dir = guarded();
+        let root = root_of(&dir);
+        let status = Command::new("mkfifo").arg(root.join(".git")).status().unwrap();
+        assert!(status.success());
+        fs::create_dir_all(root.join("sub")).unwrap();
+        refused(&root.join("sub"), &root.join(".git"), ".git is neither a directory nor a file");
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_junction_start_resolves_to_the_real_root() {
@@ -1831,10 +1842,12 @@ pub(crate) fn update_with(
         .parse()
         .map_err(|error| invalid(&config_path, None, format!("TOML syntax error: {error}")))?;
 
-    // 5. The edit, re-validated. An edit that changes nothing writes nothing.
+    // 5. The edit, re-validated. An edit that changes nothing writes nothing. The rendering before the edit is
+    // the comparison, not the file text: rendering normalizes line endings and drops a byte-order mark.
+    let unedited = document.to_string();
     edit(&mut document)?;
     let updated = document.to_string();
-    if updated == text {
+    if updated == unedited {
         return Ok(());
     }
     parse(&config_path, updated.as_bytes())?;
@@ -2577,6 +2590,40 @@ mod tests {
         assert_eq!(fs::read_to_string(root.config_path()).unwrap(), text);
     }
 
+    #[test]
+    fn already_linked_and_nothing_to_remove_keep_crlf_and_bom_files_byte_identical() {
+        let repo = host("/src/acme", r"C:\src\acme");
+        let body = format!(
+            "default_profile = \"work\"\r\n\r\n[repositories.{}]\r\nprofile = \"work\"\r\n",
+            key(repo)
+        );
+        for bytes in
+            [body.clone().into_bytes(), [b"\xef\xbb\xbf".as_slice(), body.as_bytes()].concat()]
+        {
+            let (_dir, root) = temp_root();
+            fs::write(root.config_path(), &bytes).unwrap();
+            assert_eq!(
+                link(&root, Path::new(repo), None, &name("work")).unwrap(),
+                LinkOutcome::AlreadyLinked
+            );
+            assert_eq!(
+                fs::read(root.config_path()).unwrap(),
+                bytes,
+                "AlreadyLinked rewrote the file"
+            );
+            let missing = [PathBuf::from(host("/gone", r"C:\gone"))];
+            assert!(matches!(
+                unlink(&root, &missing, None).unwrap(),
+                UnlinkOutcome::NothingToRemove { .. }
+            ));
+            assert_eq!(
+                fs::read(root.config_path()).unwrap(),
+                bytes,
+                "NothingToRemove rewrote the file"
+            );
+        }
+    }
+
     fn temp_files(root: &AppRoot) -> Vec<String> {
         fs::read_dir(root.path())
             .unwrap()
@@ -2630,9 +2677,9 @@ with nothing (delete it).
 cargo nextest run -p agent-profile --lib config:: && cargo nextest run -p agent-profile --test config
 ```
 
-Expected: every test passes, including `schema_rejects_every_sp3_error_class_naming_the_key`, `component_equal_keys_are_rejected_naming_both`, `link_reports_every_outcome_and_writes_only_on_change`, `mappings_referencing_finds_case_twins_non_canonical_keys_and_agent_fields`.
+Expected: every test passes, including `schema_rejects_every_sp3_error_class_naming_the_key`, `component_equal_keys_are_rejected_naming_both`, `link_reports_every_outcome_and_writes_only_on_change`, `mappings_referencing_finds_case_twins_non_canonical_keys_and_agent_fields`, `already_linked_and_nothing_to_remove_keep_crlf_and_bom_files_byte_identical`.
 
-- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `190 tests run: 190 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `191 tests run: 191 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 6: Commit**
 
@@ -2939,7 +2986,7 @@ cargo nextest run -p agent-profile --lib resolve::
 
 Expected: every test passes, including `each_precedence_step_wins_over_the_ones_below_it`, `a_mapping_applies_only_to_its_exact_root`.
 
-- [ ] **Step 6: Run the gate** (see "Gate commands"). Expected on Windows: `193 tests run: 193 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 6: Run the gate** (see "Gate commands"). Expected on Windows: `194 tests run: 194 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 7: Commit**
 
@@ -3759,7 +3806,7 @@ cargo nextest run -p agent-profile --lib output::
 
 Expected: every test passes, including `status_lines_show_mappings_the_default_each_agent_and_ancestor_notes`, `unlink_lines_cover_every_outcome_and_both_notes`.
 
-- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `198 tests run: 198 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `199 tests run: 199 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 4: Commit**
 
@@ -5081,7 +5128,7 @@ cargo nextest run -p agent-profile --lib cli:: && cargo nextest run -p agent-pro
 
 Expected: every test passes, including `command_usage_errors_in_order`, `a_consumed_repo_value_is_never_help_an_option_or_a_command_word`, `launch_discovery_runs_only_when_it_can_matter`, `behaviour_table_rows_with_non_zero_exits`.
 
-- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `204 tests run: 204 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `205 tests run: 205 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 6: Commit**
 
@@ -5730,7 +5777,7 @@ cargo nextest run -p agent-profile --test resolution
 
 Expected: every test passes, including `unlink_repo_removes_orphan_mappings_and_never_an_enclosing_one`, `every_command_usage_error_through_the_binary`, `an_explicit_launch_ignores_a_broken_repository_and_a_resolved_launch_does_not`.
 
-- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `219 tests run: 219 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `220 tests run: 220 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 4: Commit**
 
@@ -5959,6 +6006,8 @@ Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superp
       paths. On Windows the network refusal also refuses a repository on a volume without a drive letter, a local
       worktree of a repository on a share, and a share reached through two server spellings.
 - [ ] A mapping made in the main checkout does not apply in its linked worktrees.
+- [ ] A `link` or `unlink` that changes `config.toml` rewrites it with LF line endings and without a byte-order
+      mark (`toml_edit` renders that way); a command that changes nothing leaves the file untouched.
 
 ## Housekeeping
 
@@ -5999,7 +6048,7 @@ typos
 
 Expected: no output.
 
-- [ ] **Step 4: Run the gate** (see "Gate commands"). Expected on Windows: `219 tests run: 219 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 4: Run the gate** (see "Gate commands"). Expected on Windows: `220 tests run: 220 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 5: Commit**
 
