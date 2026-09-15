@@ -25,7 +25,7 @@ Requires Rust 1.98+ (edition 2024). The toolchain is pinned by `rust-toolchain.t
 
 ```bash
 # One-time: install the dev tools
-cargo binstall -y cargo-nextest just lefthook cargo-deny typos-cli bacon git-cliff cargo-release cargo-mutants
+cargo binstall -y cargo-nextest just lefthook cargo-deny typos-cli bacon cargo-mutants
 lefthook install
 
 # Everyday
@@ -73,7 +73,8 @@ process behaviour. New behaviour should land with the matching test from that li
 platform-specific behaviour needs the test on the platform it concerns.
 
 Tests that launch an "agent" use the `fake-agent` fixture (`crates/agent-profile/src/bin/fake-agent.rs`),
-launched through `crates/agent-profile/tests/support`. Never launch a real coding agent from a test.
+launched through `crates/agent-profile/tests/support`. Never launch a real coding agent from the test suite;
+real agents run only in the disposable sandbox described under "Measuring agent behaviour".
 
 Every adapter has a row in `crates/agent-profile/tests/adapter_contract.rs` and an end-to-end launch in
 `crates/agent-profile/tests/adapters_e2e.rs`; a new adapter without its row fails the suite.
@@ -107,20 +108,47 @@ Get-Content 'C:\Sandbox\<user>\AgentProbe\drive\C\m\out.txt'
 Pin interpreter versions an agent supports (for example `uv tool install --python 3.12 aider-chat`): an
 unsupported interpreter can start a long source build of native dependencies.
 
-**Linux:** rootless Podman or Docker (`podman run --rm`) for installs; Bubblewrap (`bwrap`) or Firejail with a
-private home for probing a host binary without exposing your real agent homes.
+**Linux (and anywhere Podman or Docker runs): the container harness.** `sandbox/run.sh` builds a disposable
+image (`sandbox/Containerfile`: Rust, Node/npm, Python/uv, no agent), runs one workload in it, and removes the
+container and the image afterwards, also after Ctrl-C or a closed terminal. With local rootless Podman (Linux)
+each run also uses its own temporary image store under `$TMPDIR` or `/var/tmp`, deleted at the end, so no image,
+layer or cache survives; only a `kill -9` of the script can leave a store behind (remove it with
+`podman unshare rm -rf /var/tmp/agent-profile-sandbox.*`). With Docker, and with remote Podman such as Podman
+Desktop on macOS, the pulled base image and the build cache (toolchains, never agents) stay in the engine's store;
+remove them with `docker builder prune` and `docker image rm` on the pinned `debian@sha256:…` base from
+`sandbox/Containerfile` (or the `podman` equivalents).
+Your checkout is mounted read-only and copied inside.
 
-**macOS:** Tart disposable macOS virtual machines when the behaviour is macOS-specific (for example the
-Keychain); OrbStack, Colima or Docker `--rm` for checks that do not depend on macOS. `sandbox-exec` is
-deprecated and can only deny writes, so it is not a substitute.
+```bash
+just probe claude     # sandbox/run.sh probe claude: install the agent inside, record version, help and a dry run
+just sandbox-test     # sandbox/run.sh test: cargo nextest run --workspace in a clean container
+just sandbox-shell    # sandbox/run.sh --net shell: interactive shell with network, to write a new probe
+```
+
+Results land in `target/sandbox/<mode>[-<agent>]-<timestamp>/`: `build.log`, `exit-code`, `output.log` (not for
+`shell`), `diff.txt` (files the run added, changed or deleted in the container) and the probe's own files. A probe
+is a short script in `sandbox/probes/<agent>.sh` built on `sandbox/probes/common.sh`; add one when an adapter needs
+evidence. The image is built for the host's architecture (x86_64 or aarch64).
+
+**No container engine? Use CI.** **Actions → Sandbox → Run workflow** runs the same script on a fresh GitHub
+runner, whose virtual machine is discarded afterwards, and uploads the results as the `sandbox-results` artifact.
+Probes run only when triggered by hand; a pull request that changes the harness runs it in `test` mode only (the
+crate's test suite, no agent), so pull-request CI never installs or runs a real agent. It uses no secrets.
+
+**macOS:** the harness runs under Docker Desktop, OrbStack, Colima or Podman Desktop for behaviour that does not
+depend on macOS, with the base image and build cache kept in that engine's store as described above; use Tart
+disposable macOS virtual machines when the behaviour does depend on macOS (for example the Keychain).
+`sandbox-exec` is deprecated, so it is not a substitute.
 
 Record each measurement in the adapter's `AdapterEvidence` (`verified_at`, `upstream_version`, `source_url`,
 `notes`) and in the design document's decision table.
 
 ## Commit messages
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/), because `git-cliff` generates
-the changelog from them:
+We follow [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash-merged and
+the repository's squash commit title is set to the PR title, so the **PR title** becomes the commit on `main`; a
+required check (`Conventional PR title`) enforces its form, because release-plz chooses the next version and
+writes the changelog from these commits:
 
 ```
 type(scope): description
@@ -157,16 +185,31 @@ For security issues, do **not** open a public issue; see [SECURITY.md](SECURITY.
 
 ## Releasing
 
-Releases use `cargo release` and follow [Semantic Versioning](https://semver.org/). All crates are
-versioned in lockstep.
+Releases are automated with [release-plz](https://release-plz.dev) (`release-plz.toml`,
+`.github/workflows/release-plz.yml`); nobody runs a release command locally.
 
-```bash
-just release patch    # bug fixes
-just release minor    # new features
-just release major    # breaking changes
-```
+1. Every push to `main` with a `feat`, `fix`, `perf` or `refactor` commit that changes files under
+   `crates/agent-profile/` opens or updates a release PR titled `chore: release vX.Y.Z`, which bumps the
+   workspace version and updates `crates/agent-profile/CHANGELOG.md`. Commits that touch only files outside
+   the crate, including `Cargo.lock` and the root `Cargo.toml`, never open one; to ship such a change (for
+   example a security bump of a dependency), follow it with a `fix:` PR that changes a file under
+   `crates/agent-profile/`.
+2. Review that PR like any other. Edits pushed to it survive only until the next push to `main`: release-plz
+   then closes the PR and opens a fresh one without them. Merging it is the release.
+3. The merge tags `vX.Y.Z`, creates a GitHub release, and builds and uploads the binaries for Linux (x86_64,
+   aarch64), macOS (x86_64, aarch64) and Windows (x86_64).
 
-Pushing the resulting `v*` tag triggers the cross-platform release build.
+Until V3 v0.1 is complete (SP5), versions stay `0.0.x` and every release is marked as a pre-release.
+
+Recovery, all from the GitHub web UI:
+- A binary is missing from a release: **Actions → Release binaries → Run workflow** with the release tag.
+- The tag exists but the release does not (release creation failed after tagging; re-running the Release-plz
+  run is a silent no-op then): create the pre-release for that tag under **Releases → Draft a new release**,
+  publish it, then run **Release binaries** with the tag.
+
+The release PR is opened with the `RELEASE_PLZ_TOKEN` repository secret: a fine-grained personal access token
+for this repository with Contents and Pull requests read/write, so CI runs on the release PR. It expires; when
+release PRs stop appearing, renew it.
 
 ## Licence
 

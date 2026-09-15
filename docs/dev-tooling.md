@@ -14,25 +14,26 @@ The same list is machine-readable in `.claude/recommended-tools.json`.
 | `rustup` / `rustc` / `cargo` | `rust-toolchain.toml` (`stable`, with rustfmt + clippy) | `build` | everything |
 | `cargo-nextest` | — | `test`, `test-verbose` (`cargo nextest run --workspace --no-tests=pass` + `cargo test --doc --workspace`) | `just check`; CI Test job on ubuntu, macos, windows |
 | `lefthook` | `lefthook.yml` (pre-push: fmt-check, clippy, typos in parallel; no pre-commit) | `hooks` | local pre-push |
-| `git-cliff` | `cliff.toml` (conventional commits; Dependabot uses `chore`/`ci` prefixes so its commits are kept) | `changelog` | release time |
-| `cargo-release` | `[workspace.metadata.release]` in `Cargo.toml` (lockstep, `v{{version}}` tag, `publish = false`) | `release <patch\|minor\|major>` | pushed tag triggers `release.yml` |
+| `release-plz` (GitHub Action) | `release-plz.toml` (`git_only`, release PR, `v{{ version }}` tags, pre-releases until SP5) | — | merging the release PR releases |
 | `rustfmt` | `rustfmt.toml` (edition 2024, width 100) | `fmt`, `fmt-check` | `just check`, pre-push, CI Format |
 | `clippy` | `clippy.toml` (msrv 1.98) | `clippy` (`--workspace --all-targets -- -D warnings`) | `just check`, pre-push, CI Clippy |
 | `typos` (typos-cli) | `_typos.toml` (excludes the V3 spec) | `typos` | `just check`, pre-push, CI Typos |
 | `cargo-deny` | `deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples) | `deny` | CI Cargo deny |
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
+| Podman or Docker | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner (probes by hand; `test` on PRs that change the harness) |
 | `actionlint` + `shellcheck` | — | — | workflow linting before pushing `.github/` changes |
 | `cargo-binstall` | — | — | installs the cargo tools above |
 | GitHub Actions | `.github/workflows/ci.yml` | — | Format, Typos, Clippy, Cargo deny, Docs build, Test ×3 OS — all required checks on `main` |
 | GitHub Actions | `.github/workflows/docs.yml` | — | publishes rustdoc to Pages after merge |
-| GitHub Actions | `.github/workflows/release.yml` | — | `v*` tag → cross-platform `agent-profile` binaries |
+| GitHub Actions | `.github/workflows/release-plz.yml`, `.github/workflows/release.yml` | — | release PR on push to `main`; on its merge, tag, GitHub release and cross-platform `agent-profile` binaries |
+| GitHub Actions | `.github/workflows/pr-title.yml` | — | Conventional PR title (required check; PRs are squash-merged) |
 | Dependabot | `.github/dependabot.yml`, `.github/workflows/dependabot-automerge.yml` | — | weekly grouped minor/patch PRs, auto-merged once required checks pass |
 
 ## Install
 
 ```bash
-cargo binstall -y cargo-nextest just lefthook cargo-deny typos-cli bacon git-cliff cargo-release cargo-mutants
+cargo binstall -y cargo-nextest just lefthook cargo-deny typos-cli bacon cargo-mutants
 winget install rhysd.actionlint
 winget install koalaman.shellcheck
 lefthook install

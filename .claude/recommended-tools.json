@@ -36,18 +36,6 @@
     "in_path": "bacon"
   },
   {
-    "name": "git-cliff",
-    "why": "Generates CHANGELOG.md from conventional commits (`just changelog`). Configured by cliff.toml.",
-    "install": "cargo binstall -y git-cliff",
-    "in_path": "git-cliff"
-  },
-  {
-    "name": "cargo-release",
-    "why": "Bumps every workspace crate in lockstep and pushes the single `v{version}` tag that .github/workflows/release.yml triggers on. Configured by [workspace.metadata.release] in the root Cargo.toml.",
-    "install": "cargo binstall -y cargo-release",
-    "in_path": "cargo-release"
-  },
-  {
     "name": "cargo-mutants",
     "why": "Mutation testing (`just mutants`) for the invariant-heavy library: profile-name validation, resolution precedence, config atomicity. .gitignore already excludes mutants.out*.",
     "install": "cargo binstall -y cargo-mutants",

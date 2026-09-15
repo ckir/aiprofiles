@@ -44,6 +44,18 @@ check: fmt-check clippy typos test
 watch:
     bacon
 
+# Run the test suite in a disposable container (Podman or Docker; see CONTRIBUTING.md)
+sandbox-test:
+    sh sandbox/run.sh test
+
+# Install and probe one real agent in a disposable container: just probe claude
+probe AGENT:
+    sh sandbox/run.sh probe {{AGENT}}
+
+# Interactive shell in a disposable container, for writing a probe
+sandbox-shell:
+    sh sandbox/run.sh --net shell
+
 # Build the docs
 doc:
     cargo doc --workspace --no-deps --open
@@ -52,10 +64,6 @@ doc:
 hooks:
     lefthook install
 
-# Generate the changelog
-changelog:
-    git-cliff --output CHANGELOG.md
-
 # Mutation testing over the library
 mutants:
     cargo mutants --package agent-profile
@@ -63,8 +71,3 @@ mutants:
 # Clean build artifacts
 clean:
     cargo clean
-
-# Release: bump every crate in lockstep, tag, commit
-# Usage: just release <patch|minor|major>
-release VERSION_BUMP:
-    cargo release {{VERSION_BUMP}} --workspace --execute

@@ -57,6 +57,10 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       `Swatinem/rust-cache@v2`, `EmbarkStudios/cargo-deny-action@v2`, `taiki-e/install-action@nextest`) to commit SHAs
       with version comments, as the release and sandbox workflows already are.
 
+- [ ] `sandbox/run.sh` picks the nextest download from the host `uname -m`; a Docker Desktop configured to build
+      for another platform (`DOCKER_DEFAULT_PLATFORM`, Rosetta x86_64 default) gets the wrong binary. Pass the
+      engine's build architecture instead if that setup is needed.
+
 ## Scaffold follow-ups
 
 - [ ] Run `lefthook install` in each clone
