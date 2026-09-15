@@ -511,7 +511,8 @@ no mapping to remove for claude: C:\src\acme
 The path shown is the stored key when a mapping was removed, otherwise the first candidate (`NothingToRemove::shown`,
 §6.2). After
 `no mapping to remove`, one `note:` line follows, ordered by the stored key string, for each stored key that is a proper ancestor
-of that path (`note:         C:\src has a mapping; remove it with agent-profile unlink --repo C:\src`), and a
+of that path (`note:         C:\src has a mapping; remove it with agent-profile unlink --repo C:\src`; a path containing whitespace is wrapped in double quotes so
+the command can be pasted), and a
 top-level `unlink` whose entry holds only agent mappings adds
 `note:         agent mappings remain: claude=personal; remove them with agent-profile <agent> unlink`.
 

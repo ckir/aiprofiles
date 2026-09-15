@@ -14,7 +14,7 @@
 
 ## How this plan was produced, and how to execute it
 
-Every code block below is copied byte-for-byte from a prototype of the whole design built against `e3f091d` (the SP3 design merged with `main` at `875ddc7`). The prototype passed CI run 35008163339 (draft PR #17, closed unmerged): Windows 219/219, Linux 207/207, macOS 207/207, Clippy, Format, Typos, Cargo deny, the docs build and the PR title check. Plan panel round 1 then found that a `link` or `unlink` that changes nothing rewrote a CRLF or byte-order-mark `config.toml`; the fix and its test, plus a Unix test for a `.git` that is neither a directory nor a file, were folded into the prototype, which then passed locally on Windows (220/220) and Linux (WSL Ubuntu 26.04: 209/209) with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `typos` clean (macOS was not re-run for that fold). The plan was replayed task by task in a fresh worktree from `e3f091d`, running the gate after every task (Windows counts 158, 177, 191, 194, 199, 205, 220, 220); the replayed tree equals the prototype byte for byte, and every mutant below was run against the prototype and made its named test fail.
+Every code block below is copied byte-for-byte from a prototype of the whole design built against `e3f091d` (the SP3 design merged with `main` at `875ddc7`). The prototype passed CI run 35008163339 (draft PR #17, closed unmerged): Windows 219/219, Linux 207/207, macOS 207/207, Clippy, Format, Typos, Cargo deny, the docs build and the PR title check. Plan panel round 1 then found that a `link` or `unlink` that changes nothing rewrote a CRLF or byte-order-mark `config.toml`; the fix and its test, plus a Unix test for a `.git` that is neither a directory nor a file, and (round 2) quoting a path with whitespace in the `unlink --repo` hint, were folded into the prototype, which then passed locally on Windows (221/221) and Linux (WSL Ubuntu 26.04: 210/210) with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `typos` clean (macOS was not re-run for those folds). The plan was replayed task by task in a fresh worktree from `e3f091d`, running the gate after every task (Windows counts 158, 177, 191, 194, 200, 206, 221, 221); the replayed tree equals the prototype byte for byte, and every mutant below was run against the prototype and made its named test fail.
 
 Rules for every task:
 
@@ -3180,6 +3180,13 @@ pub fn status_lines(
     lines
 }
 
+/// A path to paste into a command: in double quotes when it contains whitespace, which POSIX shells, PowerShell
+/// and `cmd` all read as one argument.
+fn shell_word(path: &Path) -> String {
+    let shown = path.display().to_string();
+    if shown.contains(char::is_whitespace) { format!("\"{shown}\"") } else { shown }
+}
+
 fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
     path.starts_with(key) && key != path
 }
@@ -3219,7 +3226,7 @@ pub fn unlink_lines(
         lines.push(note(&format!(
             "{} has a mapping; remove it with agent-profile unlink --repo {}",
             key.display(),
-            key.display()
+            shell_word(key)
         )));
     }
     if agent.is_none()
@@ -3782,6 +3789,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_unlink_hint_quotes_a_path_with_whitespace() {
+        let spaced = host("/my repos", r"C:\my repos");
+        let inner = spaced.join("inner");
+        let text = format!("[repositories.{}]\nprofile = \"outer\"\n", key(&spaced));
+        let config = config(&text);
+        let nothing = UnlinkOutcome::NothingToRemove { shown: inner.clone() };
+        assert_eq!(
+            unlink_lines(&nothing, None, &config, std::slice::from_ref(&inner))[1],
+            format!(
+                "note:         {} has a mapping; remove it with agent-profile unlink --repo \"{}\"",
+                spaced.display(),
+                spaced.display()
+            )
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn non_utf8_argument_is_rendered_lossily_with_marker() {
@@ -3804,9 +3828,9 @@ mod tests {
 cargo nextest run -p agent-profile --lib output::
 ```
 
-Expected: every test passes, including `status_lines_show_mappings_the_default_each_agent_and_ancestor_notes`, `unlink_lines_cover_every_outcome_and_both_notes`.
+Expected: every test passes, including `status_lines_show_mappings_the_default_each_agent_and_ancestor_notes`, `unlink_lines_cover_every_outcome_and_both_notes`, `the_unlink_hint_quotes_a_path_with_whitespace`.
 
-- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `199 tests run: 199 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `200 tests run: 200 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 4: Commit**
 
@@ -5128,7 +5152,7 @@ cargo nextest run -p agent-profile --lib cli:: && cargo nextest run -p agent-pro
 
 Expected: every test passes, including `command_usage_errors_in_order`, `a_consumed_repo_value_is_never_help_an_option_or_a_command_word`, `launch_discovery_runs_only_when_it_can_matter`, `behaviour_table_rows_with_non_zero_exits`.
 
-- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `205 tests run: 205 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `206 tests run: 206 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 6: Commit**
 
@@ -5777,7 +5801,7 @@ cargo nextest run -p agent-profile --test resolution
 
 Expected: every test passes, including `unlink_repo_removes_orphan_mappings_and_never_an_enclosing_one`, `every_command_usage_error_through_the_binary`, `an_explicit_launch_ignores_a_broken_repository_and_a_resolved_launch_does_not`.
 
-- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `220 tests run: 220 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `221 tests run: 221 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 4: Commit**
 
@@ -6048,7 +6072,7 @@ typos
 
 Expected: no output.
 
-- [ ] **Step 4: Run the gate** (see "Gate commands"). Expected on Windows: `220 tests run: 220 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 4: Run the gate** (see "Gate commands"). Expected on Windows: `221 tests run: 221 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 5: Commit**
 
