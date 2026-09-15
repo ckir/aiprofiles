@@ -189,8 +189,9 @@ when:
   as the prefix of `D`, i.e. a repository checked out on that network share;
 - on either platform, the target contains a NUL.
 
-The check is a pure classifier `repo::target_allowed(target: &Path, repository_dir: &Path) -> bool`, unit-tested on
-every platform with Windows path strings.
+The check is a pure classifier `repo::target_allowed(target: &Path, repository_dir: &Path) -> bool`. `std::path`
+parses Windows prefixes only when compiled for Windows, so the prefix rows are unit-tested on the Windows CI
+runner and the NUL row on every platform.
 
 So a `.git` file from an archive cannot make discovery open an SMB session, connect a named pipe, or wait on a
 network timeout (V3 §36 "no hidden network requests"). Not detected (§10): Unix automount paths
@@ -542,7 +543,7 @@ the helper's `git rev-parse --show-toplevel`. For the broken nested layouts of D
 - `resolve` table: each precedence step winning over the ones below it; exact-root applicability; a nested
   repository not inheriting its parent's mapping (the V3 §34 "longest applicable mapping" row); `NotInRepository`
   with and without `default_profile`; `repository` populated for every source.
-- `repo::target_allowed` table on every platform with Windows path strings: `\\server\share\x`, `//server/share/x`,
+- `repo::target_allowed` table (Windows only; the NUL row on every platform): `\\server\share\x`, `//server/share/x`,
   `\/server/share/x`, `//./pipe/x`, `\\?\UNC\s\x`, `\\?\Volume{…}\x` refused; `C:\x` and `\\?\C:\x` allowed; a
   UNC target on the same server and share as the repository directory allowed, a different share refused; a NUL
   refused.
