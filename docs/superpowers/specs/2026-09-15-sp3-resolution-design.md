@@ -1,6 +1,6 @@
 # SP3 — Repository resolution: design
 
-**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-2 folded;
+**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-3 folded;
 awaiting further panel rounds and the owner's review of this document.
 **Branch:** `sp3-resolution` (from `main` at `7f62a7d`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` ("V3" below). Where this document and V3 disagree, V3
@@ -50,7 +50,7 @@ on this machine on 2026-09-15: git 2.55.0.windows.5, rustc 1.98.0, Windows 11 NT
 
 | # | Decision | Owner choice | Evidence |
 |---|---|---|---|
-| D1 | Discovery is a hand-written walk that stops at the first `.git` and validates Git's `gitdir`/`commondir` metadata; an invalid `.git` is an error, never a reason to continue upward. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES` and `core.worktree` are ignored. A `.git` owned by another user ends the walk as "not in a repository" (§5.3). No new dependency. | walk; ownership check added by the owner after panel round 2 | measured: `git rev-parse --show-toplevel` honours a repository's own `core.worktree` and reported a different directory as the top level (reproduced by the driver); with `GIT_DIR` set git reported the cwd as the top level. measured: `gix-discover` 0.55.0 needs `-F sha1` to compile, pulls 66 transitive crates, and for a nested `.git` that is `gitdir: ../nowhere`, garbage, or an empty directory returns the PARENT repository's work dir (git also climbs past an empty `.git` directory). measured: `git rev-parse` did not run a `core.fsmonitor` script (`git status` did). V3 §13 forbids applying a parent's mapping to a nested repository; V3 §36 forbids trusting repository-controlled configuration. |
+| D1 | Discovery is a hand-written walk that stops at the first `.git` and validates Git's `gitdir`/`commondir` metadata; an invalid `.git` is an error, never a reason to continue upward. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES` and `core.worktree` are ignored. No new dependency. | walk (an ownership check was added after panel round 2 and deferred by the owner after round 3; §10) | measured: `git rev-parse --show-toplevel` honours a repository's own `core.worktree` and reported a different directory as the top level (reproduced by the driver); with `GIT_DIR` set git reported the cwd as the top level. measured: `gix-discover` 0.55.0 needs `-F sha1` to compile, pulls 66 transitive crates, and for a nested `.git` that is `gitdir: ../nowhere`, garbage, or an empty directory returns the PARENT repository's work dir (git also climbs past an empty `.git` directory). measured: `git rev-parse` did not run a `core.fsmonitor` script (`git status` did). V3 §13 forbids applying a parent's mapping to a nested repository; V3 §36 forbids trusting repository-controlled configuration. |
 | D2 | Mappings and the global default live in `config.toml`: `default_profile`, and `[repositories.'<root>']` tables with `profile` and `agents`. | config.toml tables | measured: `toml_edit` 0.25.15 wrote a `\\?\C:\…\it's a repo` key with correct escaping and `toml` 1.1.6 read it back byte-equal; an exact duplicate key is already a parse error. reasoned: one file and one lock let SP5's `delete` check references under the lock `link` takes. SP1 test `schema_rejects_every_error_class_naming_the_key` pins `default` as an unknown key, hence `default_profile`. |
 | D3 | The global default is a hand-edited `default_profile` key; SP3 reads, validates and shows it; no setter command. | hand-edited | reasoned: V3 §34 tests the global default, so it cannot be deferred; V3 §15 defines `link` as "current repository → profile" and the V3 §5.3 command words are fixed. |
 | D4 | Command forms, outputs and exit codes of §7; `--repo` on the non-launch commands only; `link` accepts any valid profile name. | as proposed | reasoned: refusing an unmaterialized profile would contradict lazy initialization (§9) before `create` exists (SP5); `unlink` of nothing is idempotent like `create` (§10). |
@@ -153,15 +153,12 @@ From the canonical start up to the filesystem root, at each directory `D` examin
 | `NotFound`, and `symlink_metadata` is also `NotFound` | continue with the parent of `D` |
 | `NotFound` while `symlink_metadata` succeeds (a dangling symlink) | `Error::Repository`, exit 4 |
 | any other I/O error (permission, …) | `Error::Repository`, exit 4 |
-| exists, but owned by someone other than the current user (§5.3) | **`NotInRepository`**: the walk stops, no error, no continuing upward |
 | a directory containing a regular file `HEAD` | root = `D` |
 | a directory without a regular file `HEAD` | `Error::Repository` "invalid .git directory", exit 4 (never continue upward) |
-| a regular file of at most 64 KiB whose content is UTF-8 and whose first line is `gitdir: <p>` (trailing CR/LF trimmed) | resolve `<p>` against `D` (an absolute `<p>` as is); refuse a network or device target (§5.4); canonicalize it; it must be a directory containing a regular file `HEAD`; if it contains an entry `commondir`, that entry must be a regular file of at most 64 KiB whose UTF-8 first line, resolved against the gitdir, passes §5.4 and is an existing directory; then root = `D` |
+| a regular file of at most 64 KiB whose content is UTF-8 and whose first line is `gitdir: <p>` (trailing CR/LF trimmed) | resolve `<p>` against `D` (an absolute `<p>` as is); refuse a network or device target (§5.3); canonicalize it; it must be a directory containing a regular file `HEAD`; if it contains an entry `commondir`, that entry must be a regular file of at most 64 KiB whose UTF-8 first line, resolved against the gitdir, passes §5.3 and is an existing directory; then root = `D` |
 | a regular file failing any rule in the row above, or a `gitdir`/`commondir` that is missing, stale or not as described | `Error::Repository` naming the file and the reason, exit 4 |
 | any other file type | `Error::Repository`, exit 4 |
 | the walk passes the filesystem root without a `.git` | `NotInRepository` |
-
-The ownership row is checked before the content rows, so a foreign `.git` is never read.
 
 Consequences:
 - A submodule, a nested repository and a linked worktree each carry their own `.git` at their root, so
@@ -170,27 +167,10 @@ Consequences:
 - A start inside a `.git` directory (for example `repo/.git/objects`) reaches `repo`: root = `repo`.
 - Nothing is executed and no Git configuration is read; only the `.git` entry, the existence of `HEAD`, and
   the `.git` file and `commondir` contents (both capped) are read.
-- Reads never block on a FIFO or device: on Unix each file is opened with `O_NONBLOCK`, checked with `fstat`
-  on the open handle to be a regular file, and only then read, so a file swapped for a FIFO after the
-  metadata check is refused; on Windows, `\\.\` device paths are refused by §5.4 and every read target must
-  be a regular file.
+- Every read target must be a regular file when checked, and on Windows `\\.\` device paths are refused by
+  §5.3. A local user who swaps a checked file for a FIFO before it is opened can still block the read (§10).
 
-### 5.3 Ownership (owner decision after panel round 2)
-
-A `.git` entry (file or directory, after following symlinks) created by another local user must not steer
-resolution: on Windows any authenticated user can create `C:\.git`, and on Unix anyone can create
-`/tmp/.git` (the class of git CVE-2022-24765). An accepted owner is:
-- Unix: the effective uid, or root (uid 0);
-- Windows: the current user's SID or the Administrators group SID (`S-1-5-32-544`), read with
-  `GetNamedSecurityInfoW` (`OWNER_SECURITY_INFORMATION`) and compared with the process token user via the
-  existing `windows-sys` dependency.
-
-Any other owner ends the walk with `NotInRepository`: a foreign `.git` neither blocks resolution nor becomes a
-repository root, and the walk does not continue upward, so a parent repository's mapping still never applies to
-a nested directory (V3 §13). A failure to read the owner is `Error::Repository` (exit 4). The ownership
-predicate is a pure function of (owner, current identity) so both platforms' rules are unit-tested everywhere.
-
-### 5.4 No network or device targets
+### 5.3 No network or device targets
 
 A `gitdir` or `commondir` target is refused with `Error::Repository` (exit 4), before any filesystem call on it,
 when it is:
@@ -202,7 +182,7 @@ So a `.git` file from an archive cannot make discovery open an SMB session, conn
 network timeout (V3 §36 "no hidden network requests"). Unix automount paths (`/net/host/…`) are not detected
 (§10).
 
-### 5.5 Path identity
+### 5.4 Path identity
 
 - `repo::canonical` = `fs::canonicalize`, then on Windows `strip_verbatim`: `\\?\C:\x` → `C:\x`,
   `\\?\UNC\server\share\x` → `\\server\share\x`; any other verbatim form (for example `\\?\Volume{…}`) is kept
@@ -324,6 +304,10 @@ other top-level reserved words stay Clap subcommands (not yet implemented), and 
 usage lines. A top-level word in another letter case (`LINK`) is not a command and reaches the agent path:
 "unknown agent `LINK`" (exit 2), as today.
 
+For the top-level five, the dispatched word IS the command word: steps 3 and 4 below are skipped, and step 5
+applies to the remaining tokens, so `agent-profile link status` links a profile named `status` (refused as a
+reserved profile name, V3 §6, exit 4) and `agent-profile link Create` likewise, exactly as `claude link Create`.
+
 **Agent-scoped** (`agent-profile <agent> …`), and the top-level five, on the tokens before the first `--`:
 1. Token binding: `--repo=<v>` carries its value; a bare `--repo` consumes the next token whatever its first
    byte (a missing next token → usage error "`--repo` needs a path", exit 2). Every other token starting with
@@ -353,7 +337,9 @@ say "Not yet implemented.", are replaced by their usage lines.
 SP1 tests whose expectations change: `reserved_first_bare_word_ignores_everything_else` (`["fake", "CREATE",
 "--bogus"]` and `["fake", "Create", "x"]` become the lower-case usage error; `["fake", "--bogus", "link"]`
 becomes an unknown-option usage error) and `behaviour_table_rows_with_non_zero_exits` (`["link", "work",
-"extra"]` becomes "`link` takes one profile"; `["fake"]` keeps exit 4 with the new `NoProfile` text).
+"extra"]` becomes "`link` takes one profile"; `["fake"]` keeps exit 4 with the new `NoProfile` text), and the
+`error.rs` test `exit_codes_follow_spec_33` (the `NoProfile` row gains `config_file` and `in_repository`; a
+`Repository` row is added).
 
 ### 7.3 Command usage text
 
@@ -440,7 +426,8 @@ already linked claude: C:\src\acme -> personal
 ```
 `<agent> link` adds `note:         profile personal has not been launched with claude yet` when the adapter's
 presence is `Absent`. `link` with `NotInRepository` → `Error::Repository` "not inside a Git repository"
-(exit 4); a non-UTF-8 root → `Error::Repository` "a path that is not valid UTF-8 cannot be linked" (exit 4).
+(exit 4); a non-UTF-8 root → `Error::Repository` "a repository path that is not valid UTF-8 cannot be linked"
+(exit 4, §6.2).
 
 `unlink` (exit 0):
 ```text
@@ -485,12 +472,6 @@ refused before any filesystem call, so the tests never touch a network). Unix on
 the test fails after a bounded wait instead of hanging CI). Windows only: a junction start (`mklink /J` needs no
 privilege); `strip_verbatim` for drive, UNC and other verbatim forms.
 
-Ownership (§5.3): the pure predicate is table-tested on every OS for both platforms' rules (own uid/SID, root,
-Administrators, another user). A foreign-owned `.git` is exercised end to end only where it can be created without
-privilege: on Unix, when the test runs as root it creates a `.git` owned by `nobody` and asserts `NotInRepository`
-for a subdirectory whose parent is a mapped repository; otherwise that case is skipped with a message. The
-"owner read fails" path is covered through the predicate's error branch.
-
 ### 8.2 `repo` against real `git`
 
 A test helper runs `git` hermetically: `env_remove` of every `GIT_*` variable, `GIT_CONFIG_GLOBAL` set to an
@@ -515,7 +496,8 @@ the helper's `git rev-parse --show-toplevel`. For the broken nested layouts of D
   deleted directory given relative with `..`; a deleted directory under a non-canonical temp path; the literal
   fallback; an empty value rejected.
 - CLI routing as pure functions: every token sequence of §7.2 (including `status --`, `unlink -- --repo x`,
-  `claude link work --repo -h`, `claude LINK`, `claude Create`, `claude --repo`), and the decision whether a
+  `claude link work --repo -h`, `claude LINK`, `claude Create`, `claude --repo`, `link status`, `link Create`),
+  and the decision whether a
   launch needs discovery (explicit profile without `--dry-run`/`--verbose` → no).
 
 ### 8.4 End to end (`fake-agent`)
@@ -555,9 +537,15 @@ reason if one does.
 - An agent mapping for an agent this build does not know (for example `agents.gemini` from a newer version, or
   `agents.fake` written by a debug build) cannot be removed with `<agent> unlink`, which refuses unknown agents;
   it is removed by editing `config.toml`, and SP5's `delete` refusal must name the key and field to edit.
-- A foreign-owned `.git` (§5.3) makes that directory "not in a repository", including a checkout legitimately
-  shared between two local accounts; `--repo` does not bypass the check.
-- Unix automount paths in a `gitdir`/`commondir` (for example `/net/host/…`) are not detected and may trigger a
-  mount (§5.4).
+- Shared multi-user machines (deferred by the owner after panel round 3, to be revisited with `doctor` in SP5
+  together with a `safe.directory`-style escape hatch): discovery does not check who owns a `.git`. Another
+  local user who can create `C:\.git` or `/tmp/.git` can make commands in non-repository directories below it
+  exit 4, or turn that directory into a repository root; resolution never silently selects an unmapped profile,
+  and `link` prints the root it maps. The same local user can swap a checked file for a FIFO before it is opened
+  and block discovery.
+- Unix automount paths and Windows mapped network drive letters in a `gitdir`/`commondir` (for example
+  `/net/host/…` or `Z:\…`) are not detected and may start a mount or a network connection (§5.3).
+- A mapping made in the main checkout does not apply in its linked worktrees, which are separate repositories
+  (V3 §14.2); `status` in a worktree does not mention the main checkout's mapping.
 - The `repositories` report, orphan output, JSON and `delete` are SP5.
-- macOS case identity is unmeasured until the prototype PR (§5.5).
+- macOS case identity is unmeasured until the prototype PR (§5.4).
