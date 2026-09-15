@@ -22,7 +22,7 @@ The same list is machine-readable in `.claude/recommended-tools.json`.
 | `cargo-deny` | `deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples) | `deny` | CI Cargo deny |
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
-| Podman or Docker | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same by hand on a GitHub runner |
+| Podman or Docker | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner (probes by hand; `test` on PRs that change the harness) |
 | `actionlint` + `shellcheck` | — | — | workflow linting before pushing `.github/` changes |
 | `cargo-binstall` | — | — | installs the cargo tools above |
 | GitHub Actions | `.github/workflows/ci.yml` | — | Format, Typos, Clippy, Cargo deny, Docs build, Test ×3 OS — all required checks on `main` |

@@ -8,6 +8,8 @@ FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2
 
 ARG RUST_TOOLCHAIN=stable
 ARG NEXTEST_VERSION=0.9.144
+# `linux` (x86_64) or `linux-arm` (aarch64); sandbox/run.sh passes the host's.
+ARG NEXTEST_PLATFORM=linux
 ARG UV_VERSION=0.12.15
 
 RUN apt-get update \
@@ -23,6 +25,6 @@ ENV PATH=/home/probe/.cargo/bin:/home/probe/.local/bin:$PATH \
     CARGO_TERM_COLOR=never
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" \
-    && curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/linux" | tar zxf - -C /home/probe/.cargo/bin \
+        | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --component rustfmt,clippy \
+    && curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/${NEXTEST_PLATFORM}" | tar zxf - -C /home/probe/.cargo/bin \
     && curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_NO_MODIFY_PATH=1 sh

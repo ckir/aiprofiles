@@ -110,8 +110,13 @@ unsupported interpreter can start a long source build of native dependencies.
 
 **Linux (and anywhere Podman or Docker runs): the container harness.** `sandbox/run.sh` builds a disposable
 image (`sandbox/Containerfile`: Rust, Node/npm, Python/uv, no agent), runs one workload in it, and removes the
-container and the image afterwards; with rootless Podman each run also uses its own temporary image store, so
-nothing survives on your machine. Your checkout is mounted read-only and copied inside.
+container and the image afterwards, also after Ctrl-C or a closed terminal. With local rootless Podman (Linux)
+each run also uses its own temporary image store under `$TMPDIR` or `/var/tmp`, deleted at the end, so no image,
+layer or cache survives; only a `kill -9` of the script can leave a store behind (remove it with
+`podman unshare rm -rf /var/tmp/agent-profile-sandbox.*`). With Docker, and with remote Podman such as Podman
+Desktop on macOS, the pulled base image and the build cache (toolchains, never agents) stay in the engine's store;
+remove them with `docker builder prune` and `docker image rm debian:trixie-slim` (or the `podman` equivalents).
+Your checkout is mounted read-only and copied inside.
 
 ```bash
 just probe claude     # sandbox/run.sh probe claude: install the agent inside, record version, help and a dry run
@@ -119,17 +124,19 @@ just sandbox-test     # sandbox/run.sh test: cargo nextest run --workspace in a 
 just sandbox-shell    # sandbox/run.sh --net shell: interactive shell with network, to write a new probe
 ```
 
-Results land in `target/sandbox/<mode>[-<agent>]-<timestamp>/`: `exit-code`, `output.log`, `diff.txt` (files the
-run added, changed or deleted in the container) and the probe's own files. A probe is a short script in
-`sandbox/probes/<agent>.sh` built on `sandbox/probes/common.sh`; add one when an adapter needs evidence.
-Podman is preferred: Docker keeps its build cache in its own store after the image is removed.
+Results land in `target/sandbox/<mode>[-<agent>]-<timestamp>/`: `build.log`, `exit-code`, `output.log` (not for
+`shell`), `diff.txt` (files the run added, changed or deleted in the container) and the probe's own files. A probe
+is a short script in `sandbox/probes/<agent>.sh` built on `sandbox/probes/common.sh`; add one when an adapter needs
+evidence. The image is built for the host's architecture (x86_64 or aarch64).
 
 **No container engine? Use CI.** **Actions → Sandbox → Run workflow** runs the same script on a fresh GitHub
 runner, whose virtual machine is discarded afterwards, and uploads the results as the `sandbox-results` artifact.
-It runs only when triggered by hand, so pull-request CI never runs a real agent, and it uses no secrets.
+Probes run only when triggered by hand; a pull request that changes the harness runs it in `test` mode only (the
+crate's test suite, no agent), so pull-request CI never installs or runs a real agent. It uses no secrets.
 
-**macOS:** the harness works under Podman Desktop, Docker Desktop, OrbStack or Colima for behaviour that does not
-depend on macOS; use Tart disposable macOS virtual machines when it does (for example the Keychain).
+**macOS:** the harness runs under Docker Desktop, OrbStack, Colima or Podman Desktop for behaviour that does not
+depend on macOS, with the base image and build cache kept in that engine's store as described above; use Tart
+disposable macOS virtual machines when the behaviour does depend on macOS (for example the Keychain).
 `sandbox-exec` is deprecated, so it is not a substitute.
 
 Record each measurement in the adapter's `AdapterEvidence` (`verified_at`, `upstream_version`, `source_url`,

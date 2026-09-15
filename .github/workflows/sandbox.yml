@@ -1,6 +1,6 @@
 name: Sandbox
 
-# Runs sandbox/run.sh on a fresh GitHub-hosted Linux runner, by hand only (Actions → Sandbox → Run workflow).
+# Runs sandbox/run.sh on a fresh GitHub-hosted Linux runner: probes by hand (Actions → Sandbox → Run workflow).
 # The runner VM is discarded after the job, so real coding agents installed by a probe never touch a maintainer's
 # machine, and pull-request CI never runs them. Results are uploaded as the `sandbox-results` artifact.
 #
