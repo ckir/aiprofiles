@@ -1,0 +1,87 @@
+name: Release-plz
+
+# Every push to main:
+# - `release-pr` opens or refreshes the release PR (version bump + changelog). It uses the RELEASE_PLZ_TOKEN
+#   fine-grained PAT (Contents and Pull requests: read and write) because a PR opened with the default
+#   GITHUB_TOKEN never triggers CI, and main requires CI checks.
+# - `release` tags `vX.Y.Z` and creates the GitHub pre-release, but only when the push is the merge of that
+#   release PR (`release_always = false` in release-plz.toml).
+# - `binaries` then builds and uploads the agent-profile archives to that release (release.yml).
+#
+# Third-party actions are pinned to commit SHAs because these jobs hold write tokens.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      created: ${{ steps.release-plz.outputs.releases_created }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Release
+        id: release-plz
+        uses: release-plz/action@8e61445f0b34e7c6d985255f2f1f05a36eb350dc # v0.5.137
+        with:
+          command: release
+          version: 0.3.167
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read the release tag
+        id: tag
+        if: steps.release-plz.outputs.releases_created == 'true'
+        env:
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: echo "tag=$(jq -r '.[0].tag' <<< "$RELEASES")" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    name: Binaries
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+
+  release-pr:
+    name: Release PR
+    # After `release`, so the merge of a release PR is tagged before a new PR is computed from that tag.
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Open or update the release PR
+        uses: release-plz/action@8e61445f0b34e7c6d985255f2f1f05a36eb350dc # v0.5.137
+        with:
+          command: release-pr
+          version: 0.3.167
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

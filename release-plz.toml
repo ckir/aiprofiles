@@ -1,0 +1,33 @@
+# https://release-plz.dev/docs/config
+#
+# Releases are fully automated: every push to main refreshes one release PR (version bump + changelog);
+# merging it tags `vX.Y.Z`, creates the GitHub release, and .github/workflows/release-plz.yml builds and
+# uploads the binaries. Nothing is published to a cargo registry.
+
+[workspace]
+# The crate is not on crates.io (`publish = false`): versions live in git tags only.
+git_only = true
+# Release only when the release PR is merged. The default (true) would tag and release on the first push
+# to a branch that has no tags yet.
+release_always = false
+# A CLI before 1.0: API compatibility checks on the library add noise, not safety.
+semver_check = false
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+# Every release is a GitHub pre-release until V3 v0.1 is complete (SP5); versions stay 0.0.x until then.
+git_release_type = "pre"
+# Only `feat`/`fix`/`perf`/`refactor` commits that change files under crates/agent-profile open a release PR;
+# release-plz ignores commits that touch nothing in the package directory (Cargo.lock, CI, root docs).
+release_commits = "^(feat|fix|perf|refactor)(\\(.*\\))?!?:"
+
+[changelog]
+commit_parsers = [
+    { message = "^chore: release", skip = true },
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Refactoring" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^test", group = "Tests" },
+    { message = "^.*", group = "Other" },
+]
