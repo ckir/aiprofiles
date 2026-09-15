@@ -65,6 +65,9 @@ fn search_path(
     path_var: Option<&OsStr>,
     config_file: &Path,
 ) -> Result<Found> {
+    // Only a Windows shim on `PATH` needs the hint.
+    #[cfg(not(windows))]
+    let _ = config_file;
     let mut ignored_relative = 0;
     for dir in path_var.into_iter().flat_map(std::env::split_paths) {
         if dir.as_os_str().is_empty() {
