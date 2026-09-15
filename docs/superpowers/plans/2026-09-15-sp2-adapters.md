@@ -14,7 +14,7 @@
 
 ## How this plan was produced, and how to execute it
 
-Every code block below is copied byte-for-byte from a prototype of the whole design built against the SP1 code at `3281f61`. The prototype passed on Windows (`cargo nextest run --workspace`: 141/141) and on Linux (WSL Ubuntu 26.04: 128/128), with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` (debug on both, release on Windows) and `typos` clean. macOS was not run locally; the first CI run of the implementation branch is the macOS check. The plan was then replayed task by task in a fresh worktree from `3281f61`, running the gate after every task, and every mutant below was run against the prototype and made its named test fail.
+Every code block below is copied byte-for-byte from a prototype of the whole design built against the SP1 code at `3281f61`. The prototype passed on Windows (`cargo nextest run --workspace`: 141/141) and on Linux (WSL Ubuntu 26.04: 128/128), with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` (debug on both, release on Windows) and `typos` clean. The same prototype then passed every job of CI run 34926167302 (draft PR #10): Windows 141/141, Linux 128/128, macOS 128/128, Clippy, Format, Typos, Cargo deny and the docs build. The plan was then replayed task by task in a fresh worktree from `3281f61`, running the gate after every task, and every mutant below was run against the prototype and made its named test fail.
 
 Rules for every task:
 
@@ -3812,6 +3812,6 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ## After the last task
 
-- [ ] Push `sp2-adapters` and open a PR only with the owner's confirmation. CI (Windows, macOS, Linux) must be green; macOS is the platform this plan did not run locally.
+- [ ] Push `sp2-adapters` and open a PR only with the owner's confirmation. CI (Windows, macOS, Linux) must be green.
 - [ ] Run AGY-CAPSTONE (on subagents, owner-directed) over the committed range, then AGY-TEST-AUDIT, before declaring SP2 complete.
 - [ ] Mark SP2 done in `ROADMAP.md` after the merge, as SP1 did.
