@@ -608,16 +608,23 @@ fn an_absolute_repo_works_from_a_deleted_working_directory() {
         binary = env!("CARGO_BIN_EXE_agent-profile"),
         repository = repository.display(),
     );
-    let output = std::process::Command::new("sh")
+    let mut command = std::process::Command::new("sh");
+    for name in support::FIXTURE_VARS.iter().chain(support::WRAPPER_VARS.iter()) {
+        command.env_remove(name);
+    }
+    let output = command
         .arg("-c")
         .arg(script)
         .env("AGENT_PROFILE_HOME", root.path())
-        .env_remove("FAKE_AGENT_HOME")
-        .env_remove("FAKE_AGENT_ECHO_ENV")
         .current_dir(&base)
         .output()
         .unwrap();
     assert_ne!(output.status.code(), Some(9), "the working directory still resolved after rmdir");
+    assert!(
+        stderr(&output).contains("cannot resolve the directory"),
+        "the precondition failed for another reason: {}",
+        stderr(&output)
+    );
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert_eq!(stdout(&output), format!("unlinked {} (was work)\n", repository.display()));
     assert!(!fs::read_to_string(root.path().join("config.toml")).unwrap().contains("acme"));
