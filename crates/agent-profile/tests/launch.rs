@@ -108,6 +108,31 @@ fn dry_run_of_an_agent_that_is_not_installed_fails_like_a_launch() {
 }
 
 #[test]
+fn secret_argument_values_reach_the_agent_but_never_the_report() {
+    let root = Root::new();
+    let args =
+        ["fake", "work", "--verbose", "--", "--api-key", "sk-live-1", "OPENAI_API_KEY=sk-live-2"];
+    let output = root.agent_profile(args).output().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(
+        support::report(&output.stdout)["argv"],
+        serde_json::json!(["--api-key", "sk-live-1", "OPENAI_API_KEY=sk-live-2"])
+    );
+    let text = stderr(&output);
+    assert!(!text.contains("sk-live"), "{text}");
+    assert!(text.contains(r#"["--api-key", "<redacted>", "OPENAI_API_KEY=<redacted>"]"#), "{text}");
+
+    let dry = root
+        .agent_profile(["fake", "work", "--dry-run", "--", "--api-key=sk-live-3"])
+        .output()
+        .unwrap();
+    assert_eq!(dry.status.code(), Some(0), "{}", stderr(&dry));
+    let text = stdout(&dry);
+    assert!(!text.contains("sk-live"), "{text}");
+    assert!(text.contains(r#"["--api-key=<redacted>"]"#), "{text}");
+}
+
+#[test]
 fn verbose_launch_reports_to_stderr_after_creating_the_profile_directory() {
     let root = Root::new();
     let output = root.agent_profile(["fake", "work", "--verbose"]).output().unwrap();
@@ -211,7 +236,11 @@ fn behaviour_table_rows_with_non_zero_exits() {
         (&["link", "work", "extra"], 2, "`link` is not yet implemented"),
         (&["fake", "create", "work"], 2, "`fake create` is not yet implemented"),
         (&["fake", "work", "--json"], 2, "`--json` is not yet implemented"),
-        (&["zzz", "work"], 2, "unknown agent `zzz` (known agents: `fake`)"),
+        (
+            &["zzz", "work"],
+            2,
+            "unknown agent `zzz` (known agents: `claude`, `codex`, `aider`, `fake`)",
+        ),
         (&["Fake", "work"], 2, "unknown agent `Fake`"),
         (&["fake", "work", "--bogus"], 2, "unknown option"),
         (&["fake", "work", "extra"], 2, "agent arguments must follow `--`"),
@@ -304,7 +333,7 @@ fn batch_file_override_is_refused() {
     root.write_config(&format!("[agents.fake]\nexecutable = {:?}\n", batch.to_str().unwrap()));
     let output = root.agent_profile(["fake", "work"]).output().unwrap();
     assert_eq!(output.status.code(), Some(6), "{}", stderr(&output));
-    assert!(stderr(&output).contains("never through cmd.exe"), "{}", stderr(&output));
+    assert!(stderr(&output).contains("cannot launch without a shell"), "{}", stderr(&output));
 }
 
 #[test]

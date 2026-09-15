@@ -2,14 +2,17 @@
 
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::name::InvalidReason;
 
 /// Why an agent's executable was not found (spec §20).
 #[derive(Debug)]
 pub enum NotInstalledReason {
-    NotOnPath,
+    /// No absolute `PATH` entry holds it; `ignored_relative` relative entries were skipped.
+    NotOnPath {
+        ignored_relative: usize,
+    },
     ExplicitMissing(PathBuf),
 }
 
@@ -24,6 +27,12 @@ pub enum Error {
 
     #[error("{}", unknown_agent_message(agent, known, unknown_configured))]
     UnknownAgent { agent: String, known: Vec<String>, unknown_configured: Vec<String> },
+
+    #[error(
+        "`{option}` conflicts with how agent-profile selects the {agent} profile ({mechanism}); remove it from \
+         the agent arguments"
+    )]
+    ArgumentConflict { agent: String, option: String, mechanism: &'static str },
 
     #[error("{}", not_installed_message(agent, reason, unknown_configured))]
     AgentNotInstalled { agent: String, reason: NotInstalledReason, unknown_configured: Vec<String> },
@@ -52,11 +61,8 @@ pub enum Error {
     )]
     ProfileCaseConflict { requested: String, existing: String },
 
-    #[error(
-        "{} is a batch file; agent-profile launches agents directly and never through cmd.exe",
-        path.display()
-    )]
-    UnsupportedExecutable { path: PathBuf },
+    #[error("{}", unsupported_message(agent, path, config_file))]
+    UnsupportedExecutable { agent: String, path: PathBuf, config_file: PathBuf },
 
     #[error("could not launch {}: {source}", executable.display())]
     Launch { executable: PathBuf, source: io::Error },
@@ -69,7 +75,10 @@ impl Error {
     /// The spec §33 exit code for this error.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Usage { .. } | Error::NotYetImplemented { .. } | Error::UnknownAgent { .. } => 2,
+            Error::Usage { .. }
+            | Error::NotYetImplemented { .. }
+            | Error::UnknownAgent { .. }
+            | Error::ArgumentConflict { .. } => 2,
             Error::AgentNotInstalled { .. } => 3,
             Error::InvalidProfileName { .. }
             | Error::NoProfile { .. }
@@ -112,17 +121,20 @@ fn not_installed_message(
     reason: &NotInstalledReason,
     unknown_configured: &[String],
 ) -> String {
-    let what = match reason {
-        NotInstalledReason::NotOnPath => format!("`{agent}` is not installed: not found in PATH"),
-        NotInstalledReason::ExplicitMissing(path) => format!(
-            "`{agent}` is not installed: the configured executable {} does not exist or is not a file",
-            path.display()
-        ),
-    };
-    format!("{what}{}", unknown_configured_suffix(unknown_configured))
+    format!("`{agent}` is not installed: {reason}{}", unknown_configured_suffix(unknown_configured))
 }
 
-fn config_invalid_message(path: &std::path::Path, key: Option<&str>, detail: &str) -> String {
+fn unsupported_message(agent: &str, path: &Path, config_file: &Path) -> String {
+    format!(
+        "`{agent}` resolves to {}, which agent-profile cannot launch without a shell. Install the agent's native \
+         executable (for example the vendor's standalone installer) or set [agents.{agent}] executable = \
+         \"<absolute path to a native .exe>\" in {}",
+        path.display(),
+        config_file.display()
+    )
+}
+
+fn config_invalid_message(path: &Path, key: Option<&str>, detail: &str) -> String {
     let key = key.map(|key| format!(" (key `{key}`)")).unwrap_or_default();
     format!(
         "invalid configuration {}{key}: {detail}. agent-profile never rewrites an invalid \
@@ -134,10 +146,18 @@ fn config_invalid_message(path: &std::path::Path, key: Option<&str>, detail: &st
 impl fmt::Display for NotInstalledReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NotInstalledReason::NotOnPath => write!(f, "not found in PATH"),
-            NotInstalledReason::ExplicitMissing(path) => {
-                write!(f, "configured executable {} is missing", path.display())
+            NotInstalledReason::NotOnPath { ignored_relative: 0 } => write!(f, "not found in PATH"),
+            NotInstalledReason::NotOnPath { ignored_relative } => {
+                write!(
+                    f,
+                    "not found in PATH ({ignored_relative} relative PATH entries were ignored)"
+                )
             }
+            NotInstalledReason::ExplicitMissing(path) => write!(
+                f,
+                "the configured executable {} does not exist or is not a file",
+                path.display()
+            ),
         }
     }
 }
@@ -164,9 +184,17 @@ mod tests {
                 2,
             ),
             (
+                Error::ArgumentConflict {
+                    agent: "aider".into(),
+                    option: "--conf".into(),
+                    mechanism: "argument --config <file>",
+                },
+                2,
+            ),
+            (
                 Error::AgentNotInstalled {
                     agent: "a".into(),
-                    reason: NotInstalledReason::NotOnPath,
+                    reason: NotInstalledReason::NotOnPath { ignored_relative: 0 },
                     unknown_configured: vec![],
                 },
                 3,
@@ -178,7 +206,14 @@ mod tests {
             (Error::ConfigWrite { path: "c".into(), source: io() }, 4),
             (Error::ProfileDir { path: "p".into(), source: io() }, 4),
             (Error::ProfileCaseConflict { requested: "WORK".into(), existing: "work".into() }, 4),
-            (Error::UnsupportedExecutable { path: "a.cmd".into() }, 6),
+            (
+                Error::UnsupportedExecutable {
+                    agent: "a".into(),
+                    path: "a.cmd".into(),
+                    config_file: "c".into(),
+                },
+                6,
+            ),
             (Error::Launch { executable: "a".into(), source: io() }, 6),
             (Error::Io { context: "c".into(), source: io() }, 1),
         ];
@@ -214,5 +249,55 @@ mod tests {
         assert!(message.contains("/r/config.toml"), "{message}");
         assert!(message.contains("`agents.fake.path`"), "{message}");
         assert!(message.contains("never rewrites an invalid configuration"), "{message}");
+    }
+
+    #[test]
+    fn not_installed_messages_share_one_text_and_count_ignored_entries() {
+        let error = |reason| Error::AgentNotInstalled {
+            agent: "codex".into(),
+            reason,
+            unknown_configured: vec![],
+        };
+        assert_eq!(
+            error(NotInstalledReason::NotOnPath { ignored_relative: 0 }).to_string(),
+            "`codex` is not installed: not found in PATH"
+        );
+        assert_eq!(
+            error(NotInstalledReason::NotOnPath { ignored_relative: 2 }).to_string(),
+            "`codex` is not installed: not found in PATH (2 relative PATH entries were ignored)"
+        );
+        let missing = NotInstalledReason::ExplicitMissing("/x/codex".into());
+        assert_eq!(
+            missing.to_string(),
+            format!(
+                "the configured executable {} does not exist or is not a file",
+                Path::new("/x/codex").display()
+            )
+        );
+    }
+
+    #[test]
+    fn conflict_and_unsupported_messages() {
+        let conflict = Error::ArgumentConflict {
+            agent: "aider".into(),
+            option: "--conf".into(),
+            mechanism: "argument --config <file>",
+        };
+        assert_eq!(
+            conflict.to_string(),
+            "`--conf` conflicts with how agent-profile selects the aider profile (argument --config <file>); \
+             remove it from the agent arguments"
+        );
+        let unsupported = Error::UnsupportedExecutable {
+            agent: "codex".into(),
+            path: "codex.cmd".into(),
+            config_file: "config.toml".into(),
+        };
+        assert_eq!(
+            unsupported.to_string(),
+            "`codex` resolves to codex.cmd, which agent-profile cannot launch without a shell. Install the \
+             agent's native executable (for example the vendor's standalone installer) or set \
+             [agents.codex] executable = \"<absolute path to a native .exe>\" in config.toml"
+        );
     }
 }
