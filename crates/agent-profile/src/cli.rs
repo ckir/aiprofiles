@@ -250,7 +250,11 @@ fn run_agent(argv: Vec<OsString>) -> Result<i32> {
     let agent = AgentId::parse(&agent).expect("known agents are valid agent ids");
     let resolution = resolve::resolve(agent.clone(), profile);
     let Some(profile) = resolution.profile.as_ref() else {
-        return Err(Error::NoProfile { agent: agent.to_string() });
+        return Err(Error::NoProfile {
+            agent: agent.to_string(),
+            config_file: root.config_path(),
+            in_repository: false,
+        });
     };
 
     // SP2 design §4.3 step 1: parsing already refused unknown agents.
