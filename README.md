@@ -8,9 +8,9 @@ A local, privacy-first Rust CLI for selecting and launching profiles for multipl
 Agent Profile never copies credentials, extracts tokens, sends telemetry or trusts
 repository-controlled profile selection.
 
-**Status: architecture gate (SP2).** Profile-name validation, configuration, the explicit launch path
-(`exec` on Unix, a supervised child on Windows) and three evidence-backed adapters (Claude Code, Codex CLI,
-Aider) exist; see [ROADMAP.md](ROADMAP.md). The authoritative design is
+**Status: repository resolution (SP3).** Profile-name validation, configuration, the launch path (`exec` on
+Unix, a supervised child on Windows), three evidence-backed adapters (Claude Code, Codex CLI, Aider) and
+repository mappings exist; see [ROADMAP.md](ROADMAP.md). The authoritative design is
 [`agent-profile-implementation-spec-v3.md`](agent-profile-implementation-spec-v3.md).
 
 ## Architecture
@@ -40,14 +40,36 @@ Adapters produce a `LaunchPlan`; they never spawn processes.
 ```text
 agent-profile <agent> <profile> [WRAPPER OPTIONS] [-- <agent args...>]
 agent-profile <agent> [WRAPPER OPTIONS] [-- <agent args...>]
+agent-profile <agent> current|resolve|status [--repo <path>]
+agent-profile [<agent>] link <profile> [--repo <path>]
+agent-profile [<agent>] unlink [--repo <path>]
+agent-profile status [--repo <path>]
 ```
 
 Everything after `--` is passed to the agent untouched. `--dry-run` shows what would be launched without
 launching or creating anything.
 
 Configuration and profiles live in `~/.agent-profile/` (`%USERPROFILE%\.agent-profile\` on Windows). Set
-`AGENT_PROFILE_HOME` to an absolute path to use another directory. Profile resolution order: explicit profile >
-agent-specific repository mapping > repository-wide mapping > global default > none.
+`AGENT_PROFILE_HOME` to an absolute path to use another directory.
+
+Without a profile word, the profile comes from the first of: the agent's mapping for the current Git repository,
+the repository's mapping, `default_profile`, and otherwise an error. `link` stores a mapping for the repository
+you are in (its canonical root; a subdirectory, symlink or junction resolves to it), `unlink` removes it, and
+`unlink --repo <path>` removes the mapping stored for a path even after the repository was deleted or moved. A
+mapping applies only to that repository: not to a nested repository, a submodule or a linked worktree, which are
+repositories of their own. `<agent> resolve` and `status` show what would be selected and why.
+
+```toml
+default_profile = "work"
+
+[repositories.'C:\src\acme']
+profile = "work"
+agents = { claude = "personal" }
+```
+
+The global default is set by editing `default_profile`. Discovery reads only the `.git` entry and Git's
+`gitdir`/`commondir` files; it never runs Git, never reads Git configuration, and ignores `GIT_DIR` and
+`core.worktree` (use `--repo`).
 
 ## Supported agents
 
