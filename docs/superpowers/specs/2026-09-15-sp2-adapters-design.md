@@ -430,7 +430,9 @@ Every new test must fail under a logic mutant of the behaviour it guards (PINNIN
 ## 9. Documentation
 
 - **CONTRIBUTING.md**, new section "Measuring agent behaviour": evidence rows are refreshed only from
-  measurements taken inside a disposable sandbox, never by installing agents on the host.
+  measurements taken inside a disposable sandbox, never by installing agents on the host. Agents a
+  contributor already uses may be probed read-only on the host (`--help`, `--version`, binary strings), as D1
+  and D8 were.
   - Windows: Sandboxie-Plus. Create a box, add `ClosedFilePath=%USERPROFILE%\.claude` and
     `ClosedFilePath=%USERPROFILE%\.codex` (and any other agent home) so the box behaves like a clean
     machine, run `Start.exe /box:<b> /wait cmd /c "<script> > C:\m\out.txt"`, read results from
@@ -458,10 +460,14 @@ Every new test must fail under a logic mutant of the behaviour it guards (PINNIN
 - Setting `[agents.codex] executable` to the vendored `codex.exe` bypasses the npm launcher, which may add
   bundled tools such as `rg` to `PATH`; not measured. An agent with no native executable cannot be launched
   on Windows until its vendor ships one.
-- A `.com` beside a `.exe` in the same directory is ignored although `cmd.exe` would prefer it.
-- Creating the Aider file needs a no-replace rename or hard links. On a filesystem with neither (for example
-  some FUSE or virtual-machine shared folders) Aider profiles fail with `ProfileDir` (exit 4); Claude and Codex
-  are unaffected. Behaviour on macOS smbfs, msdos and exfat is not measured.
+- A `.com` beside a `.exe` in the same directory is ignored although `cmd.exe` would prefer it, and a `.com`
+  alone on `PATH` is reported with the shell message although it is a native program.
+- Creating the Aider file needs a no-replace rename: tempfile 3.27 falls back to hard links only when the
+  rename is unsupported with `EINVAL`/`ENOSYS` (Linux); macOS uses `renameatx_np(RENAME_EXCL)` with no fallback.
+  On a filesystem without it (for example some FUSE or virtual-machine shared folders, or a macOS volume
+  without exclusive rename) Aider profiles fail with `ProfileDir` (exit 4); Claude and Codex are unaffected.
+  Behaviour on macOS smbfs, msdos and exfat is not measured.
+- Every limit in this section that needs follow-up is tracked as debt in `TODO.md`.
 - The Unix directory-sync failure branch of `write_new_file_with` is untested, like SP1's `config.rs` step 7a
   (a directory `sync_all` failure cannot be provoked portably in tests).
 - `OpenOptions::create_new` plus `write_all` at the final name was rejected for the Aider file: it is

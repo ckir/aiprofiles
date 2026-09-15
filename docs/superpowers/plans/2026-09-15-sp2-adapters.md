@@ -14,7 +14,7 @@
 
 ## How this plan was produced, and how to execute it
 
-Every code block below is copied byte-for-byte from a prototype of the whole design built against the SP1 code at `3281f61`. The prototype passed on Windows (`cargo nextest run --workspace`: 139/139) and on Linux (WSL Ubuntu 26.04: 126/126), with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` (debug on both, release on Windows) and `typos` clean. macOS was not run locally; the first CI run of the implementation branch is the macOS check. The plan was then replayed task by task in a fresh worktree from `3281f61`, running the gate after every task, and every mutant below was run against the prototype and made its named test fail.
+Every code block below is copied byte-for-byte from a prototype of the whole design built against the SP1 code at `3281f61`. The prototype passed on Windows (`cargo nextest run --workspace`: 141/141) and on Linux (WSL Ubuntu 26.04: 128/128), with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` (debug on both, release on Windows) and `typos` clean. macOS was not run locally; the first CI run of the implementation branch is the macOS check. The plan was then replayed task by task in a fresh worktree from `3281f61`, running the gate after every task, and every mutant below was run against the prototype and made its named test fail.
 
 Rules for every task:
 
@@ -708,7 +708,8 @@ fn search_path(
 /// What a `PATH` directory holds for an agent.
 enum Hit {
     Native(PathBuf),
-    /// A Windows form that needs a shell or interpreter (`.com`, `.cmd`, `.bat`, `.ps1`) and no `.exe`.
+    /// The first Windows non-`.exe` form (`.com`, `.cmd`, `.bat`, `.ps1`) in a directory without an `.exe`;
+    /// the user's shell would run it, so a later `.exe` is never chosen instead.
     #[cfg(windows)]
     Unsupported(PathBuf),
 }
@@ -2606,7 +2607,11 @@ mod tests {
 with:
 
 ```rust
+        (
+            &["zzz", "work"],
+            2,
             "unknown agent `zzz` (known agents: `claude`, `codex`, `aider`, `fake`)",
+        ),
 ```
 
 - [ ] **Step 9: Run the task checks**
@@ -2973,9 +2978,18 @@ fn presence_contract() {
         assert_eq!(adapter.presence(&fixture.root, &work), ProfilePresence::Absent, "{id}");
         let planned = fixture.plan(adapter, "work", &[]).unwrap();
         adapter.initialize(&planned).unwrap();
+        assert_eq!(adapter.presence(&fixture.root, &work), ProfilePresence::Materialized, "{id}");
         fs::remove_file(&fixture.exe).unwrap();
         fs::remove_file(fixture.root.config_path()).unwrap();
         assert_eq!(adapter.presence(&fixture.root, &work), ProfilePresence::Materialized, "{id}");
+        // Materialize the twin's own paths too, so only the case-twin rule can make it Absent on a
+        // case-sensitive filesystem (on a case-insensitive one they are the same entries).
+        for (path, kind) in adapter.paths(&fixture.root, &profile("WORK")) {
+            match kind {
+                PathKind::Dir => fs::create_dir_all(&path).unwrap(),
+                PathKind::File { contents } => fs::write(&path, contents).unwrap(),
+            }
+        }
         assert_eq!(
             adapter.presence(&fixture.root, &profile("WORK")),
             ProfilePresence::Absent,
@@ -3225,6 +3239,28 @@ fn aider_conflict_is_reported_even_when_aider_is_not_installed() {
 }
 
 #[test]
+fn an_invalid_profile_name_wins_over_a_conflict() {
+    let root = Root::empty();
+    let output = root
+        .agent_profile(["aider", ".hidden", "--", "--conf", "f"])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
+    assert!(stderr(&output).contains("invalid profile name"), "{}", stderr(&output));
+}
+
+#[test]
+fn the_fake_agent_conflict_is_refused_end_to_end() {
+    let root = Root::new();
+    let output =
+        root.agent_profile(["fake", "work", "--", "--fake-profile", "x"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(output.stdout.is_empty(), "the agent must not run");
+    assert!(!root.profile_dir("work").exists());
+}
+
+#[test]
 fn codex_dry_run_notes_a_new_profile_and_lists_what_would_be_created() {
     let root = Root::empty();
     let bin = bin_with("codex");
@@ -3293,7 +3329,7 @@ cargo nextest run -p agent-profile --test adapters_e2e
 
 Expected: every listed test passes.
 
-- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `139 tests run: 139 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 3: Run the gate** (see "Gate commands"). Expected on Windows: `141 tests run: 141 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 4: Commit**
 
@@ -3390,8 +3426,8 @@ reason says.
 
 | Agent | Mechanism | Support | Config isolation | Credential isolation | State isolation |
 |---|---|---|---|---|---|
-| Claude Code 2.1.270 (`claude`) | `CLAUDE_CONFIG_DIR` | Proven | Supported (project `.claude/` settings still layer on top) | Conditional (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and similar variables bypass it) | NotGuaranteed |
-| Codex CLI 0.153.4 (`codex`) | `CODEX_HOME` | Proven | Supported | Conditional (`OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` bypass it) | Conditional (`CODEX_SQLITE_HOME`) |
+| Claude Code 2.1.270 (`claude`) | `CLAUDE_CONFIG_DIR` | Proven | Supported (project `.claude/` settings still layer on top) | Conditional (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and similar variables bypass it) | NotGuaranteed (history and project state moving with the directory is community-sourced only) |
+| Codex CLI 0.153.4 (`codex`) | `CODEX_HOME` | Proven | Supported (project-level configuration layering is not measured) | Conditional (`OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` bypass it) | Conditional (`CODEX_SQLITE_HOME`) |
 | Aider 0.86.2 (`aider`) | `--config <profile>/.aider.conf.yml` | Proven | NotGuaranteed (home, repository and working-directory `.aider.conf.yml`, `.env` and `AIDER_*` still apply) | NotSupported | NotSupported |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
@@ -3460,10 +3496,16 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       unchanged; decide in `doctor` (SP5) whether to warn.
 - [ ] Setting `[agents.codex] executable` to the npm-vendored `codex.exe` bypasses the npm launcher, which may put
       bundled tools such as `rg` on `PATH`; measure in a sandbox before recommending it.
-- [ ] Creating the Aider config file needs a no-replace rename or hard links; a filesystem with neither fails
-      with exit 4. macOS smbfs, msdos and exfat are not measured.
-- [ ] A `.com` beside a `.exe` in one `PATH` directory is ignored although `cmd.exe` would prefer it.
+- [ ] Creating the Aider config file needs a no-replace rename (Linux falls back to hard links; macOS needs
+      exclusive-rename support, with no fallback). A filesystem without it fails with exit 4; macOS smbfs, msdos and
+      exfat are not measured.
+- [ ] A `.com` beside a `.exe` in one `PATH` directory is ignored although `cmd.exe` would prefer it, and a `.com`
+      alone on `PATH` is reported as needing a shell although it is a native program.
 - [ ] The Unix directory-sync failure branch of the Aider file writer is untested (like SP1 `config.rs` step 7a).
+- [ ] The Codex "new profile starts logged out" note keys on the home directory being absent, so a present but
+      empty home gives no note.
+- [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
+- [ ] Adapter evidence is static; mechanism drift detection belongs to `doctor` (SP5).
 
 ## SP3 open decisions
 
@@ -3756,7 +3798,7 @@ typos
 
 Expected: every listed test passes.
 
-- [ ] **Step 6: Run the gate** (see "Gate commands"). Expected on Windows: `139 tests run: 139 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
+- [ ] **Step 6: Run the gate** (see "Gate commands"). Expected on Windows: `141 tests run: 141 passed`. Linux and macOS run fewer tests (Windows-only tests are compiled out); every test must pass.
 
 - [ ] **Step 7: Commit**
 
