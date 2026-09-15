@@ -543,6 +543,8 @@ mod tests {
         let resolution = crate::resolve::resolve(
             crate::name::AgentId::parse("secretive").unwrap(),
             Some(profile.clone()),
+            &config,
+            &crate::repo::Discovery::NotInRepository,
         );
         let text =
             crate::output::report_lines(&planned, &resolution, crate::output::ReportMode::DryRun)

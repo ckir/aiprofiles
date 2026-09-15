@@ -221,6 +221,8 @@ mod tests {
         resolve(
             AgentId::parse("fake").unwrap(),
             Some(ProfileName::parse("work", Platform::Unix).unwrap()),
+            &crate::config::Config::default(),
+            &crate::repo::Discovery::NotInRepository,
         )
     }
 

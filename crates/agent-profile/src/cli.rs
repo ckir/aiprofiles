@@ -248,7 +248,8 @@ fn run_agent(argv: Vec<OsString>) -> Result<i32> {
     let root = AppRoot::resolve()?;
     let config = Config::load(&root)?;
     let agent = AgentId::parse(&agent).expect("known agents are valid agent ids");
-    let resolution = resolve::resolve(agent.clone(), profile);
+    let resolution =
+        resolve::resolve(agent.clone(), profile, &config, &crate::repo::Discovery::NotInRepository);
     let Some(profile) = resolution.profile.as_ref() else {
         return Err(Error::NoProfile {
             agent: agent.to_string(),
