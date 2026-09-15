@@ -346,6 +346,13 @@ Unix `PATH` discovery is unchanged apart from §7.1: npm shims there are executa
 - `Verbose`: no `(would be created)` markers and no `creates:` line (initialization has already run).
 - Both modes: new `note:` line(s), one per adapter note, in order; `arguments` shows the injected
   `--config <path>` before the user's arguments.
+- Both modes, argument redaction (V3 §26 "Sensitive values must be redacted", §36; added by the capstone with
+  owner approval): the `arguments` line hides the value of any `--option` whose name contains `TOKEN`,
+  `SECRET`, `KEY`, `PASSWORD`, `CREDENTIAL` or `AUTH` (ASCII case-insensitive; `--no-*` switches excepted) —
+  `--api-key=<redacted>`, or the following argument shown as `<redacted>` — and the value of any `NAME=value`
+  argument (alone or as an option's value) whose identifier NAME contains one of those parts. Every argument
+  is scanned, including after a `--`. It is a shallow name rule shared with the environment backstop, not a
+  parser, and only the report changes: the launched arguments are never modified.
 
 ## 8. Testing (V3 §34)
 
@@ -469,7 +476,15 @@ Every new test must fail under a logic mutant of the behaviour it guards (PINNIN
   Behaviour on macOS smbfs, msdos and exfat is not measured.
 - Every limit in this section that needs follow-up is tracked as debt in `TODO.md`.
 - The Unix directory-sync failure branch of `write_new_file_with` is untested, like SP1's `config.rs` step 7a
-  (a directory `sync_all` failure cannot be provoked portably in tests).
+  (a directory `sync_all` failure cannot be provoked portably in tests). The temp-file `sync_all` before the
+  rename is untested too: removing it leaves the suite green, because durability is not observable without
+  crash injection (capstone round 1; owner-accepted debt).
+- Argument redaction misses secrets passed positionally, inside inline JSON or `key=value` values whose key
+  holds no sensitive part, and under an option abbreviation that drops the sensitive part (Aider accepts
+  prefixes); it hides harmless values whose option name contains a part (`--map-tokens 1024`), and a boolean
+  flag with such a name hides the next argument in the report.
+- `ArgumentConflict` echoes the whole matched argument; harmless for Aider's `--config`, but a future conflict
+  option that can carry a secret must not reuse it unchanged.
 - `OpenOptions::create_new` plus `write_all` at the final name was rejected for the Aider file: it is
   no-clobber, but a crash or a concurrent reader can observe an empty file under the final name (V3 §9.1).
 - Evidence is static; drift detection belongs to `doctor` (later SP).

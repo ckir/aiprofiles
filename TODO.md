@@ -17,7 +17,11 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       exfat are not measured.
 - [ ] A `.com` beside a `.exe` in one `PATH` directory is ignored although `cmd.exe` would prefer it, and a `.com`
       alone on `PATH` is reported as needing a shell although it is a native program.
-- [ ] The Unix directory-sync failure branch of the Aider file writer is untested (like SP1 `config.rs` step 7a).
+- [ ] The Unix directory-sync failure branch of the Aider file writer is untested (like SP1 `config.rs` step 7a),
+      and so is its temp-file `sync_all` before the rename (durability needs crash injection to observe).
+- [ ] Report argument redaction is a name rule: it misses secrets passed positionally, in inline JSON, or under an
+      option abbreviation without the sensitive part, and it hides harmless values such as `--map-tokens 1024`.
+- [ ] `ArgumentConflict` echoes the whole matched argument; redact it before any conflict option can carry a secret.
 - [ ] The Codex "new profile starts logged out" note keys on the home directory being absent, so a present but
       empty home gives no note.
 - [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
