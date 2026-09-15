@@ -598,9 +598,12 @@ fn an_absolute_repo_works_from_a_deleted_working_directory() {
     assert_eq!(linked.status.code(), Some(0), "{}", stderr(&linked));
 
     // The shell removes its own working directory, then replaces itself with the binary, which therefore starts
-    // with a working directory that cannot be resolved.
+    // with a working directory that cannot be resolved. The first command checks that precondition: a relative
+    // `--repo` must still need the working directory and fail with exit 4, so this test cannot pass green on a
+    // platform where the deleted directory keeps resolving.
     let script = format!(
-        "cd '{gone}' && rmdir '{gone}' && exec '{binary}' unlink --repo '{repository}'",
+        "cd '{gone}' && rmdir '{gone}' && '{binary}' status --repo relative; \
+         [ $? = 4 ] || exit 9; exec '{binary}' unlink --repo '{repository}'",
         gone = gone.display(),
         binary = env!("CARGO_BIN_EXE_agent-profile"),
         repository = repository.display(),
@@ -609,9 +612,12 @@ fn an_absolute_repo_works_from_a_deleted_working_directory() {
         .arg("-c")
         .arg(script)
         .env("AGENT_PROFILE_HOME", root.path())
+        .env_remove("FAKE_AGENT_HOME")
+        .env_remove("FAKE_AGENT_ECHO_ENV")
         .current_dir(&base)
         .output()
         .unwrap();
+    assert_ne!(output.status.code(), Some(9), "the working directory still resolved after rmdir");
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert_eq!(stdout(&output), format!("unlinked {} (was work)\n", repository.display()));
     assert!(!fs::read_to_string(root.path().join("config.toml")).unwrap().contains("acme"));

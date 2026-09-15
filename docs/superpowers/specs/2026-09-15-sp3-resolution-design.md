@@ -638,6 +638,16 @@ reason if one does.
   drive letter, a local worktree whose main repository is on a network share, and a share reached through two
   server spellings (host name versus IP address). Such repositories exit 4 until `--repo` or a drive letter is
   used.
+- The walk does not stop at a filesystem boundary, but `git` does unless `GIT_DISCOVERY_ACROSS_FILESYSTEM` is set, so
+  in a directory on a mount inside a checkout (a tmpfs, a Docker volume, a second disk) discovery reports the
+  enclosing repository where `git rev-parse` reports none, and `link` there maps that enclosing repository (measured
+  on Linux 6.6 in a tmpfs mounted inside a repository).
+- `unlink --repo <p>` removes the mapping at the first of its three candidate keys (§6.2) that has one, and the
+  candidates are computed when `unlink` runs, not when `link` stored the key. If `<p>`'s meaning changed in between
+  (a repository moved and the old path became a symlink to another repository, or a symlinked ancestor was
+  repointed), a live mapping of the repository `<p>` now names can be removed instead of the orphan the user meant;
+  the report names the stored key it removed, and the orphan is still removable by spelling it exactly (measured on
+  Linux).
 - A mapping made in the main checkout does not apply in its linked worktrees, which are separate repositories
   (V3 §14.2); `status` in a worktree does not mention the main checkout's mapping.
 - The `repositories` report, orphan output, JSON and `delete` are SP5.

@@ -1053,6 +1053,38 @@ mod tests {
         assert_eq!(base_dir(None).unwrap(), cwd);
     }
 
+    /// Every `--repo` spelling must name the same target whether it is joined to the base `base_dir` chose or to
+    /// the working directory; only then is skipping `current_dir()` invisible.
+    #[test]
+    fn every_repo_spelling_names_the_same_target_with_or_without_the_working_directory() {
+        let cwd = std::env::current_dir().unwrap();
+        let spellings: &[&str] = if cfg!(windows) {
+            &[
+                r"C:\src\acme",
+                r"C:\",
+                "C:/src/acme",
+                r"\\server\share\x",
+                r"\\?\C:\x",
+                r"\\?\UNC\server\share\x",
+                r"\\.\pipe\x",
+                r"\foo",
+                "C:rel",
+                r"..\up",
+                "relative",
+            ]
+        } else {
+            &["/src/acme", "/", "../up", "relative", "./relative"]
+        };
+        for spelling in spellings {
+            let base = base_dir(Some(OsStr::new(spelling))).unwrap();
+            assert_eq!(
+                base.join(spelling),
+                cwd.join(spelling),
+                "{spelling:?} resolves differently without the working directory"
+            );
+        }
+    }
+
     #[test]
     fn usage_errors() {
         for items in [

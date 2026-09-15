@@ -57,6 +57,10 @@ Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superp
 - [ ] A hand-written `[repositories.'\\?\C:\…']` key is accepted but never matches the canonical `C:\…` root
       (`Path` treats the verbatim prefix as a different component), and `link` then adds a second entry for the same
       directory. Consider refusing verbatim keys, or comparing keys through `repo::strip_verbatim`.
+- [ ] Discovery does not stop at a filesystem boundary the way `git` does, so a directory on a mount inside a
+      checkout resolves to the enclosing repository (design §10). Decide with `doctor` (SP5) whether to warn.
+- [ ] `unlink --repo <p>` can remove a different repository's live mapping when `<p>`'s meaning changed since `link`
+      stored the key (design §10). Consider refusing when a later candidate key also matches an entry.
 - [ ] A top-level `unlink` that removes the repository profile while agent mappings remain prints only `unlinked …`;
       the "agent mappings remain" note appears on the next run. Consider showing it on the run that creates the state.
 
