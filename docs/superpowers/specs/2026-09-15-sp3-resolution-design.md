@@ -1,7 +1,7 @@
 # SP3 — Repository resolution: design
 
-**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-5 folded;
-awaiting further panel rounds and the owner's review of this document.
+**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-6 folded (round 6 GREEN);
+awaiting the owner's review of this document.
 **Branch:** `sp3-resolution` (from `main` at `7f62a7d`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` ("V3" below). Where this document and V3 disagree, V3
 wins; report the conflict instead of resolving it silently.
@@ -188,10 +188,11 @@ on it, as an allow-list; anything not allowed is refused with `Error::Repository
   as the prefix of `D` (a repository checked out on that network share). Refused therefore: `UNC` and
   `VerbatimUNC` on another share, `DeviceNS` (`\\.\…`), other `Verbatim` (`\\?\Volume{…}`, `\\?\GLOBALROOT`),
   and a first component that is not a prefix at all (malformed spellings such as `\\evil\\share\x`, which
-  Windows still normalizes to a UNC path). Measured by the panel: `\\server\share\x`, `//server/share/x` and
-  `\/server/share/x` parse as `UNC`, `//./pipe/x` as `DeviceNS`;
-- on Unix, allowed unless the target contains a NUL;
-- on either platform, a target containing a NUL is refused.
+  Windows still normalizes to a UNC path). Measured by panel rounds 4 and 5 (rustc 1.98, Windows 11, `Path::
+  components` and `std::path::absolute`): `\\server\share\x`, `//server/share/x` and `\/server/share/x` parse as
+  `UNC`, `//./pipe/x` as `DeviceNS`, `\\?\GLOBALROOT\…` as `Verbatim`; `\\evil\\share\x` has no prefix (first
+  component `RootDir`) and `absolute` turns it into `\\evil\share\x`;
+- on every platform, a target containing a NUL is refused (on Unix this is the only rule).
 
 The check is a pure classifier `repo::target_allowed(target: &Path, repository_dir: &Path) -> bool`. `std::path`
 parses Windows prefixes only when compiled for Windows, so the prefix rows are unit-tested on the Windows CI
@@ -202,9 +203,10 @@ network timeout (V3 §36 "no hidden network requests"). Not detected (§10): Uni
 (`/net/host/…`), Windows mapped network drive letters, and a `.git` or a gitdir path component that is itself a
 symlink to a network location (followed by `fs::metadata`/`canonicalize`; creating one on Windows needs symlink
 privilege or Developer Mode), and a DOS device name as the last component of a local path (`C:\repo\NUL`
-normalizes to `\\.\NUL`; it reaches a local device, not a network). Refused although legitimate (§10): a
-repository on a volume without a drive letter (its canonical path stays `\\?\Volume{…}`), a local worktree whose
-main repository is on a network share, and one share spelled with two server names (host name and IP).
+normalizes to `\\.\NUL`; it reaches a local device, not a network). Refused although legitimate (§10), and only
+through a `.git` file's `gitdir` or a `commondir` (a plain `.git` directory is never classified): a worktree or
+submodule on a volume without a drive letter (its paths stay `\\?\Volume{…}`), a local worktree whose main
+repository is on a network share, and one share spelled with two server names (host name and IP).
 
 ### 5.3.1 `Error::Repository` reasons
 
