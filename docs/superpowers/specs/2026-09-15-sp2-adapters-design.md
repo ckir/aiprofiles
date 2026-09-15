@@ -1,6 +1,6 @@
 # SP2 — Adapter architecture gate: design
 
-**Status:** sections approved by the owner on 2026-09-15; written spec under panel review (rounds 1–4 folded).
+**Status:** sections approved by the owner on 2026-09-15; panel review GREEN at round 5 (five rounds on subagents); awaiting owner review of the written spec.
 **Branch:** `sp2-adapters` (from `main` at `10166af`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` (called "V3" below). Where this document and V3
 disagree, V3 wins; report the conflict instead of resolving it silently.
@@ -462,4 +462,8 @@ Every new test must fail under a logic mutant of the behaviour it guards (PINNIN
 - Creating the Aider file needs a no-replace rename or hard links. On a filesystem with neither (for example
   some FUSE or virtual-machine shared folders) Aider profiles fail with `ProfileDir` (exit 4); Claude and Codex
   are unaffected. Behaviour on macOS smbfs, msdos and exfat is not measured.
+- The Unix directory-sync failure branch of `write_new_file_with` is untested, like SP1's `config.rs` step 7a
+  (a directory `sync_all` failure cannot be provoked portably in tests).
+- `OpenOptions::create_new` plus `write_all` at the final name was rejected for the Aider file: it is
+  no-clobber, but a crash or a concurrent reader can observe an empty file under the final name (V3 §9.1).
 - Evidence is static; drift detection belongs to `doctor` (later SP).
