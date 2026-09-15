@@ -40,8 +40,11 @@ pub enum Error {
     #[error("invalid profile name {name:?}: {reason}")]
     InvalidProfileName { name: String, reason: InvalidReason },
 
-    #[error("no profile selected for `{agent}`; name one: agent-profile {agent} <profile>")]
-    NoProfile { agent: String },
+    #[error("{}", no_profile_message(agent, config_file, *in_repository))]
+    NoProfile { agent: String, config_file: PathBuf, in_repository: bool },
+
+    #[error("repository {}: {reason}", path.display())]
+    Repository { path: PathBuf, reason: String },
 
     #[error("{message}")]
     AppRoot { message: String },
@@ -86,7 +89,8 @@ impl Error {
             | Error::ConfigInvalid { .. }
             | Error::ConfigWrite { .. }
             | Error::ProfileDir { .. }
-            | Error::ProfileCaseConflict { .. } => 4,
+            | Error::ProfileCaseConflict { .. }
+            | Error::Repository { .. } => 4,
             Error::UnsupportedExecutable { .. } | Error::Launch { .. } => 6,
             Error::Io { .. } => 1,
         }
@@ -122,6 +126,16 @@ fn not_installed_message(
     unknown_configured: &[String],
 ) -> String {
     format!("`{agent}` is not installed: {reason}{}", unknown_configured_suffix(unknown_configured))
+}
+
+fn no_profile_message(agent: &str, config_file: &Path, in_repository: bool) -> String {
+    let link =
+        if in_repository { "link this repository (agent-profile link <profile>), " } else { "" };
+    format!(
+        "no profile selected for `{agent}`; name one (agent-profile {agent} <profile>), {link}or set \
+         default_profile in {}",
+        config_file.display()
+    )
 }
 
 fn unsupported_message(agent: &str, path: &Path, config_file: &Path) -> String {
@@ -200,7 +214,15 @@ mod tests {
                 3,
             ),
             (Error::InvalidProfileName { name: "".into(), reason: InvalidReason::Empty }, 4),
-            (Error::NoProfile { agent: "a".into() }, 4),
+            (
+                Error::NoProfile {
+                    agent: "a".into(),
+                    config_file: "c".into(),
+                    in_repository: true,
+                },
+                4,
+            ),
+            (Error::Repository { path: "r".into(), reason: "not a directory".into() }, 4),
             (Error::AppRoot { message: "m".into() }, 4),
             (Error::ConfigInvalid { path: "c".into(), key: None, detail: "d".into() }, 4),
             (Error::ConfigWrite { path: "c".into(), source: io() }, 4),
@@ -298,6 +320,35 @@ mod tests {
             "`codex` resolves to codex.cmd, which agent-profile cannot launch without a shell. Install the \
              agent's native executable (for example the vendor's standalone installer) or set \
              [agents.codex] executable = \"<absolute path to a native .exe>\" in config.toml"
+        );
+    }
+
+    #[test]
+    fn no_profile_message_names_every_way_to_select_a_profile() {
+        let error = |in_repository| Error::NoProfile {
+            agent: "claude".into(),
+            config_file: "config.toml".into(),
+            in_repository,
+        };
+        assert_eq!(
+            error(true).to_string(),
+            "no profile selected for `claude`; name one (agent-profile claude <profile>), link this \
+             repository (agent-profile link <profile>), or set default_profile in config.toml"
+        );
+        assert_eq!(
+            error(false).to_string(),
+            "no profile selected for `claude`; name one (agent-profile claude <profile>), or set \
+             default_profile in config.toml"
+        );
+    }
+
+    #[test]
+    fn repository_message_names_the_path_and_the_reason() {
+        let error =
+            Error::Repository { path: "repo/.git".into(), reason: "not a directory".into() };
+        assert_eq!(
+            error.to_string(),
+            format!("repository {}: not a directory", Path::new("repo/.git").display())
         );
     }
 
