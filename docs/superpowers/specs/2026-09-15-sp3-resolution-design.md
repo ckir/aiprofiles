@@ -1,7 +1,7 @@
 # SP3 — Repository resolution: design
 
-**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-6 folded (round 6 GREEN);
-awaiting the owner's review of this document.
+**Status:** approved by the owner on 2026-09-15 after six panel rounds (on subagents); the plan waits for the macOS
+canonicalization prototype (§5.4).
 **Branch:** `sp3-resolution` (from `main` at `7f62a7d`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` ("V3" below). Where this document and V3 disagree, V3
 wins; report the conflict instead of resolving it silently.
