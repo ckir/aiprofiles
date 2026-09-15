@@ -283,6 +283,16 @@ mod tests {
         assert!(find("fake-agent", Some(&native), None).is_ok());
     }
 
+    #[test]
+    fn a_configured_com_is_a_native_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let com = make_file(dir.path(), "agent.COM", true);
+        assert_eq!(
+            find("fake-agent", Some(&com), None).unwrap(),
+            Found { path: com, origin: Origin::Configured }
+        );
+    }
+
     #[cfg(windows)]
     fn refused_on_path(dirs: &[&Path]) -> PathBuf {
         let path_var = std::env::join_paths(dirs).unwrap();

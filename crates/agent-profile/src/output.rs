@@ -112,12 +112,14 @@ fn render_args(args: &[std::ffi::OsString]) -> Vec<String> {
     let mut rendered = Vec::with_capacity(args.len());
     let mut hide_next = false;
     for arg in args {
+        let shown = classify(&arg.to_string_lossy());
         if hide_next {
-            hide_next = false;
+            // A hidden secret-named option still hides its own value, so a chain never leaks.
+            hide_next = matches!(shown, Shown::HidesNext);
             rendered.push(format!("{:?}", "<redacted>"));
             continue;
         }
-        rendered.push(match classify(&arg.to_string_lossy()) {
+        rendered.push(match shown {
             Shown::Verbatim => render_arg(arg),
             Shown::Redacted(prefix) => format!("{:?}", format!("{prefix}<redacted>")),
             Shown::HidesNext => {
@@ -357,6 +359,47 @@ mod tests {
             assert!(!text.contains(secret), "{text}");
         }
         assert_eq!(planned.plan.args, args, "the launched arguments never change");
+    }
+
+    #[test]
+    fn every_sensitive_name_part_and_padded_headers_are_redacted() {
+        let args: Vec<std::ffi::OsString> = [
+            "--client-secret=a",
+            "--db-password=b",
+            "--credential-file=c",
+            "--x-token=d",
+            "--api-key=e",
+            "--auth=f",
+            "Authorization: Basic dXNlcjpwYXNz==",
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+        assert_eq!(
+            render_args(&args),
+            [
+                r#""--client-secret=<redacted>""#,
+                r#""--db-password=<redacted>""#,
+                r#""--credential-file=<redacted>""#,
+                r#""--x-token=<redacted>""#,
+                r#""--api-key=<redacted>""#,
+                r#""--auth=<redacted>""#,
+                r#""Authorization: <redacted>""#,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_hidden_secret_option_still_hides_its_own_value() {
+        let args: Vec<std::ffi::OsString> =
+            ["--api-key", "--client-secret", "sk-live", "--model", "gpt"]
+                .into_iter()
+                .map(Into::into)
+                .collect();
+        assert_eq!(
+            render_args(&args),
+            [r#""--api-key""#, r#""<redacted>""#, r#""<redacted>""#, r#""--model""#, r#""gpt""#]
+        );
     }
 
     #[test]

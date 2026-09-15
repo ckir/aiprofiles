@@ -147,6 +147,44 @@ fn an_invalid_profile_name_wins_over_a_conflict() {
 }
 
 #[test]
+fn setup_errors_win_over_a_conflict() {
+    let conflict = ["--", "--conf", "f"];
+    let relative = Root::empty();
+    let mut command = relative.agent_profile(["aider", "work"].iter().chain(&conflict));
+    let output = command.env("AGENT_PROFILE_HOME", "relative").env("PATH", "").output().unwrap();
+    assert_eq!(output.status.code(), Some(4), "relative root: {}", stderr(&output));
+
+    let corrupt = Root::empty();
+    corrupt.write_config("[agents\n");
+    let output = corrupt
+        .agent_profile(["aider", "work"].iter().chain(&conflict))
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4), "corrupt config: {}", stderr(&output));
+
+    let no_profile = Root::empty();
+    let output = no_profile
+        .agent_profile(["aider"].iter().chain(&conflict))
+        .env("PATH", "")
+        .current_dir(no_profile.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4), "no profile: {}", stderr(&output));
+}
+
+#[test]
+fn a_failed_initialization_prints_no_verbose_report() {
+    let root = Root::new();
+    fs::create_dir_all(root.profile_dir("work").parent().unwrap()).unwrap();
+    fs::write(root.profile_dir("work"), b"a file where a directory belongs").unwrap();
+    let output = root.agent_profile(["fake", "work", "--verbose"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
+    assert!(!stderr(&output).contains("agent-profile: agent:"), "{}", stderr(&output));
+    assert!(output.stdout.is_empty(), "the agent must not run");
+}
+
+#[test]
 fn the_fake_agent_conflict_is_refused_end_to_end() {
     let root = Root::new();
     let output =

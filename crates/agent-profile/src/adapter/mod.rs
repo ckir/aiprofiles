@@ -434,6 +434,28 @@ mod tests {
     }
 
     #[test]
+    fn the_temp_file_lives_beside_the_target() {
+        let (dir, path) = new_file_path();
+        let names = || -> Vec<String> {
+            fs::read_dir(dir.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect()
+        };
+        write_new_file_with(&path, b"{}\n", || {
+            let names = names();
+            assert_eq!(names.len(), 1, "{names:?}");
+            assert!(
+                names[0].starts_with(".aider.conf.yml.") && names[0].ends_with(".tmp"),
+                "{names:?}"
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(names(), [".aider.conf.yml"]);
+    }
+
+    #[test]
     fn a_file_created_before_persist_wins_and_is_never_overwritten() {
         let (_dir, path) = new_file_path();
         write_new_file_with(&path, b"{}\n", || {

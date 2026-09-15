@@ -340,6 +340,86 @@ fn presence_contract() {
     assert_eq!(aider.presence(&fixture.root, &profile("work")), ProfilePresence::Absent);
 }
 
+#[test]
+fn case_twin_contract() {
+    for adapter in adapter::registry() {
+        let fixture = fixture();
+        let id = adapter.metadata().id;
+        fs::create_dir_all(fixture.root.profiles_dir().join("work")).unwrap();
+        let error = fixture.plan(adapter, "WORK", &[]).unwrap_err();
+        assert!(
+            matches!(error, Error::ProfileCaseConflict { ref existing, .. } if existing == "work"),
+            "{id}: {error:?}"
+        );
+        let entries: Vec<OsString> = fs::read_dir(fixture.root.profiles_dir())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, [OsString::from("work")], "{id}");
+    }
+}
+
+#[test]
+fn not_installed_wins_over_a_case_twin_contract() {
+    for adapter in adapter::registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = AppRoot::from_path(dir.path().join("root"));
+        fs::create_dir_all(root.profiles_dir().join("work")).unwrap();
+        let empty = dir.path().join("empty");
+        fs::create_dir(&empty).unwrap();
+        let config = Config::load(&root).unwrap();
+        let twin = profile("WORK");
+        let id = adapter.metadata().id;
+        let error = adapter
+            .plan(&PlanContext {
+                profile: &twin,
+                root: &root,
+                config: &config,
+                args: &[],
+                path_var: Some(empty.as_os_str()),
+            })
+            .unwrap_err();
+        assert!(matches!(error, Error::AgentNotInstalled { .. }), "{id}: {error:?}");
+    }
+}
+
+#[test]
+fn existed_follows_the_declared_kind_contract() {
+    for adapter in adapter::registry() {
+        let fixture = fixture();
+        let id = adapter.metadata().id;
+        let planned = fixture.plan(adapter, "work", &[]).unwrap();
+        adapter.initialize(&planned).unwrap();
+        let replanned = fixture.plan(adapter, "work", &[]).unwrap();
+        assert!(replanned.paths.iter().all(|entry| entry.existed), "{id}: {:?}", replanned.paths);
+    }
+    let fixture = fixture();
+    let aider = adapter::lookup("aider").unwrap();
+    let planned = fixture.plan(aider, "work", &[]).unwrap();
+    fs::create_dir_all(&planned.paths[1].path).unwrap();
+    let existed: Vec<bool> =
+        fixture.plan(aider, "work", &[]).unwrap().paths.iter().map(|entry| entry.existed).collect();
+    assert_eq!(existed, [true, false], "a directory at the Aider file is not the file");
+}
+
+#[test]
+fn initialization_ignores_a_stale_existed_contract() {
+    for adapter in adapter::registry() {
+        let fixture = fixture();
+        let id = adapter.metadata().id;
+        let first = fixture.plan(adapter, "work", &[]).unwrap();
+        adapter.initialize(&first).unwrap();
+        let stale = fixture.plan(adapter, "work", &[]).unwrap();
+        fs::remove_dir_all(&stale.profile_dir).unwrap();
+        adapter.initialize(&stale).unwrap();
+        assert_eq!(
+            adapter.presence(&fixture.root, &profile("work")),
+            ProfilePresence::Materialized,
+            "{id}"
+        );
+    }
+}
+
 fn assert_profile_dir_error(result: Result<()>, context: &str) {
     assert!(matches!(result, Err(Error::ProfileDir { .. })), "{context}: {result:?}");
 }

@@ -353,6 +353,8 @@ Unix `PATH` discovery is unchanged apart from §7.1: npm shims there are executa
   the value of any `NAME=value` (alone or as an option's value) whose dotted NAME of TOML bare keys (letters, digits, `_`, `-`) contains one of
   those parts (`mcp_servers.gh.env.GITHUB_TOKEN=<redacted>`); and the value of any `Name: value` header
   whose name contains one (`Authorization: <redacted>`). Every argument is scanned, including after a `--`.
+  A hidden argument that is itself such an option hides the argument after it too, so
+  `--api-key --client-secret sk-live` shows neither value (test audit, owner-approved fix).
   It is a shallow name rule shared with the environment backstop, not a parser, and only the report changes:
   the launched arguments are never modified. The wrapper's unknown-option usage error echoes only the part of
   the option before `=`.
