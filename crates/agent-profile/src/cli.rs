@@ -1077,6 +1077,14 @@ mod tests {
         };
         for spelling in spellings {
             let base = base_dir(Some(OsStr::new(spelling))).unwrap();
+            // `join` discards the base for an absolute value, so the equality below holds whatever `base_dir`
+            // returned. This is the discriminating assertion: the working directory is skipped exactly for the
+            // spellings that do not need it.
+            assert_eq!(
+                base.as_os_str().is_empty(),
+                std::path::Path::new(spelling).is_absolute(),
+                "{spelling:?} took the wrong branch of base_dir"
+            );
             assert_eq!(
                 base.join(spelling),
                 cwd.join(spelling),
