@@ -233,7 +233,7 @@ fn behaviour_table_rows_with_non_zero_exits() {
     let root = Root::new();
     let cases: &[(&[&str], i32, &str)] = &[
         (&["doctor"], 2, "`doctor` is not yet implemented"),
-        (&["link", "work", "extra"], 2, "`link` is not yet implemented"),
+        (&["link", "work", "extra"], 2, "`link` takes one profile"),
         (&["fake", "create", "work"], 2, "`fake create` is not yet implemented"),
         (&["fake", "work", "--json"], 2, "`--json` is not yet implemented"),
         (

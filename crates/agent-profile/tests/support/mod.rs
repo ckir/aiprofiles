@@ -55,7 +55,9 @@ impl Root {
     }
 
     pub fn empty() -> Root {
-        Root { dir: tempfile::tempdir().unwrap() }
+        let dir = tempfile::tempdir().unwrap();
+        assert_outside_any_repository(dir.path());
+        Root { dir }
     }
 
     pub fn path(&self) -> &Path {
@@ -70,7 +72,8 @@ impl Root {
         self.path().join("profiles").join(profile).join("fake")
     }
 
-    /// `agent-profile` with this root, a clean fixture and wrapper environment, and the given args.
+    /// `agent-profile` with this root, a clean fixture and wrapper environment, and the given args. The working
+    /// directory is the root itself, which is outside any repository, so no test discovers this checkout.
     pub fn agent_profile<I, S>(&self, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
@@ -81,8 +84,21 @@ impl Root {
             command.env_remove(name);
         }
         command.env("AGENT_PROFILE_HOME", self.path());
+        command.current_dir(self.path());
         command.args(args.into_iter().map(Into::into));
         command
+    }
+}
+
+/// Fails unless no ancestor of `path` has a `.git` entry, so discovery from `path` finds no repository (SP3
+/// design §8.5). It reads `.git` entries directly rather than trusting the discovery under test.
+pub fn assert_outside_any_repository(path: &Path) {
+    for ancestor in path.ancestors() {
+        assert!(
+            std::fs::symlink_metadata(ancestor.join(".git")).is_err(),
+            "{} has a .git entry, so a test directory below it would be inside a repository",
+            ancestor.display()
+        );
     }
 }
 
