@@ -132,7 +132,7 @@ cannot miss a case-only twin that names the same directory on a case-insensitive
 5. otherwise → `None` (profile `None`).
 
 `Resolution.repository` is `Some(r)` whenever the discovery passed in is `Repository(r)`, whatever the
-source; callers that skip or ignore discovery pass `NotInRepository` (§7.4).
+source; callers that skip or ignore discovery pass `NotInRepository` (§7.6).
 
 ## 5. Discovery (`repo::discover`)
 
