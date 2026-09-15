@@ -523,6 +523,16 @@ fn parse_profile(name: String) -> Result<ProfileName> {
         .map_err(|reason| Error::InvalidProfileName { name, reason })
 }
 
+/// The directory a `--repo` value is joined to. An absolute `--repo` needs no current directory, so a command
+/// given one still works from a working directory that no longer exists (design §6.2, §10 "`--repo` is the
+/// explicit override").
+fn base_dir(repo: Option<&OsStr>) -> Result<PathBuf> {
+    match repo {
+        Some(repo) if std::path::Path::new(repo).is_absolute() => Ok(PathBuf::new()),
+        _ => current_dir(),
+    }
+}
+
 fn current_dir() -> Result<PathBuf> {
     std::env::current_dir().map_err(|error| Error::Repository {
         path: PathBuf::from("."),
@@ -615,7 +625,7 @@ fn run_command(
     let config = Config::load(&root)?;
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
-    let cwd = current_dir()?;
+    let cwd = base_dir(repo.as_deref())?;
     if command == CommandWord::Unlink {
         return run_unlink(&root, &config, agent.as_ref(), &cwd, repo.as_deref());
     }
@@ -1031,6 +1041,16 @@ mod tests {
         assert_eq!(launch_discovery(true, true, false), LaunchDiscovery::ReportOnly);
         assert_eq!(launch_discovery(true, false, true), LaunchDiscovery::ReportOnly);
         assert_eq!(launch_discovery(true, false, false), LaunchDiscovery::Skipped);
+    }
+
+    #[test]
+    fn an_absolute_repo_is_joined_to_nothing_so_no_current_directory_is_needed() {
+        let absolute = if cfg!(windows) { r"C:\src\acme" } else { "/src/acme" };
+        assert_eq!(base_dir(Some(OsStr::new(absolute))).unwrap(), PathBuf::new());
+        assert_eq!(PathBuf::new().join(absolute), PathBuf::from(absolute));
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(base_dir(Some(OsStr::new("relative"))).unwrap(), cwd);
+        assert_eq!(base_dir(None).unwrap(), cwd);
     }
 
     #[test]

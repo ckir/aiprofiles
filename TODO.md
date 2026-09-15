@@ -51,6 +51,14 @@ Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superp
 - [ ] A mapping made in the main checkout does not apply in its linked worktrees.
 - [ ] A `link` or `unlink` that changes `config.toml` rewrites it with LF line endings and without a byte-order
       mark (`toml_edit` renders that way); a command that changes nothing leaves the file untouched.
+- [ ] A stdout write that fails after `link` or `unlink` already changed `config.toml` exits 1 (`Io`), so the change
+      is not visible in the output or the exit code; `<agent> resolve` with no profile loses its exit 4 the same way.
+      Decide whether a write failure after a committed change deserves its own exit code.
+- [ ] A hand-written `[repositories.'\\?\C:\…']` key is accepted but never matches the canonical `C:\…` root
+      (`Path` treats the verbatim prefix as a different component), and `link` then adds a second entry for the same
+      directory. Consider refusing verbatim keys, or comparing keys through `repo::strip_verbatim`.
+- [ ] A top-level `unlink` that removes the repository profile while agent mappings remain prints only `unlinked …`;
+      the "agent mappings remain" note appears on the next run. Consider showing it on the run that creates the state.
 
 ## Housekeeping
 

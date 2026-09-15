@@ -583,6 +583,40 @@ fn link_through_a_link_to_the_repository_stores_the_canonical_root() {
     assert_eq!(launched_home(&root, &alias), home(&root, "work"));
 }
 
+/// Design §6.2 and §10: `--repo` is the explicit override, so a mapping stays removable from a working directory
+/// that no longer exists. Only Unix lets a process keep a deleted directory as its working directory.
+#[cfg(unix)]
+#[test]
+fn an_absolute_repo_works_from_a_deleted_working_directory() {
+    let root = Root::new();
+    let (_dir, base) = scratch();
+    let repository = base.join("acme");
+    git_dir(&repository);
+    let gone = base.join("gone");
+    fs::create_dir_all(&gone).unwrap();
+    let linked = run(&root, &repository, &["link", "work"]);
+    assert_eq!(linked.status.code(), Some(0), "{}", stderr(&linked));
+
+    // The shell removes its own working directory, then replaces itself with the binary, which therefore starts
+    // with a working directory that cannot be resolved.
+    let script = format!(
+        "cd '{gone}' && rmdir '{gone}' && exec '{binary}' unlink --repo '{repository}'",
+        gone = gone.display(),
+        binary = env!("CARGO_BIN_EXE_agent-profile"),
+        repository = repository.display(),
+    );
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .env("AGENT_PROFILE_HOME", root.path())
+        .current_dir(&base)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stdout(&output), format!("unlinked {} (was work)\n", repository.display()));
+    assert!(!fs::read_to_string(root.path().join("config.toml")).unwrap().contains("acme"));
+}
+
 #[cfg(unix)]
 #[test]
 fn a_non_utf8_repo_value_is_a_path() {
