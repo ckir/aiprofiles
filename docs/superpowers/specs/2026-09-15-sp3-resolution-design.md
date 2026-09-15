@@ -1,6 +1,6 @@
 # SP3 — Repository resolution: design
 
-**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-4 folded;
+**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-5 folded;
 awaiting further panel rounds and the owner's review of this document.
 **Branch:** `sp3-resolution` (from `main` at `7f62a7d`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` ("V3" below). Where this document and V3 disagree, V3
@@ -180,14 +180,18 @@ Consequences:
 
 ### 5.3 No network or device targets
 
-A `gitdir` or `commondir` target is refused with `Error::Repository` (exit 4), before any filesystem call on it,
-when:
-- on Windows, the first component of the resolved target (`Path::components().next()`, which parses every
-  separator spelling: `\\server\share`, `//server/share`, `\/server/share`, `//./pipe/x` all yield a prefix) is a
-  `Prefix` of kind `UNC`, `VerbatimUNC`, `DeviceNS`, or `Verbatim` (anything but `Disk` and `VerbatimDisk`) —
-  unless the target's prefix is `UNC`/`VerbatimUNC` with the same server and share (compared ignoring ASCII case)
-  as the prefix of `D`, i.e. a repository checked out on that network share;
-- on either platform, the target contains a NUL.
+The target classified is exactly `D.join(<p>)` for a `gitdir` and `gitdir.join(<first line>)` for a `commondir`
+(Rust's `join` replaces the base when the value carries a prefix or root). It is checked before any filesystem call
+on it, as an allow-list; anything not allowed is refused with `Error::Repository` (exit 4):
+- on Windows, allowed only when the first component (`Path::components().next()`) is a `Prefix` of kind `Disk`
+  or `VerbatimDisk`, or of kind `UNC`/`VerbatimUNC` with the same server and share (compared ignoring ASCII case)
+  as the prefix of `D` (a repository checked out on that network share). Refused therefore: `UNC` and
+  `VerbatimUNC` on another share, `DeviceNS` (`\\.\…`), other `Verbatim` (`\\?\Volume{…}`, `\\?\GLOBALROOT`),
+  and a first component that is not a prefix at all (malformed spellings such as `\\evil\\share\x`, which
+  Windows still normalizes to a UNC path). Measured by the panel: `\\server\share\x`, `//server/share/x` and
+  `\/server/share/x` parse as `UNC`, `//./pipe/x` as `DeviceNS`;
+- on Unix, allowed unless the target contains a NUL;
+- on either platform, a target containing a NUL is refused.
 
 The check is a pure classifier `repo::target_allowed(target: &Path, repository_dir: &Path) -> bool`. `std::path`
 parses Windows prefixes only when compiled for Windows, so the prefix rows are unit-tested on the Windows CI
@@ -197,17 +201,21 @@ So a `.git` file from an archive cannot make discovery open an SMB session, conn
 network timeout (V3 §36 "no hidden network requests"). Not detected (§10): Unix automount paths
 (`/net/host/…`), Windows mapped network drive letters, and a `.git` or a gitdir path component that is itself a
 symlink to a network location (followed by `fs::metadata`/`canonicalize`; creating one on Windows needs symlink
-privilege or Developer Mode).
+privilege or Developer Mode), and a DOS device name as the last component of a local path (`C:\repo\NUL`
+normalizes to `\\.\NUL`; it reaches a local device, not a network). Refused although legitimate (§10): a
+repository on a volume without a drive letter (its canonical path stays `\\?\Volume{…}`), a local worktree whose
+main repository is on a network share, and one share spelled with two server names (host name and IP).
 
 ### 5.3.1 `Error::Repository` reasons
 
-Every reason text, with the path the error carries:
+Every reason text, with the path the error carries. `<target>` is the joined path that was classified or checked
+(§5.3), shown with `Path::display`:
 
 | Condition | `path` | `reason` |
 |---|---|---|
 | start does not exist or cannot be canonicalized | the start as given | `cannot resolve the directory: <io error>` |
 | start is not a directory | the start | `not a directory` |
-| `link`/`unlink` (no `--repo`) outside a repository | the canonical start | `not inside a Git repository` |
+| `link` (with or without `--repo`) or `unlink` (without `--repo`) outside a repository | the canonical start | `not inside a Git repository` |
 | dangling `.git` symlink | `D/.git` | `.git is a broken symbolic link` |
 | other I/O error on `.git` | `D/.git` | `cannot read .git: <io error>` |
 | `.git` directory without a regular file `HEAD` | `D/.git` | `invalid .git directory: no HEAD file` |
@@ -215,7 +223,7 @@ Every reason text, with the path the error carries:
 | `.git` file over 64 KiB, not UTF-8, or without a `gitdir: ` first line | `D/.git` | `invalid .git file: <too large \| not UTF-8 \| no gitdir line>` |
 | gitdir target refused (§5.3) | `D/.git` | `gitdir points to a network or device path: <target>` |
 | gitdir missing, not a directory, or without `HEAD` | `D/.git` | `gitdir <target> is missing or is not a Git directory` |
-| `commondir` over 64 KiB, not UTF-8, not a regular file | the `commondir` file | `invalid commondir file: <too large \| not UTF-8 \| not a regular file>` |
+| `commondir` over 64 KiB, not UTF-8, not a regular file, unreadable, or with an empty first line | the `commondir` file | `invalid commondir file: <too large \| not UTF-8 \| not a regular file \| cannot read: <io error> \| empty>` |
 | `commondir` target refused (§5.3) | the `commondir` file | `commondir points to a network or device path: <target>` |
 | `commondir` target missing or not a directory | the `commondir` file | `commondir <target> is missing or is not a directory` |
 | `link` on a non-UTF-8 root | the root | `a repository path that is not valid UTF-8 cannot be linked` |
@@ -308,7 +316,7 @@ How the CLI chooses `keys` for `unlink` (§7.2):
      components of `p` with `.` dropped and `..` applied lexically, so `../gone`, or a deleted directory under
      an 8.3 or symlinked ancestor (Windows `RUNNER~1`, macOS `/var` → `/private/var`), still matches the key
      `link` stored;
-  3. `strip_verbatim(p)` exactly as given.
+  3. `strip_verbatim` of `p` after joining it to the cwd, with no canonicalization or lexical normalization.
 
   So a mapping for a deleted directory, a directory recreated without `.git`, or a worktree with a stale
   `gitdir` is always removable, and an enclosing repository's mapping is never touched. If no key matches →
@@ -354,9 +362,11 @@ reserved profile name, V3 §6, exit 4) and `agent-profile link Create` likewise,
    byte (a missing next token → usage error "`--repo` needs a path", exit 2). Every other token starting with
    `-` is an option; every remaining token is a bare word. A token consumed as a `--repo` value is never a help
    flag, an option or a command word.
-2. `-h`/`--help`, then `-V`/`--version`, among the bound options, wherever they appear: when the first bare word
-   is exactly one of the five lower-case command words, help prints that command's usage (§7.3) to stdout and
-   exits 0; otherwise the launch usage (unchanged, including for `claude create -h`).
+2. `-h`/`--help`, then `-V`/`--version`, among the bound options, wherever they appear. The command word for this
+   step is the dispatched word for the top-level five, and otherwise the first bare word. When it is exactly one
+   of the five lower-case command words, help prints that command's usage (§7.3) to stdout and exits 0
+   (`agent-profile link -h` → `link` usage; `agent-profile link status -h` → `link` usage; `agent-profile
+   resolve -h` → `resolve` usage); otherwise the launch usage (unchanged, including for `claude create -h`).
 3. Unknown agent (unchanged; agent-scoped only).
 4. The first bare word, compared ignoring ASCII case, against all 13 reserved words (V3 §5.3):
    - the exact lower-case spelling of `current`, `resolve`, `status`, `link` or `unlink` → that command,
@@ -377,7 +387,8 @@ reserved profile name, V3 §6, exit 4) and `agent-profile link Create` likewise,
 | empty `--repo` value | ``--repo` needs a non-empty path`` |
 | reserved word in another letter case | ``command words are lower case: `<lower-case word>` `` |
 | `--` inside a command | `` `<command>` takes no agent arguments; remove `--` `` |
-| unknown option on a command | `` unknown option "<name>" for `<command>` `` (only the part before `=`) |
+| unknown option on a command | `` unknown option "<name>" for `<command>` `` (only the part before `=`; `<command>` is the command word alone, without the agent) |
+| `--json` on `status` or `resolve` | `` `--json` is not yet implemented `` (the SP1 not-yet-implemented error, exit 2) |
 | `link` without a profile | `` `link` needs a profile: agent-profile [<agent>] link <profile> `` |
 | extra bare word (`link` second word, or any word after `current`/`resolve`/`status`/`unlink`) | `` `link` takes one profile `` / `` `<command>` takes no arguments `` |
 | non-UTF-8 `link` profile word | `the profile name is not valid UTF-8` (as a launch) |
@@ -385,7 +396,8 @@ reserved profile name, V3 §6, exit 4) and `agent-profile link Create` likewise,
 
 Token binding (step 1) runs for launches too. Changed launch behaviour, all previously unusual: a bare `--repo`
 in a launch consumes the next token, so `claude work --repo --help` becomes an unknown-option error (exit 2)
-instead of help, and `claude --repo create` becomes an unknown-option error instead of not yet implemented.
+instead of help, `claude -h --repo` becomes "`--repo` needs a path" instead of help, and `claude --repo create`
+becomes an unknown-option error instead of not yet implemented.
 
 Top-level `resolve` and `current` → the "needs an agent" usage error (exit 2), after the help check.
 
@@ -493,7 +505,8 @@ unlinked claude: C:\src\acme (was personal)
 no mapping to remove for C:\src\acme
 no mapping to remove for claude: C:\src\acme
 ```
-The path shown is the stored key when one matched, otherwise the first key tried (§6.2). After
+The path shown is the stored key when a mapping was removed, otherwise the first candidate (`NothingToRemove::shown`,
+§6.2). After
 `no mapping to remove`, one `note:` line follows, ordered by the stored key string, for each stored key that is a proper ancestor
 of that path (`note:         C:\src has a mapping; remove it with agent-profile unlink --repo C:\src`), and a
 top-level `unlink` whose entry holds only agent mappings adds
@@ -544,7 +557,9 @@ the helper's `git rev-parse --show-toplevel`. For the broken nested layouts of D
   repository not inheriting its parent's mapping (the V3 §34 "longest applicable mapping" row); `NotInRepository`
   with and without `default_profile`; `repository` populated for every source.
 - `repo::target_allowed` table (Windows only; the NUL row on every platform): `\\server\share\x`, `//server/share/x`,
-  `\/server/share/x`, `//./pipe/x`, `\\?\UNC\s\x`, `\\?\Volume{…}\x` refused; `C:\x` and `\\?\C:\x` allowed; a
+  `\/server/share/x`, `//./pipe/x`, `\\?\UNC\s\x`, `\\?\Volume{…}\x`, `\\?\GLOBALROOT\x`, the malformed
+  `\\evil\\share\x` (no prefix) refused; `C:\repo` joined with `\??\UNC\s\x` classified as the joined path; `C:\x`
+  and `\\?\C:\x` allowed; a
   UNC target on the same server and share as the repository directory allowed, a different share refused; a NUL
   refused.
 - Schema accept/reject rows for every rule of §6.1, each naming the key, including keys in the other platform's
@@ -557,7 +572,8 @@ the helper's `git rev-parse --show-toplevel`. For the broken nested layouts of D
   deleted directory given relative with `..`; a deleted directory under a non-canonical temp path; the literal
   fallback; an empty value rejected.
 - CLI routing as pure functions: every token sequence of §7.2 (including `status --`, `unlink -- --repo x`,
-  `claude link work --repo -h`, `claude LINK`, `claude Create`, `claude --repo`, `link status`, `link Create`),
+  `claude link work --repo -h`, `claude LINK`, `claude Create`, `claude --repo`, `link status`, `link Create`,
+  top-level `link -h`, `link status -h`, `resolve -h`, `claude -h --repo`),
   and the decision whether a
   launch needs discovery (explicit profile without `--dry-run`/`--verbose` → no).
 
@@ -612,7 +628,12 @@ reason if one does.
   and `link` prints the root it maps. The same local user can swap a checked file for a FIFO before it is opened
   and block discovery.
 - Unix automount paths and Windows mapped network drive letters in a `gitdir`/`commondir` (for example
-  `/net/host/…` or `Z:\…`) are not detected and may start a mount or a network connection (§5.3).
+  `/net/host/…` or `Z:\…`) are not detected and may start a mount or a network connection, and a DOS device name
+  as the last component of a local target reaches that local device (§5.3).
+- On Windows the network refusal (§5.3) also refuses legitimate layouts: a repository on a volume mounted without a
+  drive letter, a local worktree whose main repository is on a network share, and a share reached through two
+  server spellings (host name versus IP address). Such repositories exit 4 until `--repo` or a drive letter is
+  used.
 - A mapping made in the main checkout does not apply in its linked worktrees, which are separate repositories
   (V3 §14.2); `status` in a worktree does not mention the main checkout's mapping.
 - The `repositories` report, orphan output, JSON and `delete` are SP5.
