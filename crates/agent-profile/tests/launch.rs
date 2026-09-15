@@ -211,7 +211,11 @@ fn behaviour_table_rows_with_non_zero_exits() {
         (&["link", "work", "extra"], 2, "`link` is not yet implemented"),
         (&["fake", "create", "work"], 2, "`fake create` is not yet implemented"),
         (&["fake", "work", "--json"], 2, "`--json` is not yet implemented"),
-        (&["zzz", "work"], 2, "unknown agent `zzz` (known agents: `fake`)"),
+        (
+            &["zzz", "work"],
+            2,
+            "unknown agent `zzz` (known agents: `claude`, `codex`, `aider`, `fake`)",
+        ),
         (&["Fake", "work"], 2, "unknown agent `Fake`"),
         (&["fake", "work", "--bogus"], 2, "unknown option"),
         (&["fake", "work", "extra"], 2, "agent arguments must follow `--`"),
@@ -304,7 +308,7 @@ fn batch_file_override_is_refused() {
     root.write_config(&format!("[agents.fake]\nexecutable = {:?}\n", batch.to_str().unwrap()));
     let output = root.agent_profile(["fake", "work"]).output().unwrap();
     assert_eq!(output.status.code(), Some(6), "{}", stderr(&output));
-    assert!(stderr(&output).contains("never through cmd.exe"), "{}", stderr(&output));
+    assert!(stderr(&output).contains("cannot launch without a shell"), "{}", stderr(&output));
 }
 
 #[test]
