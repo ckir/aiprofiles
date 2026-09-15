@@ -104,9 +104,10 @@ enum Shown {
 
 /// Renders the opaque arguments for the report. Only the report is redacted; the launched arguments never
 /// change. Redaction is a shallow name rule, never a parser: a `--option` whose name holds a sensitive part
-/// hides its value (`--api-key=<redacted>`, or the next argument), `--no-*` switches take no value, and any
-/// `NAME=value` whose NAME holds a sensitive part hides the value. Every argument is scanned, including after
-/// a `--`, because hiding too much only costs readability.
+/// hides its value (`--api-key=<redacted>`, or the next argument); a `NAME=value` whose (possibly dotted) NAME
+/// holds one hides the value (`mcp_servers.gh.env.GITHUB_TOKEN=<redacted>`); a `Name: value` header whose name
+/// holds one hides the value (`Authorization: <redacted>`). Every argument is scanned, including after a `--`,
+/// and boolean-looking names get no exemption, because hiding too much only costs readability.
 fn render_args(args: &[std::ffi::OsString]) -> Vec<String> {
     let mut rendered = Vec::with_capacity(args.len());
     let mut hide_next = false;
@@ -134,30 +135,44 @@ fn classify(text: &str) -> Shown {
             Some((name, value)) => (name, Some(value)),
             None => (option, None),
         };
-        if !name.starts_with("no-") && has_sensitive_part(name) {
+        if has_sensitive_part(name) {
             return match value {
                 Some(_) => Shown::Redacted(format!("--{name}=")),
                 None => Shown::HidesNext,
             };
         }
-        if let Some(variable) = value.and_then(sensitive_assignment) {
-            return Shown::Redacted(format!("--{name}={variable}="));
-        }
-        return Shown::Verbatim;
+        return match value.and_then(sensitive_value_prefix) {
+            Some(prefix) => Shown::Redacted(format!("--{name}={prefix}")),
+            None => Shown::Verbatim,
+        };
     }
-    match sensitive_assignment(text) {
-        Some(variable) => Shown::Redacted(format!("{variable}=")),
+    match sensitive_value_prefix(text) {
+        Some(prefix) => Shown::Redacted(prefix),
         None => Shown::Verbatim,
     }
 }
 
-/// `NAME` when `text` is `NAME=value` with an identifier NAME holding a sensitive part.
-fn sensitive_assignment(text: &str) -> Option<&str> {
-    let (name, _) = text.split_once('=')?;
-    let mut chars = name.chars();
-    let identifier = chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|rest| rest.is_ascii_alphanumeric() || rest == '_');
-    (identifier && has_sensitive_part(name)).then_some(name)
+/// The shown prefix when `text` is a `NAME=value` assignment or a `Name: value` header whose name holds a
+/// sensitive part: `NAME=` or `Name: `.
+fn sensitive_value_prefix(text: &str) -> Option<String> {
+    if let Some((name, _)) = text.split_once('=')
+        && is_dotted_identifier(name)
+        && has_sensitive_part(name)
+    {
+        return Some(format!("{name}="));
+    }
+    let (name, _) = text.split_once(':')?;
+    let header = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    (header && has_sensitive_part(name)).then(|| format!("{name}: "))
+}
+
+/// `a`, `A_1` or `mcp_servers.gh.env.GITHUB_TOKEN`: identifiers joined by dots.
+fn is_dotted_identifier(name: &str) -> bool {
+    name.split('.').all(|segment| {
+        let mut chars = segment.chars();
+        chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+            && chars.all(|rest| rest.is_ascii_alphanumeric() || rest == '_')
+    })
 }
 
 fn render_arg(arg: &OsStr) -> String {
@@ -282,11 +297,19 @@ mod tests {
             "--set-env=OPENAI_API_KEY=sk-4",
             "--",
             "GITHUB_TOKEN=sk-5",
-            "--no-auth-check",
-            "visible",
+            "--no-op-key",
+            "sk-6",
             "--model",
             "gpt",
             "path=a=b",
+            "-c",
+            "mcp_servers.gh.env.GITHUB_TOKEN=\"sk-7\"",
+            "--config=model_providers.x.experimental_bearer_token=sk-8",
+            "--header",
+            "Authorization: Bearer sk-9",
+            "--header=X-Api-Key:sk-10",
+            "https://example.com/mcp",
+            "a.b=c",
             "--Auth-Token",
             "--also-hidden",
         ]
@@ -304,11 +327,19 @@ mod tests {
                 r#""--set-env=OPENAI_API_KEY=<redacted>""#,
                 r#""--""#,
                 r#""GITHUB_TOKEN=<redacted>""#,
-                r#""--no-auth-check""#,
-                r#""visible""#,
+                r#""--no-op-key""#,
+                r#""<redacted>""#,
                 r#""--model""#,
                 r#""gpt""#,
                 r#""path=a=b""#,
+                r#""-c""#,
+                r#""mcp_servers.gh.env.GITHUB_TOKEN=<redacted>""#,
+                r#""--config=model_providers.x.experimental_bearer_token=<redacted>""#,
+                r#""--header""#,
+                r#""Authorization: <redacted>""#,
+                r#""--header=X-Api-Key: <redacted>""#,
+                r#""https://example.com/mcp""#,
+                r#""a.b=c""#,
                 r#""--Auth-Token""#,
                 r#""<redacted>""#,
             ]
@@ -316,7 +347,7 @@ mod tests {
         let mut planned = planned(Vec::new(), vec![], true);
         planned.plan.args = args.clone();
         let text = report_lines(&planned, &resolution(), ReportMode::Verbose).join("\n");
-        for secret in ["sk-1", "sk-2", "sk-3", "sk-4", "sk-5", "also-hidden"] {
+        for secret in ["sk-", "also-hidden"] {
             assert!(!text.contains(secret), "{text}");
         }
         assert_eq!(planned.plan.args, args, "the launched arguments never change");

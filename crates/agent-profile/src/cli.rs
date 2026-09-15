@@ -184,11 +184,11 @@ fn split(argv: Vec<OsString>, known: &[&str]) -> Result<Invocation> {
         .iter()
         .find(|arg| !matches!(arg.to_str(), Some("--dry-run" | "--verbose" | "--json")))
     {
+        // Only the part before `=` is echoed: the value may be a secret meant for the agent (spec §36).
+        let shown = bad.to_string_lossy();
+        let name = shown.split_once('=').map_or(&*shown, |(name, _)| name);
         return Err(Error::Usage {
-            message: format!(
-                "unknown option {:?}; agent arguments must follow `--`",
-                bad.to_string_lossy()
-            ),
+            message: format!("unknown option {name:?}; agent arguments must follow `--`"),
         });
     }
     // 6. At most one bare word.
@@ -433,6 +433,17 @@ mod tests {
         match split_err(&["fake", "work", "extra", "--bogus"]) {
             Error::Usage { message } => {
                 assert!(message.starts_with("unknown option \"--bogus\""), "{message}")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_option_error_never_echoes_its_value() {
+        match split_err(&["fake", "work", "--openai-api-key=sk-secret"]) {
+            Error::Usage { message } => {
+                assert!(message.starts_with("unknown option \"--openai-api-key\";"), "{message}");
+                assert!(!message.contains("sk-secret"), "{message}");
             }
             other => panic!("{other:?}"),
         }
