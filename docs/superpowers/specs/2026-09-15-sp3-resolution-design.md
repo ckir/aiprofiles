@@ -1,7 +1,7 @@
 # SP3 — Repository resolution: design
 
-**Status:** approved by the owner on 2026-09-15 after six panel rounds (on subagents); the plan waits for the macOS
-canonicalization prototype (§5.4).
+**Status:** approved by the owner on 2026-09-15 after six panel rounds (on subagents); macOS
+canonicalization measured (§5.4); implemented by the SP3 plan (to be written).
 **Branch:** `sp3-resolution` (from `main` at `7f62a7d`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` ("V3" below). Where this document and V3 disagree, V3
 wins; report the conflict instead of resolving it silently.
@@ -239,11 +239,12 @@ Display: `repository <path>: <reason>`.
   unchanged. Measured on Windows by the panel: canonicalization normalizes letter case, 8.3 short names
   (`C:\PROGRA~1` → `C:\Program Files`), trailing separators, and junctions, so after `strip_verbatim` one
   directory yields one byte string.
-- macOS case (unmeasured): a case-insensitive APFS volume may return different spellings of one directory
-  from `canonicalize`. Before the plan is written, a throwaway prototype PR measures on the macOS runner
-  whether two case spellings of one directory, and a symlinked start, canonicalize to identical bytes. If
-  they do not, `repo::canonical` on macOS adds `fcntl(F_GETPATH)` on the opened directory, and this section
-  is amended before planning.
+- macOS case (measured 2026-09-15 on the `macos-latest` CI runner, draft PR #14, closed): on the default
+  case-insensitive APFS volume, `fs::canonicalize` of `Acme`, `acme`, `ACME` and `aCmE/sUB` returned the on-disk
+  spelling (`/private/var/…/Acme`, `/private/var/…/Acme/Sub`) with identical bytes, and a symlink to the directory,
+  including one created with a lower-case target, resolved to the same bytes. So `repo::canonical` needs no
+  `F_GETPATH`. The same probe on Linux (`ubuntu-latest`, case-sensitive) found no `acme` (as expected) and
+  resolved symlinks; on Windows (local) all spellings and a junction resolved to `C:\…\Acme`.
 - Linux case-insensitive mounts (WSL `/mnt/c` drvfs, ext4 casefold, CIFS, exFAT) keep the typed case through
   `realpath`; two spellings are two identities there (§10).
 - A root that is not valid UTF-8 is discovered normally but can never match a mapping; `link` refuses it
@@ -639,4 +640,5 @@ reason if one does.
 - A mapping made in the main checkout does not apply in its linked worktrees, which are separate repositories
   (V3 §14.2); `status` in a worktree does not mention the main checkout's mapping.
 - The `repositories` report, orphan output, JSON and `delete` are SP5.
-- macOS case identity is unmeasured until the prototype PR (§5.4).
+- macOS case identity was measured on the default case-insensitive APFS volume only (§5.4); a case-sensitive
+  APFS volume behaves like Linux.
