@@ -1,6 +1,6 @@
 # SP3 — Repository resolution: design
 
-**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel round 1 folded;
+**Status:** draft, 2026-09-15; design sections approved by the owner in brainstorming; panel rounds 1-2 folded;
 awaiting further panel rounds and the owner's review of this document.
 **Branch:** `sp3-resolution` (from `main` at `7f62a7d`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` ("V3" below). Where this document and V3 disagree, V3
@@ -50,9 +50,9 @@ on this machine on 2026-09-15: git 2.55.0.windows.5, rustc 1.98.0, Windows 11 NT
 
 | # | Decision | Owner choice | Evidence |
 |---|---|---|---|
-| D1 | Discovery is a hand-written walk that stops at the first `.git` and validates Git's `gitdir`/`commondir` metadata; an invalid `.git` is an error, never a reason to continue upward. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES` and `core.worktree` are ignored. No new dependency. | walk | measured: `git rev-parse --show-toplevel` honours a repository's own `core.worktree` and reported a different directory as the top level (reproduced by the driver); with `GIT_DIR` set git reported the cwd as the top level. measured: `gix-discover` 0.55.0 needs `-F sha1` to compile, pulls 66 transitive crates, and for a nested `.git` that is `gitdir: ../nowhere`, garbage, or an empty directory returns the PARENT repository's work dir (git also climbs past an empty `.git` directory). measured: `git rev-parse` did not run a `core.fsmonitor` script (`git status` did). V3 §13 forbids applying a parent's mapping to a nested repository; V3 §36 forbids trusting repository-controlled configuration. |
+| D1 | Discovery is a hand-written walk that stops at the first `.git` and validates Git's `gitdir`/`commondir` metadata; an invalid `.git` is an error, never a reason to continue upward. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES` and `core.worktree` are ignored. A `.git` owned by another user ends the walk as "not in a repository" (§5.3). No new dependency. | walk; ownership check added by the owner after panel round 2 | measured: `git rev-parse --show-toplevel` honours a repository's own `core.worktree` and reported a different directory as the top level (reproduced by the driver); with `GIT_DIR` set git reported the cwd as the top level. measured: `gix-discover` 0.55.0 needs `-F sha1` to compile, pulls 66 transitive crates, and for a nested `.git` that is `gitdir: ../nowhere`, garbage, or an empty directory returns the PARENT repository's work dir (git also climbs past an empty `.git` directory). measured: `git rev-parse` did not run a `core.fsmonitor` script (`git status` did). V3 §13 forbids applying a parent's mapping to a nested repository; V3 §36 forbids trusting repository-controlled configuration. |
 | D2 | Mappings and the global default live in `config.toml`: `default_profile`, and `[repositories.'<root>']` tables with `profile` and `agents`. | config.toml tables | measured: `toml_edit` 0.25.15 wrote a `\\?\C:\…\it's a repo` key with correct escaping and `toml` 1.1.6 read it back byte-equal; an exact duplicate key is already a parse error. reasoned: one file and one lock let SP5's `delete` check references under the lock `link` takes. SP1 test `schema_rejects_every_error_class_naming_the_key` pins `default` as an unknown key, hence `default_profile`. |
-| D3 | The global default is a hand-edited `default_profile` key; SP3 reads, validates and shows it; no setter command. | hand-edited | reasoned: V3 §34 tests the global default, so it cannot be deferred; V3 §15 defines `link` as "current repository → profile" and the §5.3 command words are fixed. |
+| D3 | The global default is a hand-edited `default_profile` key; SP3 reads, validates and shows it; no setter command. | hand-edited | reasoned: V3 §34 tests the global default, so it cannot be deferred; V3 §15 defines `link` as "current repository → profile" and the V3 §5.3 command words are fixed. |
 | D4 | Command forms, outputs and exit codes of §7; `--repo` on the non-launch commands only; `link` accepts any valid profile name. | as proposed | reasoned: refusing an unmaterialized profile would contradict lazy initialization (§9) before `create` exists (SP5); `unlink` of nothing is idempotent like `create` (§10). |
 | D5 | A mapping applies only when its root equals the discovered root. Discovery or canonicalization failure is exit 4, except for a launch with an explicit profile. `unlink --repo <path>` removes a mapping by key without discovery, so an orphan mapping can always be removed (§6.2). | as proposed; the unlink rule refined by panel round 1 (C1) | reasoned: discovery always yields the innermost root, so V3 §14.1's "longest applicable mapping" has exactly one candidate and §13's nested rule holds; a silent fallback could select a different account. Without key-based unlink a deleted or broken repository's mapping could never be removed and §16.1 would block deleting its profile forever, while §27 forbids pruning. Panel round 1 showed that running discovery for `unlink --repo` removes an enclosing repository's mapping when the path was recreated without `.git`. |
 
@@ -108,10 +108,11 @@ pub(crate) fn check_case_twins(root: &AppRoot, profile: &ProfileName) -> Result<
 
 // error.rs
 Error::Repository { path: PathBuf, reason: String }
-    // exit 4; Display: "repository discovery failed at <path>: <reason>"
-Error::NoProfile { agent: String, config_file: PathBuf }
+    // exit 4; Display: "repository <path>: <reason>" (reasons: "not inside a Git repository", "invalid .git directory", …)
+Error::NoProfile { agent: String, config_file: PathBuf, in_repository: bool }
     // exit 4; Display: "no profile selected for `<agent>`; name one (agent-profile <agent> <profile>),
-    //  link this repository (agent-profile link <profile>), or set default_profile in <config_file>"
+    //  [link this repository (agent-profile link <profile>), ]or set default_profile in <config_file>"
+    //  (the bracketed hint only when in_repository)
 ```
 
 The plan may add derives. Key comparison (`mapping`, `unlink`) uses `Path` equality, which compares
@@ -152,12 +153,15 @@ From the canonical start up to the filesystem root, at each directory `D` examin
 | `NotFound`, and `symlink_metadata` is also `NotFound` | continue with the parent of `D` |
 | `NotFound` while `symlink_metadata` succeeds (a dangling symlink) | `Error::Repository`, exit 4 |
 | any other I/O error (permission, …) | `Error::Repository`, exit 4 |
+| exists, but owned by someone other than the current user (§5.3) | **`NotInRepository`**: the walk stops, no error, no continuing upward |
 | a directory containing a regular file `HEAD` | root = `D` |
 | a directory without a regular file `HEAD` | `Error::Repository` "invalid .git directory", exit 4 (never continue upward) |
-| a regular file of at most 64 KiB whose content is UTF-8 and whose first line is `gitdir: <p>` (trailing CR/LF trimmed) | resolve `<p>` against `D` (an absolute `<p>` as is) and canonicalize it; it must be a directory containing a regular file `HEAD`; if it contains an entry `commondir`, that entry must be a regular file of at most 64 KiB whose UTF-8 first line, resolved against the gitdir, is an existing directory; then root = `D` |
+| a regular file of at most 64 KiB whose content is UTF-8 and whose first line is `gitdir: <p>` (trailing CR/LF trimmed) | resolve `<p>` against `D` (an absolute `<p>` as is); refuse a network or device target (§5.4); canonicalize it; it must be a directory containing a regular file `HEAD`; if it contains an entry `commondir`, that entry must be a regular file of at most 64 KiB whose UTF-8 first line, resolved against the gitdir, passes §5.4 and is an existing directory; then root = `D` |
 | a regular file failing any rule in the row above, or a `gitdir`/`commondir` that is missing, stale or not as described | `Error::Repository` naming the file and the reason, exit 4 |
 | any other file type | `Error::Repository`, exit 4 |
 | the walk passes the filesystem root without a `.git` | `NotInRepository` |
+
+The ownership row is checked before the content rows, so a foreign `.git` is never read.
 
 Consequences:
 - A submodule, a nested repository and a linked worktree each carry their own `.git` at their root, so
@@ -165,10 +169,40 @@ Consequences:
 - A bare repository has no `.git` entry: `NotInRepository` unless an enclosing directory is a repository.
 - A start inside a `.git` directory (for example `repo/.git/objects`) reaches `repo`: root = `repo`.
 - Nothing is executed and no Git configuration is read; only the `.git` entry, the existence of `HEAD`, and
-  the `.git` file and `commondir` contents (both capped) are read. No read can block on a FIFO or device
-  because every read target must be a regular file first.
+  the `.git` file and `commondir` contents (both capped) are read.
+- Reads never block on a FIFO or device: on Unix each file is opened with `O_NONBLOCK`, checked with `fstat`
+  on the open handle to be a regular file, and only then read, so a file swapped for a FIFO after the
+  metadata check is refused; on Windows, `\\.\` device paths are refused by §5.4 and every read target must
+  be a regular file.
 
-### 5.3 Path identity
+### 5.3 Ownership (owner decision after panel round 2)
+
+A `.git` entry (file or directory, after following symlinks) created by another local user must not steer
+resolution: on Windows any authenticated user can create `C:\.git`, and on Unix anyone can create
+`/tmp/.git` (the class of git CVE-2022-24765). An accepted owner is:
+- Unix: the effective uid, or root (uid 0);
+- Windows: the current user's SID or the Administrators group SID (`S-1-5-32-544`), read with
+  `GetNamedSecurityInfoW` (`OWNER_SECURITY_INFORMATION`) and compared with the process token user via the
+  existing `windows-sys` dependency.
+
+Any other owner ends the walk with `NotInRepository`: a foreign `.git` neither blocks resolution nor becomes a
+repository root, and the walk does not continue upward, so a parent repository's mapping still never applies to
+a nested directory (V3 §13). A failure to read the owner is `Error::Repository` (exit 4). The ownership
+predicate is a pure function of (owner, current identity) so both platforms' rules are unit-tested everywhere.
+
+### 5.4 No network or device targets
+
+A `gitdir` or `commondir` target is refused with `Error::Repository` (exit 4), before any filesystem call on it,
+when it is:
+- on Windows: a UNC path (`\\server\share\…`), a `\\.\` device path, or a `\\?\` path that is not `\\?\<drive>:\`,
+  unless `D` itself lies on the same `\\server\share` (a repository checked out on a network share);
+- on either platform: a path containing a NUL.
+
+So a `.git` file from an archive cannot make discovery open an SMB session, connect a named pipe, or wait on a
+network timeout (V3 §36 "no hidden network requests"). Unix automount paths (`/net/host/…`) are not detected
+(§10).
+
+### 5.5 Path identity
 
 - `repo::canonical` = `fs::canonicalize`, then on Windows `strip_verbatim`: `\\?\C:\x` → `C:\x`,
   `\\?\UNC\server\share\x` → `\\server\share\x`; any other verbatim form (for example `\\?\Volume{…}`) is kept
@@ -213,6 +247,10 @@ Validation on every read (each failure is `ConfigInvalid` naming the key, exit 4
 | `repositories.<key>.agents` | optional; a table whose keys pass `AgentId::parse` (syntax, not "known agent") and whose values are valid profile names |
 | any other field in an entry | unknown key |
 
+Two keys that are component-equal under the host's `Path` rules (`'/a'` and `'/a/'`; on Windows `'C:\x'`,
+`'C:/x'` and `'c:\x\'`) are `ConfigInvalid` naming both keys, so at most one entry can ever apply to a root
+(V3 §37 "applicable mapping selection is deterministic").
+
 An empty entry is accepted. A key that is not in canonical form is accepted but never matches unless it is
 component-equal to a canonical root; it still counts in `mappings_referencing`. Profile names read from
 configuration become `ProfileName` values, so every profile reaching the planner is valid by type (SP1
@@ -242,11 +280,20 @@ comments preserved; SP1 design §6.4).
 How the CLI chooses `key` for `unlink` (§7.2):
 - Without `--repo`: discovery from the cwd. `Repository(r)` → `key = r`. `NotInRepository` →
   `Error::Repository` "not inside a Git repository" (exit 4). A discovery error → exit 4.
-- With `--repo <p>`: no discovery. `p` is joined to the cwd if relative. If `repo::canonical(p)` succeeds,
-  try `key = canonical(p)`; if that removes nothing, or canonicalization fails for any reason, try
-  `key = strip_verbatim(p)` as given. So a mapping for a deleted directory, a directory recreated without
-  `.git`, or a worktree with a stale `gitdir` is always removable, and an enclosing repository's mapping is
-  never touched. If neither key matches → `NothingToRemove` with the output of §7.3.
+- With `--repo <p>`: no discovery. An empty `p` is a usage error (exit 2). `p` is joined to the cwd if
+  relative. The keys tried, in order, stopping at the first that removes something:
+  1. `repo::canonical(p)`, when canonicalization succeeds;
+  2. the resolved path: `repo::canonical` of the deepest existing ancestor of `p`, followed by the remaining
+     components of `p` with `.` dropped and `..` applied lexically, so `../gone`, or a deleted directory under
+     an 8.3 or symlinked ancestor (Windows `RUNNER~1`, macOS `/var` → `/private/var`), still matches the key
+     `link` stored;
+  3. `strip_verbatim(p)` exactly as given.
+
+  So a mapping for a deleted directory, a directory recreated without `.git`, or a worktree with a stale
+  `gitdir` is always removable, and an enclosing repository's mapping is never touched. If no key matches →
+  `NothingToRemove`, reported with the first key tried (§7.5).
+
+`link --repo <p>` and every other command use discovery from `p`; an empty `p` is a usage error there too.
 
 ## 7. Commands
 
@@ -268,47 +315,81 @@ agent-profile unlink [--repo <path>]
 
 This replaces SP1 design §4.2 rule 4 and extends `cli::split`; the other SP1 rules keep their order.
 
-Agent-scoped (`agent-profile <agent> …`), on the tokens before the first `--`:
-1. `-h`/`--help`, then `-V`/`--version` (unchanged). A help request after one of the five command words prints
-   that command's usage and exits 0.
-2. Unknown agent (unchanged).
-3. Token binding: `--repo=<v>` carries its value; a bare `--repo` consumes the next token whatever its first
+**Top-level dispatch before Clap.** Clap removes a `--` in the first position of a subcommand's trailing
+arguments (measured with clap 4.6.6: `status --` yields no tokens and `unlink -- --repo x` yields
+`["--repo", "x"]`). So `cli::run` inspects the raw first argument before Clap: exactly `status`, `link`,
+`unlink`, `resolve` or `current` hands every remaining raw token to the command parser below with no agent. The
+other top-level reserved words stay Clap subcommands (not yet implemented), and `status`, `link`, `unlink`,
+`resolve`, `current` are removed from the Clap `Command` enum; the top-level help text lists them with their
+usage lines. A top-level word in another letter case (`LINK`) is not a command and reaches the agent path:
+"unknown agent `LINK`" (exit 2), as today.
+
+**Agent-scoped** (`agent-profile <agent> …`), and the top-level five, on the tokens before the first `--`:
+1. Token binding: `--repo=<v>` carries its value; a bare `--repo` consumes the next token whatever its first
    byte (a missing next token → usage error "`--repo` needs a path", exit 2). Every other token starting with
-   `-` is an option; every remaining token is a bare word.
-4. The first bare word, compared ignoring ASCII case, against the reserved words:
-   - exactly `current`, `resolve`, `status`, `link` or `unlink` (lower case) → that command, validated by
-     step 5;
-   - one of those five in another letter case → usage error "command words are lower case: `link`" (exit 2);
-   - any other reserved word, in any case → not yet implemented (unchanged SP1 behaviour).
-5. Command validation, in order: a `--` anywhere → usage error; `--repo` more than once → usage error;
-   `--json` → not yet implemented (SP5); any other option (including `--dry-run`, `--verbose`) → usage error
-   echoing only the option name; `link` needs exactly one more bare word (the profile), the others none → usage
-   error.
+   `-` is an option; every remaining token is a bare word. A token consumed as a `--repo` value is never a help
+   flag, an option or a command word.
+2. `-h`/`--help`, then `-V`/`--version`, among the bound options: help after a valid lower-case command word
+   prints that command's usage (§7.3) to stdout and exits 0; otherwise the launch usage (unchanged).
+3. Unknown agent (unchanged; agent-scoped only).
+4. The first bare word, compared ignoring ASCII case, against all 13 reserved words (V3 §5.3):
+   - the exact lower-case spelling of `current`, `resolve`, `status`, `link` or `unlink` → that command,
+     validated by step 5;
+   - the exact lower-case spelling of any other reserved word → not yet implemented (unchanged);
+   - any reserved word in another letter case → usage error "command words are lower case: `create`" (exit 2).
+5. Command validation, in order: a `--` anywhere → usage error; `--repo` more than once or with an empty value
+   → usage error; `--json` → not yet implemented (SP5); any other option (including `--dry-run`, `--verbose`)
+   → usage error echoing only the option name; `link` needs exactly one more bare word (the profile) and the
+   others none → usage error; a `link` profile word that is not UTF-8 → usage error (exit 2, as a launch
+   profile word).
 6. No reserved bare word: a launch, with the SP1/SP2 rules; `--repo` here is an unknown option (exit 2).
 
-Top-level (`agent-profile status|link|unlink|resolve|current …`): the Clap subcommands pass their raw tokens to
-the same steps 3-5 with no agent. `resolve` and `current` with no agent → usage error "`resolve` needs an agent:
-agent-profile <agent> resolve" (exit 2). `-h`/`--help` prints that command's usage and exits 0.
+Top-level `resolve` and `current` → usage error "`resolve` needs an agent: agent-profile <agent> resolve"
+(exit 2), after the help check.
 
-`--repo` values are OS strings (may be non-UTF-8). The reserved words `agents`, `profiles`, `list`, `create`,
-`delete`, `doctor`, `repositories`, `completions` stay not yet implemented, top-level or agent-scoped.
+`--repo` values are OS strings (may be non-UTF-8). The Clap `Command` doc comments for the five words, which
+say "Not yet implemented.", are replaced by their usage lines.
 
-SP1 tests whose expectations change: `reserved_first_bare_word_ignores_everything_else` (the row
-`["fake", "--bogus", "link"]` becomes a usage error) and `behaviour_table_rows_with_non_zero_exits` (the row
-`["link", "work", "extra"]` becomes "`link` takes one profile" usage error; the row `["fake"]` keeps exit 4 with
-the new `NoProfile` text).
+SP1 tests whose expectations change: `reserved_first_bare_word_ignores_everything_else` (`["fake", "CREATE",
+"--bogus"]` and `["fake", "Create", "x"]` become the lower-case usage error; `["fake", "--bogus", "link"]`
+becomes an unknown-option usage error) and `behaviour_table_rows_with_non_zero_exits` (`["link", "work",
+"extra"]` becomes "`link` takes one profile"; `["fake"]` keeps exit 4 with the new `NoProfile` text).
 
-### 7.3 Check order for the new commands
+### 7.3 Command usage text
+
+Printed for `-h`/`--help` (stdout, exit 0):
+
+```text
+Usage: agent-profile <agent> current [--repo <path>]
+Print the profile agent-profile would select for <agent> here.
+
+Usage: agent-profile <agent> resolve [--repo <path>]
+Show the profile, where it comes from, and the repository.
+
+Usage: agent-profile [<agent>] status [--repo <path>]
+Show the repository, its mappings, the default profile and what each agent resolves to.
+
+Usage: agent-profile [<agent>] link <profile> [--repo <path>]
+Map this repository (or only <agent> in it) to <profile>.
+
+Usage: agent-profile [<agent>] unlink [--repo <path>]
+Remove this repository's mapping (or only <agent>'s). With --repo, removes the mapping stored for that path.
+```
+
+Each block is one command's text; `--repo <path>` is described on a following line as
+`  --repo <path>  Use the repository at <path> instead of the current directory`.
+
+### 7.4 Check order for the new commands
 
 1. Usage (exit 2).
 2. The `link` profile name is validated (V3 §6, exit 4).
 3. Application root and configuration load (exit 4).
 4. Discovery from the cwd or `--repo` (a discovery error is exit 4). `NotInRepository` is a normal result
-   for `status`, `resolve` and `current` (no mapping applies) and an error for `link` (§7.4). `unlink`
+   for `status`, `resolve` and `current` (no mapping applies) and an error for `link` (§7.5). `unlink`
    chooses its key as in §6.2.
 5. The command.
 
-### 7.4 Output
+### 7.5 Output
 
 Reports go to stdout; labels use the dry-run report's 14-column alignment (`LABEL_WIDTH` in `output.rs`, where
 the new renderers live). Paths are shown with `Path::display`.
@@ -341,7 +422,7 @@ note:         C:\src has a mapping that does not apply to this repository
   `none` when absent; `agents:` lists `id=profile` pairs sorted by id, separated by `, `.
 - One line per known agent (`adapter::known_agents()`; debug builds include `fake`), `none` when nothing
   resolves.
-- One `note:` line per stored key that is a proper ancestor (by components) of the discovered root.
+- One `note:` line per stored key that is a proper ancestor (by components) of the discovered root, in key order.
 - Exit 0. A discovery error is exit 4 like every command.
 
 `<agent> status`: the same report with only that agent's line, followed by a `presence:` line for the resolved
@@ -359,7 +440,7 @@ already linked claude: C:\src\acme -> personal
 ```
 `<agent> link` adds `note:         profile personal has not been launched with claude yet` when the adapter's
 presence is `Absent`. `link` with `NotInRepository` → `Error::Repository` "not inside a Git repository"
-(exit 4).
+(exit 4); a non-UTF-8 root → `Error::Repository` "a path that is not valid UTF-8 cannot be linked" (exit 4).
 
 `unlink` (exit 0):
 ```text
@@ -368,8 +449,13 @@ unlinked claude: C:\src\acme (was personal)
 no mapping to remove for C:\src\acme
 no mapping to remove for claude: C:\src\acme
 ```
+The path shown is the stored key when one matched, otherwise the first key tried (§6.2). After
+`no mapping to remove`, one `note:` line follows, in key order, for each stored key that is a proper ancestor
+of that path (`note:         C:\src has a mapping; remove it with agent-profile unlink --repo C:\src`), and a
+top-level `unlink` whose entry holds only agent mappings adds
+`note:         agent mappings remain: claude=personal; remove them with agent-profile <agent> unlink`.
 
-### 7.5 Launch (SP1 design §5.1 step 4, SP2 design §4.3)
+### 7.6 Launch (SP1 design §5.1 step 4, SP2 design §4.3)
 
 - No profile word: discovery from the cwd runs after configuration load; a discovery error exits 4. No profile
   resolves → `NoProfile` (exit 4).
@@ -393,8 +479,17 @@ another; a start inside `.git/objects`; no `.git` anywhere; a non-existent start
 Refusals, each asserting `Error::Repository` and never the parent root: an empty `.git` directory; `HEAD` as a
 directory; garbage in a `.git` file; a missing or stale `gitdir`; a `gitdir` without `HEAD`; a missing
 `commondir` target; a `.git` file or `commondir` over 64 KiB; a `commondir` that is a directory; non-UTF-8
-content. Unix only: a symlinked start, a dangling `.git` symlink, a FIFO `commondir`. Windows only: a junction
-start (`mklink /J` needs no privilege); `strip_verbatim` for drive, UNC and other verbatim forms.
+content; a `gitdir` or `commondir` naming a UNC, `\\.\` or non-drive `\\?\` target, and one containing a NUL (both
+refused before any filesystem call, so the tests never touch a network). Unix only: a symlinked start, a dangling
+`.git` symlink, and a FIFO `commondir` (created with `mkfifo` through `Command`; `discover` runs on a thread and
+the test fails after a bounded wait instead of hanging CI). Windows only: a junction start (`mklink /J` needs no
+privilege); `strip_verbatim` for drive, UNC and other verbatim forms.
+
+Ownership (§5.3): the pure predicate is table-tested on every OS for both platforms' rules (own uid/SID, root,
+Administrators, another user). A foreign-owned `.git` is exercised end to end only where it can be created without
+privilege: on Unix, when the test runs as root it creates a `.git` owned by `nobody` and asserts `NotInRepository`
+for a subdirectory whose parent is a mapped repository; otherwise that case is skipped with a message. The
+"owner read fails" path is covered through the predicate's error branch.
 
 ### 8.2 `repo` against real `git`
 
@@ -413,8 +508,15 @@ the helper's `git rev-parse --show-toplevel`. For the broken nested layouts of D
 - Schema accept/reject rows for every rule of §6.1, each naming the key, including keys in the other platform's
   absolute form.
 - `link`/`unlink`: every outcome; comments and formatting preserved; empty `agents` and empty entry removed;
-  component-equal keys (trailing separator, `/` versus `\` on Windows); the case-twin refusal;
-  `mappings_referencing` with a case-only twin.
+  component-equal keys (trailing separator, `/` versus `\` on Windows); two component-equal keys in one file
+  rejected naming both (`'/a'` and `'/a/'` on Unix; `'C:\x'`, `'C:/x'`, `'c:\x\'` on Windows); the case-twin
+  refusal; `mappings_referencing` with a case-only twin.
+- `unlink --repo` key choice (§6.2), as a pure function over (cwd, `p`, filesystem state): canonical key; a
+  deleted directory given relative with `..`; a deleted directory under a non-canonical temp path; the literal
+  fallback; an empty value rejected.
+- CLI routing as pure functions: every token sequence of §7.2 (including `status --`, `unlink -- --repo x`,
+  `claude link work --repo -h`, `claude LINK`, `claude Create`, `claude --repo`), and the decision whether a
+  launch needs discovery (explicit profile without `--dry-run`/`--verbose` → no).
 
 ### 8.4 End to end (`fake-agent`)
 
@@ -450,5 +552,12 @@ reason if one does.
   until the repository is linked again. The SP5 `repositories` report shows the orphan.
 - On a Linux case-insensitive mount, two letter-case spellings of one directory are two repository identities.
 - The global default is set only by editing `default_profile`.
+- An agent mapping for an agent this build does not know (for example `agents.gemini` from a newer version, or
+  `agents.fake` written by a debug build) cannot be removed with `<agent> unlink`, which refuses unknown agents;
+  it is removed by editing `config.toml`, and SP5's `delete` refusal must name the key and field to edit.
+- A foreign-owned `.git` (§5.3) makes that directory "not in a repository", including a checkout legitimately
+  shared between two local accounts; `--repo` does not bypass the check.
+- Unix automount paths in a `gitdir`/`commondir` (for example `/net/host/…`) are not detected and may trigger a
+  mount (§5.4).
 - The `repositories` report, orphan output, JSON and `delete` are SP5.
-- macOS case identity is unmeasured until the prototype PR (§5.3).
+- macOS case identity is unmeasured until the prototype PR (§5.5).
