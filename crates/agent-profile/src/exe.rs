@@ -49,14 +49,19 @@ pub fn discover(
         }
         None => search_path(agent, name, path_var, config_file)?,
     };
-    let refused =
-        found.path.extension().and_then(OsStr::to_str).is_some_and(|ext| {
-            SHELL_EXTENSIONS.iter().any(|shell| ext.eq_ignore_ascii_case(shell))
-        });
-    if refused {
+    if has_shell_extension(&found.path) {
         return Err(unsupported(agent, found.path, config_file));
     }
     Ok(found)
+}
+
+/// Whether the file name ends in a shell extension. Trailing spaces and dots are ignored first, because
+/// Windows strips them when it opens or launches the path (`codex.cmd ` runs `codex.cmd` through cmd.exe).
+fn has_shell_extension(path: &Path) -> bool {
+    let Some(name) = path.file_name() else { return false };
+    let name = name.to_string_lossy();
+    let Some((_, ext)) = name.trim_end_matches([' ', '.']).rsplit_once('.') else { return false };
+    SHELL_EXTENSIONS.iter().any(|shell| ext.eq_ignore_ascii_case(shell))
 }
 
 fn search_path(
@@ -259,6 +264,23 @@ mod tests {
                 other => panic!("{name}: {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn trailing_spaces_and_dots_do_not_hide_a_shell_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["agent.cmd ", "agent.cmd.", "agent.BAT. .", "agent.ps1  "] {
+            let path = make_file(dir.path(), name, true);
+            assert!(
+                matches!(
+                    find("fake-agent", Some(&path), None),
+                    Err(Error::UnsupportedExecutable { .. })
+                ),
+                "{name:?}"
+            );
+        }
+        let native = make_file(dir.path(), "agent.cmd.exe", true);
+        assert!(find("fake-agent", Some(&native), None).is_ok());
     }
 
     #[cfg(windows)]
