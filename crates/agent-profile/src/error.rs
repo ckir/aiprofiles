@@ -52,7 +52,7 @@ pub enum Error {
     #[error("could not write {}: {source}", path.display())]
     ConfigWrite { path: PathBuf, source: io::Error },
 
-    #[error("profile directory {}: {source}", path.display())]
+    #[error("profile path {}: {source}", path.display())]
     ProfileDir { path: PathBuf, source: io::Error },
 
     #[error(
@@ -299,5 +299,14 @@ mod tests {
              agent's native executable (for example the vendor's standalone installer) or set \
              [agents.codex] executable = \"<absolute path to a native .exe>\" in config.toml"
         );
+    }
+
+    #[test]
+    fn profile_path_message_fits_files_and_directories() {
+        let error = Error::ProfileDir {
+            path: ".aider.conf.yml".into(),
+            source: io::Error::other("denied"),
+        };
+        assert_eq!(error.to_string(), "profile path .aider.conf.yml: denied");
     }
 }

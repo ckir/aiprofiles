@@ -49,6 +49,10 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       that inherits those pipes (for example a `FAKE_AGENT_SPAWN_SLEEPER` sleeper) keeps the driver alive past its
       60 s exit timeout. No current test combines a console event with a sleeper; bound the drains before adding one.
 
+- [ ] `windows_console` `breakaway_follows_a_controlled_caller_job` fails under plain `cargo test` (exit 125,
+      "cannot spawn the sleeper: Access is denied") but passes under `cargo nextest`, the gate: it assumes one process
+      per test. Isolate it (for example a nextest-only marker or a child process) or document it.
+
 ## Scaffold follow-ups
 
 - [ ] Run `lefthook install` in each clone
