@@ -135,6 +135,28 @@ fn aider_conflict_is_reported_even_when_aider_is_not_installed() {
 }
 
 #[test]
+fn an_invalid_profile_name_wins_over_a_conflict() {
+    let root = Root::empty();
+    let output = root
+        .agent_profile(["aider", ".hidden", "--", "--conf", "f"])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
+    assert!(stderr(&output).contains("invalid profile name"), "{}", stderr(&output));
+}
+
+#[test]
+fn the_fake_agent_conflict_is_refused_end_to_end() {
+    let root = Root::new();
+    let output =
+        root.agent_profile(["fake", "work", "--", "--fake-profile", "x"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(output.stdout.is_empty(), "the agent must not run");
+    assert!(!root.profile_dir("work").exists());
+}
+
+#[test]
 fn codex_dry_run_notes_a_new_profile_and_lists_what_would_be_created() {
     let root = Root::empty();
     let bin = bin_with("codex");

@@ -91,7 +91,8 @@ fn search_path(
 /// What a `PATH` directory holds for an agent.
 enum Hit {
     Native(PathBuf),
-    /// A Windows form that needs a shell or interpreter (`.com`, `.cmd`, `.bat`, `.ps1`) and no `.exe`.
+    /// The first Windows non-`.exe` form (`.com`, `.cmd`, `.bat`, `.ps1`) in a directory without an `.exe`;
+    /// the user's shell would run it, so a later `.exe` is never chosen instead.
     #[cfg(windows)]
     Unsupported(PathBuf),
 }

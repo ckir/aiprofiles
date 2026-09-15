@@ -12,10 +12,16 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       unchanged; decide in `doctor` (SP5) whether to warn.
 - [ ] Setting `[agents.codex] executable` to the npm-vendored `codex.exe` bypasses the npm launcher, which may put
       bundled tools such as `rg` on `PATH`; measure in a sandbox before recommending it.
-- [ ] Creating the Aider config file needs a no-replace rename or hard links; a filesystem with neither fails
-      with exit 4. macOS smbfs, msdos and exfat are not measured.
-- [ ] A `.com` beside a `.exe` in one `PATH` directory is ignored although `cmd.exe` would prefer it.
+- [ ] Creating the Aider config file needs a no-replace rename (Linux falls back to hard links; macOS needs
+      exclusive-rename support, with no fallback). A filesystem without it fails with exit 4; macOS smbfs, msdos and
+      exfat are not measured.
+- [ ] A `.com` beside a `.exe` in one `PATH` directory is ignored although `cmd.exe` would prefer it, and a `.com`
+      alone on `PATH` is reported as needing a shell although it is a native program.
 - [ ] The Unix directory-sync failure branch of the Aider file writer is untested (like SP1 `config.rs` step 7a).
+- [ ] The Codex "new profile starts logged out" note keys on the home directory being absent, so a present but
+      empty home gives no note.
+- [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
+- [ ] Adapter evidence is static; mechanism drift detection belongs to `doctor` (SP5).
 
 ## SP3 open decisions
 

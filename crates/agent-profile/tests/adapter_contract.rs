@@ -313,9 +313,18 @@ fn presence_contract() {
         assert_eq!(adapter.presence(&fixture.root, &work), ProfilePresence::Absent, "{id}");
         let planned = fixture.plan(adapter, "work", &[]).unwrap();
         adapter.initialize(&planned).unwrap();
+        assert_eq!(adapter.presence(&fixture.root, &work), ProfilePresence::Materialized, "{id}");
         fs::remove_file(&fixture.exe).unwrap();
         fs::remove_file(fixture.root.config_path()).unwrap();
         assert_eq!(adapter.presence(&fixture.root, &work), ProfilePresence::Materialized, "{id}");
+        // Materialize the twin's own paths too, so only the case-twin rule can make it Absent on a
+        // case-sensitive filesystem (on a case-insensitive one they are the same entries).
+        for (path, kind) in adapter.paths(&fixture.root, &profile("WORK")) {
+            match kind {
+                PathKind::Dir => fs::create_dir_all(&path).unwrap(),
+                PathKind::File { contents } => fs::write(&path, contents).unwrap(),
+            }
+        }
         assert_eq!(
             adapter.presence(&fixture.root, &profile("WORK")),
             ProfilePresence::Absent,
