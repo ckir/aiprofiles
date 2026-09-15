@@ -111,7 +111,13 @@ mod fake {
         args: Vec<OsString>,
         path_var: Option<&OsStr>,
     ) -> Result<PlannedLaunch> {
-        let found = exe::discover("fake", "fake-agent", config.agent_executable("fake"), path_var)?;
+        let found = exe::discover(
+            "fake",
+            "fake-agent",
+            config.agent_executable("fake"),
+            path_var,
+            &root.config_path(),
+        )?;
         check_case_twins(root, &profile)?;
         let profile_dir = root.profiles_dir().join(profile.as_str()).join("fake");
         let profile_dir_exists = profile_dir.is_dir();

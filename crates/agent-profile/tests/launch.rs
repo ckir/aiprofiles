@@ -304,7 +304,7 @@ fn batch_file_override_is_refused() {
     root.write_config(&format!("[agents.fake]\nexecutable = {:?}\n", batch.to_str().unwrap()));
     let output = root.agent_profile(["fake", "work"]).output().unwrap();
     assert_eq!(output.status.code(), Some(6), "{}", stderr(&output));
-    assert!(stderr(&output).contains("never through cmd.exe"), "{}", stderr(&output));
+    assert!(stderr(&output).contains("cannot launch without a shell"), "{}", stderr(&output));
 }
 
 #[test]
