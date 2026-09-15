@@ -29,11 +29,28 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 - [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
 - [ ] Adapter evidence is static; mechanism drift detection belongs to `doctor` (SP5).
 
-## SP3 open decisions
+## SP3 known limits
 
-- [ ] **Git repository discovery** (spec §13, §14). §14.2 requires Git's worktree metadata, so a plain
-      upward walk for `.git` that ignores that metadata is not enough. Cover submodules, worktrees, nested
-      repositories, symlinks and canonicalization failure.
+Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superpowers/specs/2026-09-15-sp3-resolution-design.md) §10.
+
+- [ ] Git layouts that rely on `core.worktree`, `GIT_DIR` or `GIT_WORK_TREE` are not honoured; a bare repository is
+      not a repository for resolution. `--repo` is the explicit override.
+- [ ] A moved repository's mapping stays under the old path until it is linked again; the SP5 `repositories`
+      report shows the orphan.
+- [ ] A repository root that is not valid UTF-8 cannot be linked. On a Linux case-insensitive mount two letter-case
+      spellings of one directory are two repository identities.
+- [ ] Profile names in `config.toml` are validated with the host's rules, so a name Windows forbids makes a synced
+      configuration invalid on Windows.
+- [ ] An agent mapping for an agent this build does not know cannot be removed with `<agent> unlink`; SP5's
+      `delete` refusal must name the key and field to edit.
+- [ ] Shared multi-user machines (revisit with `doctor` in SP5, with a `safe.directory`-style escape hatch):
+      discovery does not check who owns a `.git`, and a local user who swaps a checked file for a FIFO can block it.
+- [ ] Unix automount paths and Windows mapped drive letters in a `gitdir`/`commondir` are not detected as network
+      paths. On Windows the network refusal also refuses a repository on a volume without a drive letter, a local
+      worktree of a repository on a share, and a share reached through two server spellings.
+- [ ] A mapping made in the main checkout does not apply in its linked worktrees.
+- [ ] A `link` or `unlink` that changes `config.toml` rewrites it with LF line endings and without a byte-order
+      mark (`toml_edit` renders that way); a command that changes nothing leaves the file untouched.
 
 ## Housekeeping
 
