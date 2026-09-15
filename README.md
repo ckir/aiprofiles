@@ -62,7 +62,7 @@ reason says.
 | Aider 0.86.2 (`aider`) | `--config <profile>/.aider.conf.yml` | Proven | NotGuaranteed (home, repository and working-directory `.aider.conf.yml`, `.env` and `AIDER_*` still apply) | NotSupported | NotSupported |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
-and its abbreviations) are refused before launch. On Windows an agent must be a native `.exe`: an npm or pnpm
+and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
 `.cmd` shim is refused, and the error names the `[agents.<id>] executable` setting to use instead.
 
 ## Planned adapters — not yet implemented or evidence-verified
