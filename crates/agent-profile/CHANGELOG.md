@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2](https://github.com/ckir/aiprofiles/compare/v0.0.1...v0.0.2) - 2026-09-16
+
+### Added
+
+- repository resolution with link and unlink ([#19](https://github.com/ckir/aiprofiles/pull/19))
+
 ## [0.0.1](https://github.com/ckir/aiprofiles/releases/tag/v0.0.1) - 2026-09-15
 
 ### Added
