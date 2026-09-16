@@ -29,11 +29,40 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 - [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
 - [ ] Adapter evidence is static; mechanism drift detection belongs to `doctor` (SP5).
 
-## SP3 open decisions
+## SP3 known limits
 
-- [ ] **Git repository discovery** (spec §13, §14). §14.2 requires Git's worktree metadata, so a plain
-      upward walk for `.git` that ignores that metadata is not enough. Cover submodules, worktrees, nested
-      repositories, symlinks and canonicalization failure.
+Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superpowers/specs/2026-09-15-sp3-resolution-design.md) §10.
+
+- [ ] Git layouts that rely on `core.worktree`, `GIT_DIR` or `GIT_WORK_TREE` are not honoured; a bare repository is
+      not a repository for resolution. `--repo` is the explicit override.
+- [ ] A moved repository's mapping stays under the old path until it is linked again; the SP5 `repositories`
+      report shows the orphan.
+- [ ] A repository root that is not valid UTF-8 cannot be linked. On a Linux case-insensitive mount two letter-case
+      spellings of one directory are two repository identities.
+- [ ] Profile names in `config.toml` are validated with the host's rules, so a name Windows forbids makes a synced
+      configuration invalid on Windows.
+- [ ] An agent mapping for an agent this build does not know cannot be removed with `<agent> unlink`; SP5's
+      `delete` refusal must name the key and field to edit.
+- [ ] Shared multi-user machines (revisit with `doctor` in SP5, with a `safe.directory`-style escape hatch):
+      discovery does not check who owns a `.git`, and a local user who swaps a checked file for a FIFO can block it.
+- [ ] Unix automount paths and Windows mapped drive letters in a `gitdir`/`commondir` are not detected as network
+      paths. On Windows the network refusal also refuses a repository on a volume without a drive letter, a local
+      worktree of a repository on a share, and a share reached through two server spellings.
+- [ ] A mapping made in the main checkout does not apply in its linked worktrees.
+- [ ] A `link` or `unlink` that changes `config.toml` rewrites it with LF line endings and without a byte-order
+      mark (`toml_edit` renders that way); a command that changes nothing leaves the file untouched.
+- [ ] A stdout write that fails after `link` or `unlink` already changed `config.toml` exits 1 (`Io`), so the change
+      is not visible in the output or the exit code; `<agent> resolve` with no profile loses its exit 4 the same way.
+      Decide whether a write failure after a committed change deserves its own exit code.
+- [ ] A hand-written `[repositories.'\\?\C:\…']` key is accepted but never matches the canonical `C:\…` root
+      (`Path` treats the verbatim prefix as a different component), and `link` then adds a second entry for the same
+      directory. Consider refusing verbatim keys, or comparing keys through `repo::strip_verbatim`.
+- [ ] Discovery does not stop at a filesystem boundary the way `git` does, so a directory on a mount inside a
+      checkout resolves to the enclosing repository (design §10). Decide with `doctor` (SP5) whether to warn.
+- [ ] `unlink --repo <p>` can remove a different repository's live mapping when `<p>`'s meaning changed since `link`
+      stored the key (design §10). Consider refusing when a later candidate key also matches an entry.
+- [ ] A top-level `unlink` that removes the repository profile while agent mappings remain prints only `unlinked …`;
+      the "agent mappings remain" note appears on the next run. Consider showing it on the run that creates the state.
 
 ## Housekeeping
 
@@ -48,6 +77,14 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 - [ ] `console-driver` (test-only) drains the wrapper's stdout and stderr to EOF with no timeout; a descendant
       that inherits those pipes (for example a `FAKE_AGENT_SPAWN_SLEEPER` sleeper) keeps the driver alive past its
       60 s exit timeout. No current test combines a console event with a sleeper; bound the drains before adding one.
+
+- [ ] `windows_console` `breakaway_follows_a_controlled_caller_job` fails under plain `cargo test` (exit 125,
+      "cannot spawn the sleeper: Access is denied") but passes under `cargo nextest`, the gate: it assumes one process
+      per test. Isolate it (for example a nextest-only marker or a child process) or document it.
+
+- [ ] Pin the actions in `.github/workflows/ci.yml` (`actions/checkout@v7`, `dtolnay/rust-toolchain@stable`,
+      `Swatinem/rust-cache@v2`, `EmbarkStudios/cargo-deny-action@v2`, `taiki-e/install-action@nextest`) to commit SHAs
+      with version comments, as the release and sandbox workflows already are.
 
 - [ ] `sandbox/run.sh` picks the nextest download from the host `uname -m`; a Docker Desktop configured to build
       for another platform (`DOCKER_DEFAULT_PLATFORM`, Rosetta x86_64 default) gets the wrong binary. Pass the

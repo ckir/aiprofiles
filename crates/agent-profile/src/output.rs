@@ -1,10 +1,15 @@
-//! Human output: the dry-run and `--verbose` report (spec §26, SP1 design §7.4, SP2 design §7.3) and
-//! redaction (spec §22). JSON output (spec §32) arrives in SP5.
+//! Human output: the dry-run and `--verbose` report (spec §26, SP1 design §7.4, SP2 design §7.3), the
+//! repository command reports (SP3 design §7.5) and redaction (spec §22). JSON output (spec §32) arrives in
+//! SP5.
 
 use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 use crate::adapter::{PathKind, PlannedLaunch};
+use crate::config::{Config, LinkOutcome, UnlinkOutcome};
 use crate::exe::Origin;
+use crate::name::{AgentId, ProfileName};
+use crate::repo::Discovery;
 use crate::resolve::Resolution;
 
 /// Substrings that mark an override variable as secret-bearing, whatever the adapter declared.
@@ -77,6 +82,136 @@ pub fn report_lines(
     lines.push(line("arguments", format!("[{}]", args.join(", "))));
     for note in &planned.notes {
         lines.push(line("note", note.clone()));
+    }
+    lines
+}
+
+/// `label:` padded to the report column, then `value`.
+fn labeled(label: &str, value: impl std::fmt::Display) -> String {
+    format!("{:<LABEL_WIDTH$}{value}", format!("{label}:"))
+}
+
+/// A `note:` line.
+pub fn note(text: &str) -> String {
+    labeled("note", text)
+}
+
+fn or_none(value: Option<impl std::fmt::Display>) -> String {
+    value.map_or_else(|| "none".to_owned(), |value| value.to_string())
+}
+
+/// `<agent> resolve` (SP3 design §7.5).
+pub fn resolve_lines(resolution: &Resolution) -> Vec<String> {
+    vec![
+        labeled("agent", &resolution.agent),
+        labeled("profile", or_none(resolution.profile.as_ref())),
+        labeled("source", resolution.source.label()),
+        labeled("repository", or_none(resolution.repository.as_deref().map(Path::display))),
+    ]
+}
+
+/// `status` and `<agent> status`: `agents` holds one resolution per agent line and, for `<agent> status`,
+/// its `presence:` value (SP3 design §7.5).
+pub fn status_lines(
+    discovery: &Discovery,
+    config: &Config,
+    agents: &[(Resolution, Option<String>)],
+) -> Vec<String> {
+    let (repository, mapping) = match discovery {
+        Discovery::Repository(root) => (root.display().to_string(), config.mapping(root)),
+        Discovery::NotInRepository => ("not in a repository".to_owned(), None),
+    };
+    let mut lines = vec![labeled("repository", repository)];
+    lines.push(labeled("mapping", or_none(mapping.and_then(|mapping| mapping.profile.as_ref()))));
+    let pairs = mapping
+        .map(|mapping| {
+            mapping.agents.iter().map(|(id, profile)| format!("{id}={profile}")).collect::<Vec<_>>()
+        })
+        .filter(|pairs| !pairs.is_empty())
+        .map(|pairs| pairs.join(", "));
+    lines.push(labeled("agents", or_none(pairs)));
+    lines.push(labeled("default", or_none(config.default_profile())));
+    for (resolution, presence) in agents {
+        let value = match &resolution.profile {
+            Some(profile) => format!("{profile} ({})", resolution.source.label()),
+            None => "none".to_owned(),
+        };
+        lines.push(labeled(resolution.agent.as_str(), value));
+        if let Some(presence) = presence {
+            lines.push(labeled("presence", presence));
+        }
+    }
+    if let Discovery::Repository(root) = discovery {
+        for (key, _) in config.mappings().filter(|(key, _)| is_proper_ancestor(key, root)) {
+            lines.push(note(&format!(
+                "{} has a mapping that does not apply to this repository",
+                key.display()
+            )));
+        }
+    }
+    lines
+}
+
+/// A path to paste into a command: in double quotes when it contains whitespace, which POSIX shells, PowerShell
+/// and `cmd` all read as one argument.
+fn shell_word(path: &Path) -> String {
+    let shown = path.display().to_string();
+    if shown.contains(char::is_whitespace) { format!("\"{shown}\"") } else { shown }
+}
+
+fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
+    path.starts_with(key) && key != path
+}
+
+/// `link` (SP3 design §7.5).
+pub fn link_line(
+    outcome: &LinkOutcome,
+    agent: Option<&AgentId>,
+    repository: &Path,
+    profile: &ProfileName,
+) -> String {
+    let agent = agent.map(|agent| format!("{agent}: ")).unwrap_or_default();
+    let repository = repository.display();
+    match outcome {
+        LinkOutcome::Linked => format!("linked {agent}{repository} -> {profile}"),
+        LinkOutcome::Changed { old } => format!("changed {agent}{repository}: {old} -> {profile}"),
+        LinkOutcome::AlreadyLinked => format!("already linked {agent}{repository} -> {profile}"),
+    }
+}
+
+/// `unlink` (SP3 design §7.5). `config` is the configuration read before the command, `keys` the candidates.
+pub fn unlink_lines(
+    outcome: &UnlinkOutcome,
+    agent: Option<&AgentId>,
+    config: &Config,
+    keys: &[PathBuf],
+) -> Vec<String> {
+    let prefix = agent.map(|agent| format!("{agent}: ")).unwrap_or_default();
+    let shown = match outcome {
+        UnlinkOutcome::Unlinked { root, old } => {
+            return vec![format!("unlinked {prefix}{} (was {old})", root.display())];
+        }
+        UnlinkOutcome::NothingToRemove { shown } => shown,
+    };
+    let mut lines = vec![format!("no mapping to remove for {prefix}{}", shown.display())];
+    for (key, _) in config.mappings().filter(|(key, _)| is_proper_ancestor(key, shown)) {
+        lines.push(note(&format!(
+            "{} has a mapping; remove it with agent-profile unlink --repo {}",
+            key.display(),
+            shell_word(key)
+        )));
+    }
+    if agent.is_none()
+        && let Some(mapping) = keys.iter().find_map(|key| config.mapping(key))
+        && mapping.profile.is_none()
+        && !mapping.agents.is_empty()
+    {
+        let pairs: Vec<String> =
+            mapping.agents.iter().map(|(id, profile)| format!("{id}={profile}")).collect();
+        lines.push(note(&format!(
+            "agent mappings remain: {}; remove them with agent-profile <agent> unlink",
+            pairs.join(", ")
+        )));
     }
     lines
 }
@@ -221,6 +356,8 @@ mod tests {
         resolve(
             AgentId::parse("fake").unwrap(),
             Some(ProfileName::parse("work", Platform::Unix).unwrap()),
+            &crate::config::Config::default(),
+            &Discovery::NotInRepository,
         )
     }
 
@@ -439,6 +576,206 @@ mod tests {
         }
         assert_eq!(text.matches("<redacted>").count(), 3, "{text}");
         assert!(lines[6].starts_with("              DECLARED="), "{text}");
+    }
+
+    /// The Unix spelling on Unix, the Windows spelling on Windows.
+    fn host(unix: &str, windows: &str) -> PathBuf {
+        PathBuf::from(if cfg!(windows) { windows } else { unix })
+    }
+
+    fn config(text: &str) -> Config {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), text).unwrap();
+        Config::load(&crate::config::AppRoot::from_path(dir.path().to_path_buf())).unwrap()
+    }
+
+    fn key(path: &Path) -> String {
+        toml_edit::Key::new(path.to_str().unwrap()).display_repr().into_owned()
+    }
+
+    fn name(text: &str) -> ProfileName {
+        ProfileName::parse(text, Platform::host()).unwrap()
+    }
+
+    #[test]
+    fn resolve_lines_show_the_source_and_none() {
+        let acme = host("/src/acme", r"C:\src\acme");
+        let text = format!("[repositories.{}]\nagents = {{ claude = \"personal\" }}\n", key(&acme));
+        let config = config(&text);
+        let claude = AgentId::parse("claude").unwrap();
+        let inside = resolve(claude.clone(), None, &config, &Discovery::Repository(acme.clone()));
+        assert_eq!(
+            resolve_lines(&inside),
+            [
+                "agent:        claude".to_owned(),
+                "profile:      personal".to_owned(),
+                "source:       repository agent mapping".to_owned(),
+                format!("repository:   {}", acme.display()),
+            ]
+        );
+        let outside = resolve(claude, None, &config, &Discovery::NotInRepository);
+        assert_eq!(
+            resolve_lines(&outside),
+            [
+                "agent:        claude",
+                "profile:      none",
+                "source:       none",
+                "repository:   none"
+            ]
+        );
+    }
+
+    #[test]
+    fn status_lines_show_mappings_the_default_each_agent_and_ancestor_notes() {
+        let src = host("/src", r"C:\src");
+        let acme = src.join("acme");
+        let text = format!(
+            "default_profile = \"work\"\n[repositories.{}]\nprofile = \"work\"\nagents = {{ codex = \"b\", claude = \"personal\" }}\n[repositories.{}]\nprofile = \"outer\"\n[repositories.{}]\nprofile = \"root\"\n[repositories.{}]\nprofile = \"sibling\"\n",
+            key(&acme),
+            key(&src),
+            key(&host("/", r"C:\")),
+            key(&host("/src/acme-2", r"C:\src\acme-2")),
+        );
+        let config = config(&text);
+        let discovery = Discovery::Repository(acme.clone());
+        let rows: Vec<(Resolution, Option<String>)> = ["claude", "aider"]
+            .into_iter()
+            .map(|id| (resolve(AgentId::parse(id).unwrap(), None, &config, &discovery), None))
+            .collect();
+        assert_eq!(
+            status_lines(&discovery, &config, &rows),
+            [
+                format!("repository:   {}", acme.display()),
+                "mapping:      work".to_owned(),
+                "agents:       claude=personal, codex=b".to_owned(),
+                "default:      work".to_owned(),
+                "claude:       personal (repository agent mapping)".to_owned(),
+                "aider:        work (repository mapping)".to_owned(),
+                format!(
+                    "note:         {} has a mapping that does not apply to this repository",
+                    host("/", r"C:\").display()
+                ),
+                format!(
+                    "note:         {} has a mapping that does not apply to this repository",
+                    src.display()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn agent_status_lines_add_presence_and_show_none_outside_a_repository() {
+        let config = config("");
+        let claude = AgentId::parse("claude").unwrap();
+        let none = resolve(claude.clone(), None, &config, &Discovery::NotInRepository);
+        assert_eq!(
+            status_lines(&Discovery::NotInRepository, &config, &[(none, None)]),
+            [
+                "repository:   not in a repository",
+                "mapping:      none",
+                "agents:       none",
+                "default:      none",
+                "claude:       none",
+            ]
+        );
+        let explicit = resolve(claude, Some(name("work")), &config, &Discovery::NotInRepository);
+        let lines = status_lines(
+            &Discovery::NotInRepository,
+            &config,
+            &[(explicit, Some("conflicts with Work".to_owned()))],
+        );
+        assert_eq!(
+            &lines[4..],
+            ["claude:       work (explicit)", "presence:     conflicts with Work"]
+        );
+    }
+
+    #[test]
+    fn link_lines_cover_every_outcome() {
+        let acme = host("/src/acme", r"C:\src\acme");
+        let claude = AgentId::parse("claude").unwrap();
+        let shown = acme.display();
+        for (outcome, agent, expected) in [
+            (LinkOutcome::Linked, None, format!("linked {shown} -> work")),
+            (LinkOutcome::Linked, Some(&claude), format!("linked claude: {shown} -> work")),
+            (
+                LinkOutcome::Changed { old: name("personal") },
+                None,
+                format!("changed {shown}: personal -> work"),
+            ),
+            (
+                LinkOutcome::Changed { old: name("personal") },
+                Some(&claude),
+                format!("changed claude: {shown}: personal -> work"),
+            ),
+            (LinkOutcome::AlreadyLinked, None, format!("already linked {shown} -> work")),
+            (
+                LinkOutcome::AlreadyLinked,
+                Some(&claude),
+                format!("already linked claude: {shown} -> work"),
+            ),
+        ] {
+            assert_eq!(link_line(&outcome, agent, &acme, &name("work")), expected);
+        }
+    }
+
+    #[test]
+    fn unlink_lines_cover_every_outcome_and_both_notes() {
+        let src = host("/src", r"C:\src");
+        let acme = src.join("acme");
+        let claude = AgentId::parse("claude").unwrap();
+        let text = format!(
+            "[repositories.{}]\nprofile = \"outer\"\n[repositories.{}]\nagents = {{ codex = \"b\", claude = \"personal\" }}\n",
+            key(&src),
+            key(&acme)
+        );
+        let config = config(&text);
+        let removed = UnlinkOutcome::Unlinked { root: acme.clone(), old: name("work") };
+        assert_eq!(
+            unlink_lines(&removed, None, &config, std::slice::from_ref(&acme)),
+            [format!("unlinked {} (was work)", acme.display())]
+        );
+        assert_eq!(
+            unlink_lines(&removed, Some(&claude), &config, std::slice::from_ref(&acme)),
+            [format!("unlinked claude: {} (was work)", acme.display())]
+        );
+        let nothing = UnlinkOutcome::NothingToRemove { shown: acme.clone() };
+        let ancestor = format!(
+            "note:         {} has a mapping; remove it with agent-profile unlink --repo {}",
+            src.display(),
+            src.display()
+        );
+        assert_eq!(
+            unlink_lines(&nothing, None, &config, std::slice::from_ref(&acme)),
+            [
+                format!("no mapping to remove for {}", acme.display()),
+                ancestor.clone(),
+                "note:         agent mappings remain: claude=personal, codex=b; remove them with \
+                 agent-profile <agent> unlink"
+                    .to_owned(),
+            ]
+        );
+        assert_eq!(
+            unlink_lines(&nothing, Some(&claude), &config, std::slice::from_ref(&acme)),
+            [format!("no mapping to remove for claude: {}", acme.display()), ancestor]
+        );
+    }
+
+    #[test]
+    fn the_unlink_hint_quotes_a_path_with_whitespace() {
+        let spaced = host("/my repos", r"C:\my repos");
+        let inner = spaced.join("inner");
+        let text = format!("[repositories.{}]\nprofile = \"outer\"\n", key(&spaced));
+        let config = config(&text);
+        let nothing = UnlinkOutcome::NothingToRemove { shown: inner.clone() };
+        assert_eq!(
+            unlink_lines(&nothing, None, &config, std::slice::from_ref(&inner))[1],
+            format!(
+                "note:         {} has a mapping; remove it with agent-profile unlink --repo \"{}\"",
+                spaced.display(),
+                spaced.display()
+            )
+        );
     }
 
     #[cfg(unix)]
