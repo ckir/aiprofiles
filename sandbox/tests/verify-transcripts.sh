@@ -39,7 +39,9 @@ case "$*" in
     "run download"*)
         [ -f "$FAKE_GH_DIR/artifact.md" ] || exit 1
         dir=$(printf '%s\n' "$@" | sed -n '/^--dir$/{n;p;}')
-        cp "$FAKE_GH_DIR/artifact.md" "$dir/transcript.md"
+        # The NAME matters as much as the bytes: `upload-artifact` with `path: transcript/` roots
+        # `<id>-<version>.md` at the artifact root, so the test must be able to put a wrong name there.
+        cp "$FAKE_GH_DIR/artifact.md" "$dir/$FAKE_ARTIFACT_NAME"
         ;;
     *) exit 1 ;;
 esac
@@ -69,6 +71,10 @@ FAKE
 
     printf 'example 1.2.3\n' > "$work/manifest"
 
+    # The name the probe itself chose. `sandbox/transcript.sh:52` writes `<id>-<version>.md`, so this is
+    # what the artifact holds unless a test deliberately puts something else there.
+    artifact_name=example-1.2.3.md
+
     cat > "$work/repo/docs/evidence/example-1.2.3.md" <<TRANSCRIPT
 custody: ci
 run-id: 4242
@@ -77,6 +83,7 @@ harness-commit: $harness_sha
 ---
 install:
   npm install --global @example/agent@1.2.3
+version-extracted: 1.2.3
 TRANSCRIPT
     cp "$work/repo/docs/evidence/example-1.2.3.md" "$gh_dir/artifact.md"
 
@@ -86,16 +93,31 @@ RUN
     printf '{"jobs":[{"name":"Probe example","conclusion":"success"}]}\n' > "$gh_dir/jobs.json"
 }
 
+# verify [changed-path...]: run the script over the fixture. A pull request usually changes more than one
+# evidence file — a refresh deletes one and adds another — so every argument is passed through.
 verify() {
+    [ $# -gt 0 ] || set -- docs/evidence/example-1.2.3.md
     set +e
     out=$(cd "$work/repo" && env \
         GITHUB_REPOSITORY=ckir/aiprofiles \
         FAKE_GH_DIR="$gh_dir" \
+        FAKE_ARTIFACT_NAME="$artifact_name" \
         GH="$work/gh/gh" \
-        sh "$root/sandbox/verify-transcripts.sh" "$work/manifest" "$head_sha" \
-        "${1:-docs/evidence/example-1.2.3.md}" 2>&1)
+        sh "$root/sandbox/verify-transcripts.sh" "$work/manifest" "$head_sha" "$@" 2>&1)
     status=$?
     set -e
+}
+
+# The §9 outcome-2 shape: the probe failed, so `sandbox/transcript.sh` recorded `unknown` as the version,
+# named the file for it, and wrote `unknown` into `version-extracted` too.
+unknown_fixture() {
+    fixture
+    printf 'example unknown\n' > "$work/manifest"
+    sed -i 's/^version-extracted: .*/version-extracted: unknown/' \
+        "$work/repo/docs/evidence/example-1.2.3.md"
+    mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-unknown.md"
+    cp "$work/repo/docs/evidence/example-unknown.md" "$gh_dir/artifact.md"
+    artifact_name=example-unknown.md
 }
 
 # --- the happy path -------------------------------------------------------------------------------
@@ -168,18 +190,12 @@ check "and the reason names the job" "$(printf '%s' "$out" | grep -c "job 'Probe
 
 # §9 outcome 2 is a DESIGNED outcome: D13 makes a failed probe exit non-zero, so requiring success would
 # reject the one transcript §9 requires to exist and Gate A requires to be present.
-fixture
-printf 'example unknown\n' > "$work/manifest"
-mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-unknown.md"
-cp "$work/repo/docs/evidence/example-unknown.md" "$gh_dir/artifact.md"
+unknown_fixture
 printf '{"jobs":[{"name":"Probe example","conclusion":"failure"}]}\n' > "$gh_dir/jobs.json"
 verify docs/evidence/example-unknown.md
 check "an outcome-2 transcript verifies against a job that failed" "$status" "0"
 
-fixture
-printf 'example unknown\n' > "$work/manifest"
-mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-unknown.md"
-cp "$work/repo/docs/evidence/example-unknown.md" "$gh_dir/artifact.md"
+unknown_fixture
 verify docs/evidence/example-unknown.md
 check "an outcome-2 transcript from a job that SUCCEEDED is refused" "$status" "1"
 
@@ -193,21 +209,101 @@ verify
 check "an expired artifact refuses a changed transcript" "$status" "1"
 check "and the reason says so" "$(printf '%s' "$out" | grep -c 'expired')" "1"
 
+# --- the version bindings -------------------------------------------------------------------------
+
+# The relabel, MEASURED against the unbound script: take a verified example-1.2.3.md, bump the registry to
+# 3.0.0, `git mv` the file. ZERO bytes change, so every check above is satisfied by the 1.2.3 run and the
+# repository ends up carrying a `measured:` basis for 3.0.0 that is a measurement of 1.2.3. The expiry
+# rule does not stop this; only a binding between the version and what the probe produced does.
+fixture
+printf 'example 3.0.0\n' > "$work/manifest"
+mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-3.0.0.md"
+verify docs/evidence/example-3.0.0.md
+check "a transcript whose version-extracted disagrees with the registry is refused" "$status" "1"
+check "and the reason names version-extracted" \
+    "$(printf '%s' "$out" | grep -c "version-extracted is '1.2.3', but the registry says '3.0.0'")" "1"
+
+# The same forgery with the body edited to match. The bytes below are IDENTICAL to the artifact's; the
+# only thing wrong is the artifact's own file name, which is the one thing in it a pull request cannot
+# rewrite. Taking whatever .md the artifact happens to hold would pass this.
+fixture
+printf 'example 3.0.0\n' > "$work/manifest"
+mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-3.0.0.md"
+sed -i 's/^version-extracted: .*/version-extracted: 3.0.0/' "$work/repo/docs/evidence/example-3.0.0.md"
+cp "$work/repo/docs/evidence/example-3.0.0.md" "$gh_dir/artifact.md"
+verify docs/evidence/example-3.0.0.md
+check "an artifact holding a differently-named transcript is refused" "$status" "1"
+check "and the reason names the file the artifact should hold" \
+    "$(printf '%s' "$out" | grep -c 'holds no example-3.0.0.md')" "1"
+
 # --- the exemptions -------------------------------------------------------------------------------
 
+# `custody: off-ci` on a registry-resolved transcript is not an exemption, it is a one-word opt-out of the
+# whole of §5.3 — run id, harness commit, ancestry, the run API, the matrix conclusion, the artifact and
+# the bytes — available to anyone who can open a pull request. Nothing outside this script enforces it:
+# `gate_a_shape` in crates/agent-profile/src/adapter/gate.rs carries no transcript clause.
 fixture
 sed -i 's/^custody: ci/custody: off-ci/' "$work/repo/docs/evidence/example-1.2.3.md"
 verify
-check "an off-ci transcript is exempt and reviewed by hand" "$status" "0"
+check "an off-ci transcript the registry resolves to is refused" "$status" "1"
+check "and the reason is custody" "$(printf '%s' "$out" | grep -c "custody is 'off-ci'")" "1"
+
+# The legitimate off-ci traffic, and the only kind: §7.4.1's authenticated measurement, which cannot run
+# in CI. It is named `<id>-<version>-credentials.md` and sits BESIDE the CI transcript rather than
+# replacing it, so no registry row can resolve it and it lands in the orphan loop.
+fixture
+sed 's/^custody: ci/custody: off-ci/' "$work/repo/docs/evidence/example-1.2.3.md" \
+    > "$work/repo/docs/evidence/example-1.2.3-credentials.md"
+verify docs/evidence/example-1.2.3-credentials.md
+check "an off-ci credentials transcript is exempt and reviewed by hand" "$status" "0"
+check "and says it was reviewed by hand" \
+    "$(printf '%s' "$out" | grep -c 'example-1.2.3-credentials.md is off-ci; reviewed by hand')" "1"
+
+# Any other name asking for that exemption is asking to skip §5.3 under a different spelling.
+fixture
+sed 's/^custody: ci/custody: off-ci/' "$work/repo/docs/evidence/example-1.2.3.md" \
+    > "$work/repo/docs/evidence/example-9.9.9.md"
+verify docs/evidence/example-9.9.9.md
+check "an off-ci orphan that is not a credentials transcript is refused" "$status" "1"
+check "and the reason names the registry" \
+    "$(printf '%s' "$out" | grep -c 'no adapter in the registry')" "1"
 
 fixture
 verify docs/superpowers/specs/whatever.md
 check "a pull request touching no transcript verifies trivially" "$status" "0"
 
+# --- the retention rule ---------------------------------------------------------------------------
+
+# Both flows docs/evidence/README.md documents delete a file whose registry row has ALREADY moved on, so
+# the deleted path resolves to nothing and reaches the ORPHAN loop. Refusing it would redden every
+# evidence refresh in the repository; a deletion cannot introduce false evidence.
+fixture
+printf 'example 3.0.0\n' > "$work/manifest"
+mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-3.0.0.md"
+sed -i 's/^version-extracted: .*/version-extracted: 3.0.0/' "$work/repo/docs/evidence/example-3.0.0.md"
+cp "$work/repo/docs/evidence/example-3.0.0.md" "$gh_dir/artifact.md"
+artifact_name=example-3.0.0.md
+verify docs/evidence/example-1.2.3.md docs/evidence/example-3.0.0.md
+check "a refresh that supersedes a transcript verifies" "$status" "0"
+check "and says the superseded one was removed" \
+    "$(printf '%s' "$out" | grep -c 'docs/evidence/example-1.2.3.md was removed')" "1"
+
+# §9 outcome 2's exit: the agent installs at last, so the `unknown` transcript is deleted and the real one
+# added. This is the expected shape of the first successful re-probe of any of the nine new agents.
+fixture
+verify docs/evidence/example-unknown.md docs/evidence/example-1.2.3.md
+check "deleting an unknown transcript when the real one arrives verifies" "$status" "0"
+check "and says the unknown one was removed" \
+    "$(printf '%s' "$out" | grep -c 'docs/evidence/example-unknown.md was removed')" "1"
+
+# The other deletion shape, which takes the `:73-76` branch instead: the registry STILL names the file the
+# pull request deleted. There is nothing to compare, so §7.4's retention rule allows it.
 fixture
 rm "$work/repo/docs/evidence/example-1.2.3.md"
 verify
-check "a removed transcript is allowed by the retention rule" "$status" "0"
+check "a transcript the registry still names but the pull request deleted is allowed" "$status" "0"
+check "and says it was removed" \
+    "$(printf '%s' "$out" | grep -c 'docs/evidence/example-1.2.3.md was removed')" "1"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"

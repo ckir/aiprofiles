@@ -75,16 +75,25 @@ while read -r id version; do
         continue
     fi
 
+    # No `off-ci` escape here. §7.4.1's hand-reviewed transcript is named `<id>-<version>-credentials.md`,
+    # which no registry row can ever resolve to, so it is handled by the orphan loop below and never
+    # reaches this line. The only file that can is the primary CI transcript every ConfigIsolation claim
+    # rests on — and exempting THAT on the strength of one word in a pull-request-supplied file would skip
+    # the whole of §5.3: run id, harness commit, ancestry, the run API, the matrix conclusion, the
+    # artifact download and the byte comparison.
     custody=$(field custody "$file")
-    if [ "$custody" = off-ci ]; then
-        # §7.4.1: an authenticated measurement cannot run in CI, so it carries a weaker custody block and
-        # is reviewed by hand. Gate A is what stops this becoming a one-word opt-out — it requires
-        # `custody: ci` for any transcript backing a ConfigIsolation or StateIsolation claim.
-        echo "verify: $file is off-ci; reviewed by hand"
-        continue
-    fi
     if [ "$custody" != ci ]; then
         fail "$file: custody is '$custody', expected ci or off-ci"
+        continue
+    fi
+
+    # Binding the BODY to the version the file name claims. `sandbox/transcript.sh:94` writes this field
+    # from the version the probe actually extracted (`unknown` when it extracted none), so a relabel —
+    # `git mv <id>-1.2.3.md <id>-3.0.0.md` with the registry bumped to match, zero bytes changed — is
+    # refused here rather than sailing through every check below as a measurement of the wrong version.
+    extracted=$(field version-extracted "$file")
+    if [ "$extracted" != "$version" ]; then
+        fail "$file: version-extracted is '$extracted', but the registry says '$version'"
         continue
     fi
 
@@ -161,8 +170,8 @@ while read -r id version; do
     fi
 
     # Expiry FAILS CLOSED. Degrading to "the run exists and was green" would check nothing that is a
-    # function of the agent, the version, or the bytes — so the original run of <id>-2.1.0.md would
-    # satisfy it for a forged <id>-3.0.0.md, restoring both forgeries this whole section exists to stop.
+    # function of the agent, the version, or the bytes — it would leave only the two bindings below
+    # standing between a committed file and the run that is supposed to have produced it.
     dir=$(mktemp -d)
     if ! $GH run download "$run_id" --name "sandbox-transcript-$id" --dir "$dir" >/dev/null 2>&1; then
         fail "$file: artifact sandbox-transcript-$id is unavailable (expired?); a transcript cannot be introduced or modified after its artifact has gone"
@@ -170,9 +179,14 @@ while read -r id version; do
         continue
     fi
 
-    downloaded=$(find "$dir" -type f -name '*.md' | head -n1)
-    if [ -z "$downloaded" ]; then
-        fail "$file: artifact sandbox-transcript-$id holds no transcript"
+    # Binding the artifact's NAME, not merely "whatever .md it happens to hold". `upload-artifact` with
+    # `path: transcript/` roots the file at the artifact root and `sandbox/transcript.sh:52` writes exactly
+    # `<id>-<version>.md`, so this is the name the probe itself chose — the one thing in the artifact a
+    # pull request cannot rewrite. Taking the first .md instead would let the artifact of the 1.2.3 run
+    # satisfy a file committed as 3.0.0.
+    downloaded="$dir/$id-$version.md"
+    if [ ! -f "$downloaded" ]; then
+        fail "$file: artifact sandbox-transcript-$id holds no $id-$version.md"
         rm -rf "$dir"
         continue
     fi
@@ -193,10 +207,25 @@ while read -r path; do
     case "$path" in
         docs/evidence/README.md) continue ;;
     esac
-    if [ -f "$path" ] && [ "$(field custody "$path")" = off-ci ]; then
-        echo "verify: $path is off-ci; reviewed by hand"
-        continue
-    fi
+
+    # A DELETION reaches here whenever the registry row that used to resolve it is gone — which is exactly
+    # what both retention flows in docs/evidence/README.md do. Refreshing bumps `upstream_version` and
+    # deletes the superseded file; a successful re-probe deletes the `unknown` one. In both the manifest
+    # names the NEW path by the time this runs, so the removed path resolves to nothing and would otherwise
+    # redden every refresh. A deletion cannot introduce false evidence; it is the absence of evidence.
+    [ -e "$path" ] || { echo "verify: $path was removed"; continue; }
+
+    # §7.4.1's exemption, scoped to the one name that can legitimately claim it. An authenticated
+    # measurement cannot run in CI, so `<id>-<version>-credentials.md` carries a weaker custody block and
+    # is reviewed by hand. Any other name asking for the same exemption is asking to skip §5.3.
+    case "$path" in
+        docs/evidence/*-credentials.md)
+            if [ "$(field custody "$path")" = off-ci ]; then
+                echo "verify: $path is off-ci; reviewed by hand"
+                continue
+            fi
+            ;;
+    esac
     fail "$path: no adapter in the registry resolves to this transcript"
 done < "$changed"
 
