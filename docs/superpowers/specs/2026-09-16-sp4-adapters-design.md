@@ -105,10 +105,10 @@ Evidence marks: **measured** (run and observed; for this document, in the reposi
 | D5 | **Gate B.** Every `basis` begins with `measured: `, `cited: ` or `unmeasured: `, contains no newline, and **`unmeasured:` and `CapabilityState::Unknown` imply each other**. The prefix names the provenance of the evidence that **establishes the state**; any supporting fact of weaker provenance is marked inline. Separately, and manually (§5.1), a `basis` for any state other than `NotSupported` either names a specific bypass or states that a search found none. | measured: this is what the shipped adapters already do informally — `claude.rs:25-27` enumerates eight override variables, `codex.rs:29-31` four. The biconditional is what makes D7 enforceable: without it, an implementer reaches `Proven` by writing `NotGuaranteed` with an `unmeasured:` basis, and every mechanical gate still passes. reasoned: the prefix names the *decisive* evidence rather than the weakest fact mentioned, because a weakest-wins rule rewards deleting an inconvenient sentence — it would demote a 90%-measured claim for admitting one inference, so the cheapest compliance is a shorter basis. The no-newline rule protects the "one `Vec` entry is one line" contract (`output.rs:30`, `cli.rs:596-597`). |
 | D6 | **Gate C.** `SupportLevel::Proven` requires non-empty `notes` and **at most one** `Unknown` capability claim. The pinned support list at `adapter_contract.rs:275-286` is **kept** alongside the new invariant. | owner ruling, 2026-09-16 (§4.1): V3:132-133 permits exactly this. measured: the pinned triple and the invariant catch opposite mistakes. Gate C never asserts that any adapter *is* `Proven`, so replacing the list would let a one-word demotion of `claude` pass the suite silently while adding a permanent stderr banner to the flagship adapter. |
 | D7 | A capability that cannot be measured because measuring it needs an authenticated session is `CapabilityState::Unknown` with an `unmeasured:` basis. No enum variant is added. | reasoned: `NotGuaranteed` and `Conditional` are claims about a mechanism that was understood — both existing uses of `NotGuaranteed` describe a known leak path (`claude.rs:44-46`, `aider.rs:38-43`), and `Conditional` promises the conditions are enumerable (`codex.rs:43-45` lists three variables by name). Using either for "we could not log in" borrows the authority of a measurement that never happened. `NotSupported` is a positive negative claim and would defame a product that may isolate correctly. |
-| D8 | `sandbox/probes/common.sh` gains `probe_behaviour <id> <default-location>`: snapshot `<default-location>` after install and before launch, launch the agent under `agent-profile` (not `--dry-run`), then record the delta at both the profile directory and `<default-location>`. §7.3 fixes the whole step order explicitly. | measured: today `probe_agent_profile` records `cargo build`, `--version` and a dry run (`sandbox/probes/common.sh:22-26`), so it captures what `agent-profile` *plans*, never what the agent *does*. Ordering is load-bearing: `claude.sh:5-7` runs `claude --version` and `claude --help` natively before `probe_agent_profile`. The baseline is equally load-bearing and ordering alone does not supply it: the install runs first and executes vendor code (§9), so an installer that creates the default location would otherwise be attributed to the wrapped launch, making `ConfigIsolation` read worse than the truth. |
+| D8 | `sandbox/probes/common.sh` gains `probe_behaviour <id> <default-location> <mechanism>`: snapshot both locations, **apply the mechanism directly** — set the environment variable, or write the candidate file and pass the flag — launch the agent, and record the delta at both. **It does not go through `agent-profile`.** §7.3 fixes the whole step order explicitly. | measured: today `probe_agent_profile` records `cargo build`, `--version` and a dry run (`sandbox/probes/common.sh:22-26`), so it captures what `agent-profile` *plans*, never what the agent *does*. The draft had the probe launch *through* `agent-profile`, which cannot work: the CLI rejects an unknown agent word before anything else (`crates/agent-profile/src/cli.rs:358-359`, `Error::UnknownAgent`), and at the harness commit the registry holds four agents (`adapter/mod.rs:112`, `:115-121`) — none of the nine. Every behavioural step would have recorded an `agent-profile` error and an empty delta, so all nine would have fallen to §9 outcome 2 and shipped `Experimental`. Measuring the mechanism directly is also the *right* measurement: the question is whether `GEMINI_CLI_HOME` moves Gemini's files, which is a fact about Gemini. That `agent-profile` sets the variable correctly is a separate claim, already proven in CI by `tests/adapters_e2e.rs` against `fake-agent`. | today `probe_agent_profile` records `cargo build`, `--version` and a dry run (`sandbox/probes/common.sh:22-26`), so it captures what `agent-profile` *plans*, never what the agent *does*. Ordering is load-bearing: `claude.sh:5-7` runs `claude --version` and `claude --help` natively before `probe_agent_profile`. The baseline is equally load-bearing and ordering alone does not supply it: the install runs first and executes vendor code (§9), so an installer that creates the default location would otherwise be attributed to the wrapped launch, making `ConfigIsolation` read worse than the truth. |
 | D9 | Probes run in the Actions Sandbox workflow as a **matrix, one job per agent**, bounded by a concurrency group and a deduplicated, length-capped agent list. | measured: only the Podman branch of `sandbox/run.sh` creates a private ephemeral image store (`:84`) and deletes it at cleanup (`:105-108`); the Docker branch does `chmod a+rwx "$out"` and nothing else (`:88`). Podman is absent from the owner's machine; the workflow sets `AGENT_PROFILE_SANDBOX_ENGINE: podman` (`.github/workflows/sandbox.yml:43`) on a runner VM that is discarded. A matrix is required rather than a loop: each invocation builds a fresh image (`sandbox/run.sh:124`) containing a Rust toolchain, so twelve sequential probes would not fit the job's 60-minute cap (`sandbox.yml:35`), and one hanging agent would consume the budget of all the others. The bounds are required because the matrix removes that cap: `timeout-minutes` is a job attribute, and `sandbox.yml` has no `concurrency` key today while `docs.yml:17-19` shows the repository's idiom. |
 | D10 | `ProfilePresence::Known` is **retained**, unconstructed, and documented as reserved by V3 §8 for native-profile adapters — none of which SP4 ships. The `status` label stays. | owner ruling, 2026-09-16. cited: V3:346-348 defines it normatively, V3:350 states "A physical directory is not universally required", and V3:373-374 reserves it for native-profile adapters. measured: the variant has exactly two occurrences — `metadata.rs:102` and `cli.rs:739` — and the default `presence()` returns only `Materialized` or `Absent` (`adapter/mod.rs:48-58`). The original anomaly called it a dead variant; the oracle's answer is that it is not dead, it is unclaimed. A doc comment at `metadata.rs:102` records that, so the next reader does not re-file it. |
-| D11 | An SP4 adapter ships with `conflicts: &[]` unless a probe transcript shows the option in that agent's `--help` at the pinned version — **except that an adapter whose own mechanism is a flag always declares that flag**, with no probe required. | reasoned: V3:836 says "If the wrapper cannot prove a conflict, it must not guess", which gives the default; V3:833-834 says the wrapper "must fail before launch" where an option "controls the same profile mechanism", which gives the exception. For a config-file adapter the proof is by construction: `config_file_arg_plan` emits its own flag and then appends the user's arguments after it (`adapter/mod.rs:197-198`), so a user-supplied second spelling of the same flag reaches the agent after ours. Aider, the shipped config-file adapter, carries exactly such a list (`aider.rs:56-59`). Without the exception, §9 outcome 2 would ship Continue or Amp with an empty list and `agent-profile continue work -- --config other.yaml` would silently defeat the profile it selected. **The exception covers the short form too**, where the agent documents one: `ConflictOption` carries `short: Option<char>` (`metadata.rs:70-74`) and Aider declares `short: Some('c')` (`aider.rs:58`), and `-c other.yaml` defeats the profile exactly as the long spelling does. Restricting the exception to the long spelling would leave that hole permanently open for an outcome-2 adapter, which by definition never gets a transcript. Only *abbreviated* long spellings — Aider's `--conf`, `--confi` — still require one, because which prefixes an agent accepts cannot be derived. |
+| D11 | An SP4 adapter ships with `conflicts: &[]` unless a probe transcript shows the option in that agent's `--help` at the pinned version — **except that an adapter declares every flag its own mechanism emits**, with no probe required. | reasoned: V3:836 says "If the wrapper cannot prove a conflict, it must not guess", which gives the default; V3:833-834 says the wrapper "must fail before launch" where an option "controls the same profile mechanism", which gives the exception. For a config-file adapter the proof is by construction: `config_file_arg_plan` emits its own flag and then appends the user's arguments after it (`adapter/mod.rs:197-198`), so a user-supplied second spelling of the same flag reaches the agent after ours. Aider, the shipped config-file adapter, carries exactly such a list (`aider.rs:56-59`). Without the exception, §9 outcome 2 would ship Continue or Amp with an empty list and `agent-profile continue work -- --config other.yaml` would silently defeat the profile it selected. **The exception covers the short form too**, where the agent documents one: `ConflictOption` carries `short: Option<char>` (`metadata.rs:70-74`) and Aider declares `short: Some('c')` (`aider.rs:58`), and `-c other.yaml` defeats the profile exactly as the long spelling does. Restricting the exception to the long spelling would leave that hole permanently open for an outcome-2 adapter, which by definition never gets a transcript. Only *abbreviated* long spellings — Aider's `--conf`, `--confi` — still require one, because which prefixes an agent accepts cannot be derived. |
 | D12 | All nine ship in one wave rather than split by measurability. | cited: research on 2026-09-16 established that every one of the nine installs and runs `--help`/`--version` with no account, and every one needs an account to do real work. The proposed split axis puts all nine in the same bucket. |
 | D13 | The probe harness is repaired **before** the probe run: `probe_record` propagates failure, every recorded command runs under a timeout, `cargo build` runs once per job rather than once per recorded step and its failure is recorded, and `probe_behaviour` takes a baseline snapshot. | measured, and this is the finding that would have wasted the whole run: `probe_record` ends with `set -e` (`sandbox/probes/common.sh:18`), and a shell function returns the status of its last command, so `probe_record` **always returns 0**. Every probe script ends in `probe_agent_profile`, which ends in `probe_record dry-run`, so a probe whose install failed and whose every later command returned 127 still exits 0 and the Actions job is green. There is no `timeout` anywhere in `common.sh` or `run.sh`, and `cargo build` at `common.sh:23` is unguarded, so under `set -eu` (`:7`) a build failure aborts the probe after the install, leaving transcripts that look complete with no behavioural step. Scope note: under D9's matrix the crate is built once per *job*, which is once per agent; building it once across all agents is not achievable and is not claimed. |
 
@@ -146,9 +146,11 @@ and must not model bad ones.
 ```text
 Gate A   source_url is a URL, or the literal "measured" with non-empty notes        [SP4a]
          AND docs/evidence/<id>-<upstream_version>.md exists                        [fold commit, §5.2]
-         AND it contains the adapter's mechanism token, unless the adapter is
-             registered under §9 outcome 2 (its transcript records a failed probe
-             and cannot contain an observation that never happened)                 [fold commit]
+         AND it contains the adapter's mechanism token, unless
+             evidence.upstream_version == "unknown" (the §9 outcome 2 encoding:
+             a failed probe cannot contain an observation that never happened)      [fold commit]
+         AND custody is "ci" for any transcript backing a ConfigIsolation or
+             StateIsolation claim                                                   [fold commit]
          AND every file in docs/evidence/ matching <id>-<version>.md is referenced
              by exactly one adapter, and no file there fails to match that pattern
              except README.md                                                       [fold commit]
@@ -233,10 +235,28 @@ whose transcript changed in the pull request:
    splits two ways.
 2. Read `run-id:` from the committed file, require it to match `^[0-9]+$`, and pass it to the API through
    the environment — never through `${{ }}` expression interpolation.
-3. Assert the run belongs to this repository, is the Sandbox workflow, concluded `success`, **has a head
-   SHA equal to the `harness-commit:` the transcript records, and that commit is an ancestor of the base
-   branch.**
+3. Assert the run belongs to this repository, is the Sandbox workflow, **the matrix job that produced this
+   agent's artifact concluded `success`**, its head SHA equals the `harness-commit:` the transcript
+   records, and that commit is **an ancestor of the pull request's head**.
+
+   Both halves of that were wrong in the draft and both failed closed on SP4's own probe run. *Ancestry of
+   the base branch* is unsatisfiable by construction: the probe is dispatched on `sp4-adapters`, so its
+   head SHA is a commit on the PR branch, and a commit on an open PR's head is never an ancestor of the
+   base. Ancestry of the **PR head** expresses the actual intent — the harness that produced this evidence
+   is in the history this PR asks you to review — and still closes the throwaway-branch attack, because a
+   forging commit reachable from the PR head appears in the PR diff. *Run-level* conclusion is equally
+   wrong: twelve matrix jobs share one run id, and §9 outcome 2 is a **designed** outcome in which a probe
+   legitimately fails, so one uninstallable agent would invalidate eleven good transcripts. The job that
+   failed must still upload its artifact; `sandbox.yml:54`'s `if: always()` is the idiom.
 4. Assert `sandbox-transcript-<id>` contains a file byte-identical to the committed one.
+
+**Byte-identity needs `.gitattributes`, and without it every transcript fails.** The file is written in a
+Linux container and committed from a workstation whose working tree is CRLF; `.gitattributes` currently
+covers only `*.sh` and `sandbox/Containerfile`, so `docs/evidence/**` falls to the committer's
+`core.autocrlf` and git's text heuristic. The trailing newline is load-bearing (§7.4) and the artifact
+side is raw container bytes. **`docs/evidence/** -text` is an SP4a deliverable**, not a maintainer's local
+configuration — otherwise the failure appears as a red required check whose only message is "not
+byte-identical".
 
 **Step 3 is not optional and the draft omitted it.** Without a commit binding, a person with push access
 dispatches Sandbox on a throwaway branch carrying an edited `sandbox/probes/<id>.sh` that prints a
@@ -280,7 +300,12 @@ The probe of D8 runs unauthenticated, which bounds each capability:
 | `CredentialIsolation` | **no** | proving that stored credentials separate requires logging in to each vendor. |
 
 Consequently `CredentialIsolation` for all nine is `Unknown` with an `unmeasured:` basis naming the
-vendor session required, unless a probe shows a credential file created without authentication. Under D6
+vendor session required — **unless a probe establishes where credentials are stored**, which is a wider
+exception than "a credential file appeared" and is the one OpenCode actually needs. Its finding is about
+the mechanism, not about a file: `auth.json` lives under a directory the config variable does not move
+(§8.2). Knowing *where* credentials live is enough to say `NotSupported` honestly, and Gate B then forbids
+the `unmeasured:` prefix, so the two states are mutually exclusive and the wider exception is what makes
+§8.2 writable at all. Under D6
 that single `Unknown` does not by itself prevent `Proven`: an adapter whose config isolation is measured
 and whose state isolation is measured or honestly `NotSupported` can ship `Proven` with its credential
 caveat visible in the matrix. An adapter that also cannot demonstrate config isolation has two `Unknown`
@@ -403,18 +428,22 @@ The hedge's remaining limits are recorded in §12 rather than papered over.
    recorded here, before anything has launched the agent for real.
 3. `help` — the agent's own `--help`, the artefact Gate A reads the mechanism token from.
 4. `strings` — the bypass-variable excerpt.
-5. `baseline` — record **both** `<default-location>` and the profile directory, as the install and
-   `agent-profile`'s own initialization left them.
-6. `behaviour` — `probe_behaviour <id> <default-location>`: launch under `agent-profile`, then record the
-   delta at both locations against step 5.
+5. `baseline` — record **both** `<default-location>` and the target directory, as the install and the
+   probe's own setup left them.
+6. `behaviour` — `probe_behaviour <id> <default-location> <mechanism>`: apply the mechanism directly,
+   launch the agent, record the delta at both locations against step 5.
 
-**Both baselines are load-bearing, and the earlier draft had only one.** `agent-profile` creates the
-profile directory itself before the agent starts — `adapter.initialize(&planned)?` at
-`crates/agent-profile/src/cli.rs:602` — and for a configuration-file adapter it also writes the minimal
-accepted file of §8.4. Those bytes are ours, not the agent's. Baselining only the default location
-attributes them to the agent and errs *optimistically*: an agent that ignored `--config` entirely would
-still leave a non-empty profile-directory delta, which §6's table would read as proof that its config
-landed under the profile.
+**Both baselines are load-bearing, and the earlier draft had only one.** The probe itself creates the
+target directory, and for a configuration-file adapter it writes a candidate file — the one whose accepted
+content §8.4 exists to determine. Those bytes are the probe's, not the agent's. Baselining only the default
+location attributes them to the agent and errs *optimistically*: an agent that ignored `--config` entirely
+would still leave a non-empty target delta, which §6's table would read as proof that its config landed
+where we pointed it.
+
+**The mechanism is applied by the probe, not by `agent-profile`** (D8). For an environment-variable adapter
+that is `MECHANISM=<var>` and a directory; for a configuration-file adapter it is a flag plus a candidate
+file, and the probe iterates candidates and records each exit code — which is how Q8 gets answered, and it
+is exactly how Aider's `{}` was established (`aider.rs:17-18`, SP2 design D5).
 
 `--version` and `--help` run at steps 2 and 3 rather than after the launch. They are unwrapped
 invocations, but they are read-only observations of a freshly installed agent, and running them after a
@@ -448,9 +477,16 @@ exit-codes: <one line per recorded step, verbatim>
 version: ...
 help: <excerpt containing the mechanism token>
 strings: <candidate bypass variables>
-baseline: <default location, and the profile directory>
+baseline: <default location, and the target directory>
 delta: <both locations, against the baseline>
+container-delta: <bounded summary of diff.txt>
 ```
+
+`container-delta:` is inside the hashed body deliberately. It is the only record of a write to a location
+nobody predicted, so it is the only way §9 outcome 4 — the agent exposes a *different* mechanism from the
+claimed one — is ever detected. The scoped `delta:` above it sees only the two locations chosen in
+advance, so leaving the unscoped observation in the unhashed, expiring logs artifact would have left the
+broadest evidence the least protected.
 
 **The hashed body starts after the `---` line and runs to the end of file, including the trailing
 newline.** A file cannot contain its own hash, so the header above the marker is excluded and everything
@@ -565,8 +601,17 @@ D11's exception.
 `GEMINI_CLI_HOME` names a directory *containing* `.gemini`, not the configuration directory itself: with
 `GEMINI_CLI_HOME=<dir>`, Gemini reads `<dir>/.gemini/`. A file written directly at `<dir>` is ignored
 silently. The adapter therefore declares the profile directory and lets the agent create `.gemini` inside
-it; `paths()` must not declare `<dir>/.gemini`, because `agent-profile` creates only what it owns and an
-empty `.gemini` would misrepresent a profile as materialized. The probe confirms the nesting.
+it; `paths()` must not declare `<dir>/.gemini`, because `agent-profile` creates only what it owns and
+`.gemini` is Gemini's (V3 §9).
+
+**That is the whole reason, and a second one the draft gave was backwards.** Declaring the nested
+directory would not "misrepresent a profile as materialized" — it would make `presence()` *stricter*, not
+looser, because the default returns `Materialized` only when every declared path exists
+(`adapter/mod.rs:48-58`), exactly as Aider's declared file makes Aider stricter
+(`adapter_contract.rs:336-340`). The mistake is worth recording because §5.1 item 4 sends a reader back to
+§8 after the probe: one who checked that reasoning against `presence()` would find it false and might
+"fix" it by declaring `.gemini`, which would then have `agent-profile` create a directory belonging to the
+agent. The probe confirms the nesting.
 
 ### 8.2 OpenCode splits config from credentials
 
@@ -597,8 +642,13 @@ mode; does `--config` work alongside it. The answer selects one of three shapes:
 
 `config_file_arg_plan` cannot express 2 or 3: it emits exactly one flag/value pair
 (`adapter/mod.rs:197`) drawn from the first `File`-kind path (`:191-195`). Whether SP4b adds a helper, and
-which, is settled by measurement. No helper is written speculatively. Shapes 2 and 3 pass a flag, so under
-D11 the adapter declares that flag in `conflicts`.
+which, is settled by measurement. No helper is written speculatively.
+
+Under D11 the adapter declares **every** flag its chosen shape emits — for shape 3 that is both `--config`
+and `--data-dir`, not one of them. `--data-dir` matters more than `--config` here, because a user-supplied
+second spelling would not merely defeat state isolation but also flip sandbox mode. A two-flag shape also
+needs a `mechanism_summary` describing both: it is a single `&'static str` carried into
+`Error::ArgumentConflict` (`adapter/mod.rs:141`), so the refusal message has to name the whole mechanism.
 
 ### 8.4 The two configuration-file adapters need a minimal accepted file
 
@@ -670,11 +720,41 @@ remains available for a later authenticated measurement under §7.4.1.
 | `tests/adapters_e2e.rs` | one row per new adapter, launching `fake-agent` under the adapter's own executable name, proving the plan reaches the child. No real agent runs in CI. |
 | `src/output.rs` unit tests | the `support:` and `isolation:` rendering for each `CapabilityState` spelling; the `basis` line in both modes; **a capability with no claim renders `not declared` and does not panic** (§7.1). **Re-baseline the positional assertions at `output.rs:392-393` and `:400`.** |
 | `tests/launch.rs` | the D3 stderr hedge: present for an `Experimental` adapter, absent for a `Proven` one, absent on a dry run, **absent under `--verbose`**, listing every capability that is not `Supported` (including a `NotGuaranteed` one, which the earlier draft would have omitted), and on stderr rather than stdout. **Re-baseline `launch.rs:143`.** |
-| Probe harness | `probe_record` returns non-zero for a failed command — the D13 regression that would otherwise make the whole probe run meaningless. Testable without any agent: record `sh -c 'exit 3'`. |
+| Probe harness | A shell suite, run by `just check` and by a CI job — a test nothing executes is the manual surface wearing a test's name, and the repository has no shell runner today (`justfile:41` is all cargo). `a_probe_script_whose_middle_step_failed_exits_non_zero` is the one that matters: recording `sh -c 'exit 3'` proves only half of D13, because the original defect was the *script* exiting 0, and every script ends in `probe_agent_profile` → `probe_record dry-run` (`common.sh:25`). Also `a_recorded_command_that_hangs_is_killed_and_its_status_recorded` and `a_cargo_build_failure_is_recorded_rather_than_aborting_the_script` (`common.sh:23` under `set -eu` at `:7`). |
+| Probe behaviour | The highest error-cost class in the document and the draft had no row for it: a regression here yields a false `ConfigIsolation: Supported` carrying a `measured:` basis, and every gate still passes. `a_target_directory_populated_before_the_launch_is_not_in_the_delta` — pre-create a file under the target, run against a stub agent that writes nothing, assert the recorded delta is empty. This is the only assertion that separates "the agent's config moved" from "the probe created it". Plus `probe_behaviour_records_both_baselines_before_the_launch` and `probe_steps_run_in_the_order_of_7_3`, since §7.3 calls that order part of the contract. |
 | `ProfilePresence::Known` | the variant stays; a test asserts the `status` label renders it, so the arm at `cli.rs:739` is not dead code that a later reader deletes. |
 
 Every new test is proven non-vacuous with a logic mutant, per the repository's assertion-strength
 discipline: a test that cannot fail is a test that certifies nothing.
+
+**Except that the three gates cannot be mutant-proven as written, and pretending otherwise would be the
+exact failure the discipline names.** A mutant mutates code; Gates A, B and C assert over `static`
+data — `claude.rs:15`, `codex.rs:19`, `aider.rs:24`, `fake.rs:16` are `static METADATA` items — and
+`cargo mutants` (`justfile:68-69`) has no function to mutate that changes what they read. So a
+weaker-than-intended gate, such as Gate B's biconditional implemented as a single implication, passes
+today purely because no shipped adapter exhibits the excluded combination. The gate predicates are
+therefore extracted into library functions over `&AdapterMetadata` and pinned with **negative fixtures**,
+which a mutant does reach:
+
+- `gate_b_rejects_an_unmeasured_prefix_on_a_non_unknown_state` — the D5 attack verbatim.
+- `gate_b_rejects_an_unknown_state_without_the_unmeasured_prefix` — the other direction.
+- `gate_c_rejects_proven_with_two_unknown_claims`, `gate_c_rejects_proven_with_empty_notes`.
+- `gate_a_rejects_a_version_outside_the_permitted_charset`, `gate_a_rejects_an_orphaned_evidence_file`,
+  `gate_a_rejects_a_file_not_matching_the_pattern`.
+
+Two rows the draft claimed are **not constructible and are not tests.** The `Known` label cannot be
+exercised: `presence` at `cli.rs:730` is private, and §2.2 puts every constructor for the variant out of
+scope — so that obligation is a doc comment at `metadata.rs:102`, honestly labelled, not a test. And the
+hedge's `NotGuaranteed` case needs a non-`Proven` adapter with a `NotGuaranteed` claim; the only
+non-`Proven` adapter is `fake`, whose claims are all `Unknown` and which Gate B's biconditional pins
+there. That case needs a debug-only fixture adapter — which then needs its own `expected()` and
+`conflict_contract` rows, because `adapter_contract.rs:131` and `:197` panic without them.
+
+Finally, the positional re-baselining is larger than the draft's two-item list: `output.rs:392`, `:393`,
+`:400`, `:417`, `:419`, `:422`, `:423`, `:578`, `:688`, plus `tests/launch.rs:143`. And `report_lines` has
+**three** call sites, not two — `cli.rs:596`, `:605`, and `adapter/mod.rs:550`, the last being the one
+that must pass `&SECRETIVE` and therefore the one that exercises the `capabilities: &[]` path §7.1 exists
+for.
 
 ## 11. Documentation
 
