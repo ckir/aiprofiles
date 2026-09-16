@@ -230,12 +230,12 @@ probe_snapshot() {
     for dir in "$@"; do
         echo "# $dir" >> "$PROBE_OUT/$name.txt"
         if [ -d "$dir" ]; then
-            find "$dir" -printf '%y %P\n' 2>/dev/null | LC_ALL=C sort >> "$PROBE_OUT/$name.txt"
+            find "$dir" -printf '%y %p\n' 2>/dev/null | LC_ALL=C sort >> "$PROBE_OUT/$name.txt"
         elif [ -e "$dir" ]; then
             # A default location is not always a directory: Aider's is the file `.aider.conf.yml`
             # (`aider.rs:15`). Reporting an existing file as `(absent)` would read as the agent having
             # written nothing to its default location, which is the finding the whole probe is for.
-            find "$dir" -maxdepth 0 -printf '%y %f\n' 2>/dev/null >> "$PROBE_OUT/$name.txt"
+            find "$dir" -maxdepth 0 -printf '%y %p\n' 2>/dev/null >> "$PROBE_OUT/$name.txt"
         else
             echo "(absent)" >> "$PROBE_OUT/$name.txt"
         fi

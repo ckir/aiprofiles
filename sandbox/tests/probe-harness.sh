@@ -131,7 +131,31 @@ check "the candidate the PROBE wrote is in the baseline" \
 stage noisy 'mkdir -p "$2"/sub 2>/dev/null || true; : > "$(dirname "$2")/written-by-the-agent"'
 run_staged 'probe_behaviour noisy /nonexistent-default flagfile:--config "{}"'
 check "a file the agent wrote IS in the delta" \
-    "$(grep -c '^+ f written-by-the-agent$' "$PROBE_OUT_DIR/delta-flagfile---config.txt")" "1"
+    "$(grep -Fxc "+ f $PROBE_OUT_DIR/target/written-by-the-agent" "$PROBE_OUT_DIR/delta-flagfile---config.txt")" "1"
+
+# The fixtures above all watch /nonexistent-default, so only one watched location could ever contribute a
+# row - the ambiguity the bug produces was structurally unreachable. These two use a REAL second location.
+
+# The defect: `%P`/`%f` strip the location, so a file the agent wrote into the target and one it wrote into
+# its default location - same basename - are byte-identical delta rows. Full paths must tell them apart.
+default_loc_1=$(mktemp -d)
+dualwriter_body=': > "'"$default_loc_1"'/state.json"; : > "$(dirname "$2")/state.json"'
+stage dualwriter "$dualwriter_body"
+run_staged "probe_behaviour dualwriter $default_loc_1 flagfile:--config \"{}\""
+check "the delta says which location a file landed in" \
+    "$(grep -Fxc "+ f $PROBE_OUT_DIR/target/state.json" "$PROBE_OUT_DIR/delta-flagfile---config.txt") $(grep -Fxc "+ f $default_loc_1/state.json" "$PROBE_OUT_DIR/delta-flagfile---config.txt")" \
+    "1 1"
+
+# The defect: a config that MOVED out of the default location into the target - the strongest possible
+# isolation evidence - appears on both sides of `comm` under a bare basename and cancels to an empty delta.
+default_loc_2=$(mktemp -d)
+: > "$default_loc_2/config"
+mover_body='mv "'"$default_loc_2"'/config" "$(dirname "$2")/config"'
+stage mover "$mover_body"
+run_staged "probe_behaviour mover $default_loc_2 flagfile:--config @none"
+check "a config that moved out of the default location shows as both a plus and a minus" \
+    "$(grep -Fxc -e "+ f $PROBE_OUT_DIR/target/config" "$PROBE_OUT_DIR/delta-flagfile---config.txt") $(grep -Fxc -e "- f $default_loc_2/config" "$PROBE_OUT_DIR/delta-flagfile---config.txt")" \
+    "1 1"
 
 # Each of the four mechanism kinds must reach the agent as the SHAPE it expects. Two kinds cannot express
 # OpenCode's OPENCODE_CONFIG (a variable naming a file) or Cline's --data-dir (a flag naming a directory),
