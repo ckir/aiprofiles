@@ -592,8 +592,9 @@ fn run_launch(
         .map_err(|error| with_unknown_configured(error, Some(&config), &known))?;
 
     // Step 4.
+    let metadata = adapter.metadata();
     if dry_run {
-        let lines = output::report_lines(&planned, &resolution, ReportMode::DryRun);
+        let lines = output::report_lines(&planned, &resolution, ReportMode::DryRun, metadata);
         write_out(&lines.iter().map(|line| format!("{line}\n")).collect::<String>())?;
         return Ok(0);
     }
@@ -602,9 +603,15 @@ fn run_launch(
     adapter.initialize(&planned)?;
     if verbose {
         let mut stderr = io::stderr();
-        for line in &output::report_lines(&planned, &resolution, ReportMode::Verbose) {
+        for line in &output::report_lines(&planned, &resolution, ReportMode::Verbose, metadata) {
             let _ = writeln!(stderr, "agent-profile: {line}");
         }
+        let _ = stderr.flush();
+    } else if let Some(hedge) = output::support_hedge(metadata) {
+        // SP4 design §7.2: the only disclosure on the silent path. Suppressed under `--verbose`, which just
+        // printed the whole matrix, and never reached on a dry run, which returned above.
+        let mut stderr = io::stderr();
+        let _ = writeln!(stderr, "agent-profile: {hedge}");
         let _ = stderr.flush();
     }
     match launch::launch(&planned.plan, verbose)? {

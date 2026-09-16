@@ -140,7 +140,7 @@ fn verbose_launch_reports_to_stderr_after_creating_the_profile_directory() {
     let text = stderr(&output);
     let report: Vec<&str> =
         text.lines().filter(|line| line.starts_with("agent-profile: ")).collect();
-    assert_eq!(report.len(), 7, "{text}");
+    assert_eq!(report.len(), 14, "{text}");
     assert!(report[0].starts_with("agent-profile: agent:"), "{text}");
     assert!(text.contains("agent-profile: environment:  FAKE_AGENT_HOME="), "{text}");
     assert!(!text.contains("(would be created)"), "{text}");
@@ -212,7 +212,10 @@ fn stdin_and_stderr_are_inherited() {
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert_eq!(support::report(&output.stdout)["stdin"], serde_json::json!("typed input"));
-    assert_eq!(stderr(&output), "agent stderr");
+    // `fake` is Experimental, so the launch hedge precedes the agent's own stderr (SP4 design §7.2).
+    let text = stderr(&output);
+    assert!(text.ends_with("agent stderr"), "{text}");
+    assert!(text.starts_with("agent-profile: fake is experimental"), "{text}");
 }
 
 #[test]

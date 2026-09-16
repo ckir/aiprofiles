@@ -5,7 +5,9 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use crate::adapter::{PathKind, PlannedLaunch};
+use crate::adapter::{
+    AdapterMetadata, Capability, CapabilityState, PathKind, PlannedLaunch, SupportLevel,
+};
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
 use crate::exe::Origin;
 use crate::name::{AgentId, ProfileName};
@@ -27,11 +29,63 @@ pub enum ReportMode {
     Verbose,
 }
 
+/// How a support level is spelled in the report and in the launch hedge (SP4 design §7.1).
+pub fn support_label(support: SupportLevel) -> &'static str {
+    match support {
+        SupportLevel::Proven => "proven",
+        SupportLevel::Experimental => "experimental",
+    }
+}
+
+/// How a capability is spelled. One vocabulary covers the report and the hedge (SP4 design §7.2).
+pub fn capability_label(capability: Capability) -> &'static str {
+    match capability {
+        Capability::ConfigIsolation => "config",
+        Capability::CredentialIsolation => "credentials",
+        Capability::StateIsolation => "state",
+    }
+}
+
+/// How a capability state is spelled: lower case, with spaces (SP4 design §7.1).
+pub fn state_label(state: CapabilityState) -> &'static str {
+    match state {
+        CapabilityState::Supported => "supported",
+        CapabilityState::NotSupported => "not supported",
+        CapabilityState::NotGuaranteed => "not guaranteed",
+        CapabilityState::Conditional => "conditional",
+        CapabilityState::Unknown => "unknown",
+    }
+}
+
+/// The one-line stderr hedge for an adapter that is not `Proven`, or `None` when it is (SP4 design §7.2).
+///
+/// It lists every capability whose state is not `Supported`, in `Capability::ALL` order, using the
+/// report's own vocabulary. `NotGuaranteed` counts: leaving it out would have hidden the state the design
+/// predicts for an adapter whose documented mechanism is ignored by part of the agent.
+pub fn support_hedge(metadata: &AdapterMetadata) -> Option<String> {
+    if metadata.support == SupportLevel::Proven {
+        return None;
+    }
+    let support = support_label(metadata.support);
+    let weak: Vec<String> = Capability::ALL
+        .into_iter()
+        .filter_map(|capability| {
+            let claim =
+                metadata.capabilities.iter().find(|claim| claim.capability == capability)?;
+            (claim.state != CapabilityState::Supported)
+                .then(|| format!("{} {}", capability_label(capability), state_label(claim.state)))
+        })
+        .collect();
+    let detail = if weak.is_empty() { String::new() } else { format!(": {}", weak.join(", ")) };
+    Some(format!("{} is {support}{detail}. Run with --dry-run for detail.", metadata.id))
+}
+
 /// The report lines, without trailing newlines.
 pub fn report_lines(
     planned: &PlannedLaunch,
     resolution: &Resolution,
     mode: ReportMode,
+    metadata: &AdapterMetadata,
 ) -> Vec<String> {
     let mut lines = Vec::new();
     let line = |label: &str, value: String| format!("{:<LABEL_WIDTH$}{value}", format!("{label}:"));
@@ -49,6 +103,24 @@ pub fn report_lines(
     };
     lines.push(line("repository", repository));
     lines.push(line("mechanism", planned.mechanism.clone()));
+    lines.push(line("support", support_label(metadata.support).to_owned()));
+    // Every capability in `Capability::ALL`, in that fixed order, each followed by its basis. The matrix is
+    // unconditional: SP4 design §6.1 rests on a support level never being shown without it.
+    for (index, capability) in Capability::ALL.into_iter().enumerate() {
+        let claim = metadata.capabilities.iter().find(|claim| claim.capability == capability);
+        let label = capability_label(capability);
+        let value = match claim {
+            Some(claim) => format!("{label}: {}", state_label(claim.state)),
+            // Not every caller is a registry adapter: `metadata_invariants` requires one claim per
+            // capability, but `report_lines` is reachable from a fixture that declares none. "not declared"
+            // is visibly different from "unknown", and neither panics.
+            None => format!("{label}: not declared"),
+        };
+        lines.push(if index == 0 { line("isolation", value) } else { continuation(value) });
+        if let Some(claim) = claim {
+            lines.push(continuation(format!("  {}", claim.basis)));
+        }
+    }
     if planned.plan.env.is_empty() {
         lines.push(line("environment", "none".to_owned()));
     }
@@ -329,6 +401,67 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
+    use crate::adapter::{AdapterEvidence, CapabilityClaim};
+
+    /// A registry-shaped fixture: one claim per capability, as `metadata_invariants` requires of a real
+    /// adapter. `Fake` is not usable here — it is `#[cfg(debug_assertions)]` and this module is `cfg(test)`.
+    static TEST_METADATA: AdapterMetadata = AdapterMetadata {
+        id: "fake",
+        executable: "fake-agent",
+        mechanism_summary: "environment variable FAKE_AGENT_HOME",
+        support: SupportLevel::Proven,
+        evidence: AdapterEvidence {
+            mechanism_id: "fake-home-v1",
+            verified_at: "2026-09-16",
+            upstream_version: "0.0.0",
+            source_url: "measured",
+            notes: "test fixture",
+        },
+        capabilities: &[
+            CapabilityClaim {
+                capability: Capability::ConfigIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: the fixture writes only under the profile directory",
+            },
+            CapabilityClaim {
+                capability: Capability::CredentialIsolation,
+                state: CapabilityState::Unknown,
+                basis: "unmeasured: the fixture has no credentials",
+            },
+            CapabilityClaim {
+                capability: Capability::StateIsolation,
+                state: CapabilityState::NotGuaranteed,
+                basis: "measured: the fixture keeps no state",
+            },
+        ],
+        env: &[],
+        conflicts: &[],
+    };
+
+    /// The report line beginning `<label>:`. Assertions that used a hard-coded index all broke when the
+    /// isolation block shifted every position; looking the field up by name keeps them from breaking again.
+    fn field<'a>(lines: &'a [String], label: &str) -> &'a str {
+        let prefix = format!("{label}:");
+        lines
+            .iter()
+            .find(|line| line.starts_with(&prefix))
+            .unwrap_or_else(|| panic!("no {label}: line in {lines:?}"))
+    }
+
+    /// The seven lines every report now carries between `mechanism:` and `environment:`.
+    fn isolation_block() -> Vec<String> {
+        vec![
+            "support:      proven".to_owned(),
+            "isolation:    config: supported".to_owned(),
+            "                measured: the fixture writes only under the profile directory"
+                .to_owned(),
+            "              credentials: unknown".to_owned(),
+            "                unmeasured: the fixture has no credentials".to_owned(),
+            "              state: not guaranteed".to_owned(),
+            "                measured: the fixture keeps no state".to_owned(),
+        ]
+    }
+
     fn planned(
         env: Vec<(OsString, OsString)>,
         sensitive: Vec<OsString>,
@@ -367,37 +500,49 @@ mod tests {
 
     #[test]
     fn report_has_every_spec_26_field() {
-        let lines =
-            report_lines(&planned(home_env(), vec![], false), &resolution(), ReportMode::DryRun);
-        let dir = PathBuf::from("/root/profiles/work/fake");
-        assert_eq!(
-            lines,
-            [
-                "agent:        fake".to_owned(),
-                "profile:      work (explicit)".to_owned(),
-                format!(
-                    "executable:   {} (configured)",
-                    PathBuf::from("/bin/fake-agent").display()
-                ),
-                "repository:   none".to_owned(),
-                "mechanism:    environment variable FAKE_AGENT_HOME".to_owned(),
-                "environment:  FAKE_AGENT_HOME=/root/profiles/work/fake (would be created)"
-                    .to_owned(),
-                format!("creates:      {} (would be created)", dir.display()),
-                "arguments:    [\"--foo\", \"a b\"]".to_owned(),
-            ]
+        let lines = report_lines(
+            &planned(home_env(), vec![], false),
+            &resolution(),
+            ReportMode::DryRun,
+            &TEST_METADATA,
         );
-        let existing =
-            report_lines(&planned(home_env(), vec![], true), &resolution(), ReportMode::DryRun);
-        assert_eq!(existing[5], "environment:  FAKE_AGENT_HOME=/root/profiles/work/fake");
-        assert_eq!(existing[6], "creates:      none");
+        let dir = PathBuf::from("/root/profiles/work/fake");
+        let mut expected = vec![
+            "agent:        fake".to_owned(),
+            "profile:      work (explicit)".to_owned(),
+            format!("executable:   {} (configured)", PathBuf::from("/bin/fake-agent").display()),
+            "repository:   none".to_owned(),
+            "mechanism:    environment variable FAKE_AGENT_HOME".to_owned(),
+        ];
+        expected.extend(isolation_block());
+        expected.extend([
+            "environment:  FAKE_AGENT_HOME=/root/profiles/work/fake (would be created)".to_owned(),
+            format!("creates:      {} (would be created)", dir.display()),
+            "arguments:    [\"--foo\", \"a b\"]".to_owned(),
+        ]);
+        assert_eq!(lines, expected);
+        let existing = report_lines(
+            &planned(home_env(), vec![], true),
+            &resolution(),
+            ReportMode::DryRun,
+            &TEST_METADATA,
+        );
+        assert_eq!(
+            field(&existing, "environment"),
+            "environment:  FAKE_AGENT_HOME=/root/profiles/work/fake"
+        );
+        assert_eq!(field(&existing, "creates"), "creates:      none");
     }
 
     #[test]
     fn verbose_has_no_markers_and_no_creates_line() {
-        let lines =
-            report_lines(&planned(home_env(), vec![], false), &resolution(), ReportMode::Verbose);
-        assert_eq!(lines.len(), 7, "{lines:?}");
+        let lines = report_lines(
+            &planned(home_env(), vec![], false),
+            &resolution(),
+            ReportMode::Verbose,
+            &TEST_METADATA,
+        );
+        assert_eq!(lines.len(), 14, "{lines:?}");
         let text = lines.join("\n");
         assert!(!text.contains("(would be created)"), "{text}");
         assert!(!text.contains("creates:"), "{text}");
@@ -413,15 +558,18 @@ mod tests {
             existed: false,
         });
         planned.notes = vec!["first note".to_owned(), "second note".to_owned()];
-        let lines = report_lines(&planned, &resolution(), ReportMode::DryRun);
-        assert_eq!(lines[5], "environment:  none");
+        let lines = report_lines(&planned, &resolution(), ReportMode::DryRun, &TEST_METADATA);
+        assert_eq!(field(&lines, "environment"), "environment:  none");
         assert_eq!(
-            lines[6],
+            field(&lines, "creates"),
             format!("creates:      {} (would be created)", planned.paths[0].path.display())
         );
-        assert_eq!(lines[7], format!("              {} (would be created)", file.display()));
-        assert_eq!(&lines[9..], ["note:         first note", "note:         second note"]);
-        let verbose = report_lines(&planned, &resolution(), ReportMode::Verbose);
+        assert_eq!(lines[14], format!("              {} (would be created)", file.display()));
+        assert_eq!(
+            lines.iter().filter(|line| line.starts_with("note:")).collect::<Vec<_>>(),
+            ["note:         first note", "note:         second note"]
+        );
+        let verbose = report_lines(&planned, &resolution(), ReportMode::Verbose, &TEST_METADATA);
         assert_eq!(verbose.last().unwrap(), "note:         second note");
     }
 
@@ -491,7 +639,8 @@ mod tests {
         );
         let mut planned = planned(Vec::new(), vec![], true);
         planned.plan.args = args.clone();
-        let text = report_lines(&planned, &resolution(), ReportMode::Verbose).join("\n");
+        let text =
+            report_lines(&planned, &resolution(), ReportMode::Verbose, &TEST_METADATA).join("\n");
         for secret in ["sk-", "also-hidden"] {
             assert!(!text.contains(secret), "{text}");
         }
@@ -568,6 +717,7 @@ mod tests {
             &planned(env, vec!["DECLARED".into()], true),
             &resolution(),
             ReportMode::DryRun,
+            &TEST_METADATA,
         );
         let text = lines.join("\n");
         assert!(text.contains("PLAIN=visible"), "{text}");
@@ -575,7 +725,7 @@ mod tests {
             assert!(!text.contains(secret), "{text}");
         }
         assert_eq!(text.matches("<redacted>").count(), 3, "{text}");
-        assert!(lines[6].starts_with("              DECLARED="), "{text}");
+        assert!(lines[13].starts_with("              DECLARED="), "{text}");
     }
 
     /// The Unix spelling on Unix, the Windows spelling on Windows.
@@ -790,5 +940,83 @@ mod tests {
     fn non_utf8_argument_is_rendered_lossily_with_marker() {
         use std::os::windows::ffi::OsStringExt;
         assert_eq!(render_arg(&OsString::from_wide(&[0x66, 0xD800])), "\"f\u{fffd}\" (non-UTF-8)");
+    }
+
+    /// `TEST_METADATA` with the support level and the state-isolation claim replaced.
+    ///
+    /// The hedge's own branches are unreachable through any shipped adapter: `fake` is the only
+    /// non-`Proven` one and all three of its claims are `Unknown`, so nothing in the workspace ever sends
+    /// a `NotGuaranteed` claim through `support_hedge`. That is the branch §10 asks for a fixture for.
+    fn hedged(support: SupportLevel, state: CapabilityState) -> AdapterMetadata {
+        const CLAIMS: [CapabilityClaim; 3] = [
+            CapabilityClaim {
+                capability: Capability::ConfigIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: the fixture writes only under the profile directory",
+            },
+            CapabilityClaim {
+                capability: Capability::CredentialIsolation,
+                state: CapabilityState::Unknown,
+                basis: "unmeasured: the fixture has no credentials",
+            },
+            CapabilityClaim {
+                capability: Capability::StateIsolation,
+                state: CapabilityState::NotGuaranteed,
+                basis: "measured: the fixture keeps no state",
+            },
+        ];
+        let mut claims = CLAIMS;
+        claims[2].state = state;
+        // `capabilities` is `&'static [_]`, so the modified claims have to outlive this call.
+        let leaked: &'static [CapabilityClaim] = Box::leak(Box::new(claims));
+        AdapterMetadata { support, capabilities: leaked, ..TEST_METADATA }
+    }
+
+    #[test]
+    fn a_proven_adapter_does_not_hedge() {
+        assert_eq!(
+            support_hedge(&hedged(SupportLevel::Proven, CapabilityState::NotGuaranteed)),
+            None
+        );
+    }
+
+    /// The regression the design names: an earlier draft listed only `Unknown` capabilities, which would
+    /// have hedged about an adapter whose configuration demonstrably leaks without ever saying so.
+    #[test]
+    fn the_hedge_names_every_capability_that_is_not_supported() {
+        let hedge =
+            support_hedge(&hedged(SupportLevel::Experimental, CapabilityState::NotGuaranteed))
+                .expect("a non-proven adapter hedges");
+        assert_eq!(
+            hedge,
+            "fake is experimental: credentials unknown, state not guaranteed. \
+             Run with --dry-run for detail.",
+            "{hedge}"
+        );
+    }
+
+    #[test]
+    fn the_hedge_lists_only_the_capabilities_that_are_weak() {
+        // `CredentialIsolation` stays `Unknown` in the fixture, so that is all this should name.
+        assert_eq!(
+            support_hedge(&hedged(SupportLevel::Experimental, CapabilityState::Supported))
+                .as_deref(),
+            Some("fake is experimental: credentials unknown. Run with --dry-run for detail.")
+        );
+    }
+
+    /// `report_lines` is reachable from a fixture that declares no capabilities at all
+    /// (`adapter/mod.rs`'s `SECRETIVE`). A lookup-and-unwrap would panic there; a silent skip would make
+    /// "not claimed" indistinguishable from "not rendered".
+    #[test]
+    fn a_capability_with_no_claim_renders_as_not_declared() {
+        let metadata = AdapterMetadata { capabilities: &[], ..TEST_METADATA };
+        let launch = planned(home_env(), Vec::new(), false);
+        let lines = report_lines(&launch, &resolution(), ReportMode::DryRun, &metadata);
+        assert!(field(&lines, "isolation").contains("config: not declared"), "{lines:?}");
+        assert!(
+            lines.iter().all(|line| !line.contains("measured:") && !line.contains("unmeasured:")),
+            "a capability with no claim has no basis line: {lines:?}"
+        );
     }
 }

@@ -546,9 +546,13 @@ mod tests {
             &config,
             &crate::repo::Discovery::NotInRepository,
         );
-        let text =
-            crate::output::report_lines(&planned, &resolution, crate::output::ReportMode::DryRun)
-                .join("\n");
+        let text = crate::output::report_lines(
+            &planned,
+            &resolution,
+            crate::output::ReportMode::DryRun,
+            &SECRETIVE,
+        )
+        .join("\n");
         assert!(text.contains("PROFILE_SESSION_HANDLE=<redacted>"), "{text}");
         drop(dir);
     }
