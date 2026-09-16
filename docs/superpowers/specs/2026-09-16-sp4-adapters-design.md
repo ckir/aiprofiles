@@ -32,6 +32,7 @@ each adapter is proven.
 | §2, `:91`; §37, `:1464` | "V0.1 implements the same 12 evidence-backed adapters"; "all 12 adapters have evidence" | §9 outcome 3 registers *fewer* than twelve if a probe disproves a mechanism | reported; **outcome 3 requires owner sign-off**, because it reduces V0.1's scope and leaves V3 §37's adapter checkbox unchecked |
 | §2, `:110` | "Evidence must be reverified against the supported upstream version before release" | §9 outcome 2 registers an adapter with `upstream_version: "unknown"`, which has no upstream version to reverify against | reported; such an adapter is `Experimental` and is tracked debt in `TODO.md` until a probe succeeds |
 | §3, `:139-140` | "Tier-B agents such as Aider, Amp, Continue, and Cursor must not be presented as guaranteed isolated accounts unless evidence proves that claim" | Amp, Continue and Cursor may reach `support: proven` on a config-isolation measurement, with `credentials: unknown` in the matrix | **owner ruling, 2026-09-16**: §7.1's matrix satisfies this. `proven` describes the *mechanism*; the report never shows it without the capability states beneath it, so no user is presented with a guaranteed isolated account. See §6.1 |
+| §3, `:132-133` | "An adapter may be `Proven` while **one** capability remains `Conditional`, `NotGuaranteed`, or `Unknown`" | D6 counts only `Unknown`, so an adapter may be `Proven` with one `Unknown` *plus* any number of `Conditional`, `NotGuaranteed` or `NotSupported` claims — which §8.5 relies on for Kiro and §8.2 for OpenCode | reported. The strictest reading — at most one capability outside `Supported` — is already violated by the shipped `claude`, which is `Proven` with `CredentialIsolation: Conditional` (`claude.rs:38`) *and* `StateIsolation: NotGuaranteed` (`claude.rs:44`), and `NotSupported` does not appear in V3's list at all. So the sentence reads as a permission, not a cap. The counting rule is recorded here rather than resolved silently, and it is separate from the Q9 ruling, which asked only about `Unknown` |
 | §8, `:346-374` | `ProfilePresence::Known`; "A physical directory is not universally required"; native-profile adapters may represent existence through the native mechanism | **owner ruling, 2026-09-16**: the variant is retained (D10) | no divergence |
 
 ## 2. Scope
@@ -107,7 +108,7 @@ Evidence marks: **measured** (run and observed; for this document, in the reposi
 | D8 | `sandbox/probes/common.sh` gains `probe_behaviour <id> <default-location>`: snapshot `<default-location>` after install and before launch, launch the agent under `agent-profile` (not `--dry-run`), then record the delta at both the profile directory and `<default-location>`. §7.3 fixes the whole step order explicitly. | measured: today `probe_agent_profile` records `cargo build`, `--version` and a dry run (`sandbox/probes/common.sh:22-26`), so it captures what `agent-profile` *plans*, never what the agent *does*. Ordering is load-bearing: `claude.sh:5-7` runs `claude --version` and `claude --help` natively before `probe_agent_profile`. The baseline is equally load-bearing and ordering alone does not supply it: the install runs first and executes vendor code (§9), so an installer that creates the default location would otherwise be attributed to the wrapped launch, making `ConfigIsolation` read worse than the truth. |
 | D9 | Probes run in the Actions Sandbox workflow as a **matrix, one job per agent**, bounded by a concurrency group and a deduplicated, length-capped agent list. | measured: only the Podman branch of `sandbox/run.sh` creates a private ephemeral image store (`:84`) and deletes it at cleanup (`:105-108`); the Docker branch does `chmod a+rwx "$out"` and nothing else (`:88`). Podman is absent from the owner's machine; the workflow sets `AGENT_PROFILE_SANDBOX_ENGINE: podman` (`.github/workflows/sandbox.yml:43`) on a runner VM that is discarded. A matrix is required rather than a loop: each invocation builds a fresh image (`sandbox/run.sh:124`) containing a Rust toolchain, so twelve sequential probes would not fit the job's 60-minute cap (`sandbox.yml:35`), and one hanging agent would consume the budget of all the others. The bounds are required because the matrix removes that cap: `timeout-minutes` is a job attribute, and `sandbox.yml` has no `concurrency` key today while `docs.yml:17-19` shows the repository's idiom. |
 | D10 | `ProfilePresence::Known` is **retained**, unconstructed, and documented as reserved by V3 §8 for native-profile adapters — none of which SP4 ships. The `status` label stays. | owner ruling, 2026-09-16. cited: V3:346-348 defines it normatively, V3:350 states "A physical directory is not universally required", and V3:373-374 reserves it for native-profile adapters. measured: the variant has exactly two occurrences — `metadata.rs:102` and `cli.rs:739` — and the default `presence()` returns only `Materialized` or `Absent` (`adapter/mod.rs:48-58`). The original anomaly called it a dead variant; the oracle's answer is that it is not dead, it is unclaimed. A doc comment at `metadata.rs:102` records that, so the next reader does not re-file it. |
-| D11 | An SP4 adapter ships with `conflicts: &[]` unless a probe transcript shows the option in that agent's `--help` at the pinned version — **except that an adapter whose own mechanism is a flag always declares that flag**, with no probe required. | reasoned: V3:836 says "If the wrapper cannot prove a conflict, it must not guess", which gives the default; V3:833-834 says the wrapper "must fail before launch" where an option "controls the same profile mechanism", which gives the exception. For a config-file adapter the proof is by construction: `config_file_arg_plan` emits its own flag and then appends the user's arguments after it (`adapter/mod.rs:197-198`), so a user-supplied second spelling of the same flag reaches the agent after ours. Aider, the shipped config-file adapter, carries exactly such a list (`aider.rs:56-59`). Without the exception, §9 outcome 2 would ship Continue or Amp with an empty list and `agent-profile continue work -- --config other.yaml` would silently defeat the profile it selected. Abbreviated spellings still require a transcript. |
+| D11 | An SP4 adapter ships with `conflicts: &[]` unless a probe transcript shows the option in that agent's `--help` at the pinned version — **except that an adapter whose own mechanism is a flag always declares that flag**, with no probe required. | reasoned: V3:836 says "If the wrapper cannot prove a conflict, it must not guess", which gives the default; V3:833-834 says the wrapper "must fail before launch" where an option "controls the same profile mechanism", which gives the exception. For a config-file adapter the proof is by construction: `config_file_arg_plan` emits its own flag and then appends the user's arguments after it (`adapter/mod.rs:197-198`), so a user-supplied second spelling of the same flag reaches the agent after ours. Aider, the shipped config-file adapter, carries exactly such a list (`aider.rs:56-59`). Without the exception, §9 outcome 2 would ship Continue or Amp with an empty list and `agent-profile continue work -- --config other.yaml` would silently defeat the profile it selected. **The exception covers the short form too**, where the agent documents one: `ConflictOption` carries `short: Option<char>` (`metadata.rs:70-74`) and Aider declares `short: Some('c')` (`aider.rs:58`), and `-c other.yaml` defeats the profile exactly as the long spelling does. Restricting the exception to the long spelling would leave that hole permanently open for an outcome-2 adapter, which by definition never gets a transcript. Only *abbreviated* long spellings — Aider's `--conf`, `--confi` — still require one, because which prefixes an agent accepts cannot be derived. |
 | D12 | All nine ship in one wave rather than split by measurability. | cited: research on 2026-09-16 established that every one of the nine installs and runs `--help`/`--version` with no account, and every one needs an account to do real work. The proposed split axis puts all nine in the same bucket. |
 | D13 | The probe harness is repaired **before** the probe run: `probe_record` propagates failure, every recorded command runs under a timeout, `cargo build` runs once per job rather than once per recorded step and its failure is recorded, and `probe_behaviour` takes a baseline snapshot. | measured, and this is the finding that would have wasted the whole run: `probe_record` ends with `set -e` (`sandbox/probes/common.sh:18`), and a shell function returns the status of its last command, so `probe_record` **always returns 0**. Every probe script ends in `probe_agent_profile`, which ends in `probe_record dry-run`, so a probe whose install failed and whose every later command returned 127 still exits 0 and the Actions job is green. There is no `timeout` anywhere in `common.sh` or `run.sh`, and `cargo build` at `common.sh:23` is unguarded, so under `set -eu` (`:7`) a build failure aborts the probe after the install, leaving transcripts that look complete with no behavioural step. Scope note: under D9's matrix the crate is built once per *job*, which is once per agent; building it once across all agents is not achievable and is not claimed. |
 
@@ -187,6 +188,10 @@ These rules cannot be asserted, and are named here together so no one mistakes t
    runs it.
 6. **Gate C's `notes` clause** is a non-emptiness check; `notes: "-"` satisfies it. §5.3, not Gate C, is
    what makes evidence expensive to fake.
+7. **Every `custody: off-ci` transcript** — §5.3's job skips them by design, so the one escape from all of
+   this machinery is reviewed only by a person. Gate A requires `custody: ci` for any transcript backing a
+   `ConfigIsolation` or `StateIsolation` claim, which is what keeps the escape narrow; no SP4-era
+   transcript should be `off-ci` at all, because §2.2 puts its only legitimate use out of scope.
 
 ### 5.2 Why Gate A is split across two commits
 
@@ -210,20 +215,59 @@ column of zero exit codes — can be written by hand in minutes and passes all o
 `<id>-2.1.0.md` to `<id>-3.0.0.md` and editing one version string passes them too, and reads in a diff as
 a textbook evidence refresh.
 
-So a `custody: ci` transcript carries `run-id:` and, for its own body, `sha256:`, and a **verification job
-runs on pull requests**: for every changed file under `docs/evidence/` whose first line is `custody: ci`,
-it queries the Actions API and asserts that the run belongs to this repository, is the Sandbox workflow,
-concluded `success`, and published a `sandbox-transcript-<id>` artifact containing a file whose SHA-256
-matches the committed one.
+**The machine assembles; the human reviews; the job compares.** The probe job writes the *finished*
+`<id>-<version>.md` — custody block included — into `sandbox-transcript-<id>`. A maintainer downloads it,
+reads it, and commits it **byte for byte or not at all**. No human edits a transcript; an excerpt that
+needs changing means the probe script needs changing and the probe re-runs.
 
-That job needs `actions: read` and nothing else. **It is a separate job from the probe**, which keeps
-`contents: read` and gains no new permission — the probe executes third-party installers and must remain
-the least privileged thing in the repository (§9).
+That ordering is what makes verification simple enough to trust. The earlier draft had a human assemble
+the committed file from uploaded ingredients, which meant the committed bytes were by construction *not*
+the uploaded bytes, so no hash could ever match — and it forced the job to parse attacker-supplied text to
+discover what to compare. Both problems disappear when the artifact and the commit are the same bytes.
 
-**Stated degradation:** Actions artifacts expire. After expiry the artifact comparison is impossible and
-the check falls back to run-exists, correct-workflow, concluded-success, and head-SHA-is-an-ancestor. That
-is weaker, but it still costs a forger a real green Sandbox run for that specific agent, which is the
-property worth buying. A transcript marked `custody: off-ci` (§7.4.1) is exempt and is reviewed by hand.
+**The verification job**, on `pull_request` in `ci.yml`, does this for each adapter in `REAL_ADAPTERS`
+whose transcript changed in the pull request:
+
+1. Take the agent id and `upstream_version` **from the registry**, never by parsing the filename. The
+   filename-to-id map is not invertible: `upstream_version` permits `-` (§5), so `cursor-1.0.0-beta.1.md`
+   splits two ways.
+2. Read `run-id:` from the committed file, require it to match `^[0-9]+$`, and pass it to the API through
+   the environment — never through `${{ }}` expression interpolation.
+3. Assert the run belongs to this repository, is the Sandbox workflow, concluded `success`, **has a head
+   SHA equal to the `harness-commit:` the transcript records, and that commit is an ancestor of the base
+   branch.**
+4. Assert `sandbox-transcript-<id>` contains a file byte-identical to the committed one.
+
+**Step 3 is not optional and the draft omitted it.** Without a commit binding, a person with push access
+dispatches Sandbox on a throwaway branch carrying an edited `sandbox/probes/<id>.sh` that prints a
+fabricated `--help`; the run is genuinely green, the artifact is genuine, the bytes match exactly, and the
+forging branch never appears in the pull request. The harness commit was already recorded in §7.4 and
+nothing checked it.
+
+**It must be `pull_request`, never `pull_request_target`.** The reflex when a fork's token cannot reach
+the API is to switch, which would run a base-repository token against pull-request-supplied bytes. If fork
+coverage is wanted, it is a separate problem and not solved that way. The job needs `actions: read` and
+nothing else, and **it is a separate job from the probe**, which keeps `contents: read` — the probe
+executes third-party installers and must remain the least privileged thing in the repository (§9). It
+lives in `ci.yml` because `sandbox.yml` filters on `paths: sandbox/**` (`.github/workflows/sandbox.yml:12-15`)
+and would never fire on an evidence-only pull request; `ci.yml` has no paths filter (`.github/workflows/ci.yml:3-8`).
+It is a required status check, or it is advice.
+
+**Expiry fails closed.** Artifacts expire, and the earlier draft degraded to run-exists,
+correct-workflow, concluded-success and an ancestry check — none of which is a function of the agent, the
+version, or the bytes, so the original run of `<id>-2.1.0.md` satisfies all of them for a forged
+`<id>-3.0.0.md`. That degradation restored both forgeries this section exists to stop, and a green
+`pull_request` run in `test` mode — which probes nothing — satisfied it too. So: a transcript is committed
+while its artifact still exists, the workflow sets an explicit artifact retention long enough to make that
+routine, and **a transcript whose artifact has expired cannot be introduced or modified**. An existing
+verified transcript stays verified; re-verification after expiry is not attempted, because a check that
+cannot fail is not a check.
+
+A transcript marked `custody: off-ci` (§7.4.1) is exempt from this job and reviewed by hand. Gate A
+therefore **requires `custody: ci` for any transcript backing a `ConfigIsolation` or `StateIsolation`
+claim**: without that requirement, `off-ci` is a one-word opt-out from every mechanical control here, and
+§2.2 puts the only legitimate use of `off-ci` — authenticated measurement — out of scope for SP4, so no
+SP4 transcript should carry it at all.
 
 ## 6. What can and cannot be measured
 
@@ -355,16 +399,32 @@ The hedge's remaining limits are recorded in §12 rather than papered over.
 `probe_behaviour`'s delta is only attributable if nothing has run the agent before it:
 
 1. `install` — the only step that runs vendor code before a snapshot exists.
-2. `baseline` — record `<default-location>` as the install left it.
-3. `behaviour` — `probe_behaviour <id> <default-location>`: launch under `agent-profile`, then record the
-   delta at the profile directory and at `<default-location>`.
-4. `version` — the agent's own `--version`, unwrapped.
-5. `help` — the agent's own `--help`, unwrapped.
-6. `strings` — the bypass-variable excerpt.
+2. `version` — the agent's own `--version`. This is the value `evidence.upstream_version` takes, and it is
+   recorded here, before anything has launched the agent for real.
+3. `help` — the agent's own `--help`, the artefact Gate A reads the mechanism token from.
+4. `strings` — the bypass-variable excerpt.
+5. `baseline` — record **both** `<default-location>` and the profile directory, as the install and
+   `agent-profile`'s own initialization left them.
+6. `behaviour` — `probe_behaviour <id> <default-location>`: launch under `agent-profile`, then record the
+   delta at both locations against step 5.
 
-Steps 4 and 5 are unwrapped invocations, which is why they move after step 3; every existing script runs
-them before (`sandbox/probes/claude.sh:5-7`). `agent-profile --version` inside `probe_agent_profile`
-(`common.sh:24`) is not an invocation of the agent and does not constrain this order.
+**Both baselines are load-bearing, and the earlier draft had only one.** `agent-profile` creates the
+profile directory itself before the agent starts — `adapter.initialize(&planned)?` at
+`crates/agent-profile/src/cli.rs:602` — and for a configuration-file adapter it also writes the minimal
+accepted file of §8.4. Those bytes are ours, not the agent's. Baselining only the default location
+attributes them to the agent and errs *optimistically*: an agent that ignored `--config` entirely would
+still leave a non-empty profile-directory delta, which §6's table would read as proof that its config
+landed under the profile.
+
+`--version` and `--help` run at steps 2 and 3 rather than after the launch. They are unwrapped
+invocations, but they are read-only observations of a freshly installed agent, and running them after a
+real launch would mean reading the recorded version and the mechanism token out of an installation that
+had already executed vendor code once with network access. The baseline at step 5 is taken after them for
+exactly that reason: it must capture everything that existed before the *wrapped* launch, including
+anything steps 2 and 3 caused. Every existing script runs version and help before the wrapped run
+(`sandbox/probes/claude.sh:5-7`); what changes is the baseline between them, not their position.
+`agent-profile --version` inside `probe_agent_profile` (`common.sh:24`) is not an invocation of the agent
+and does not constrain this order.
 
 The default location is a per-agent fact, so each probe script passes it; `common.sh` cannot derive it.
 The baseline is recorded in the transcript, not merely used to compute the delta: the install ran vendor
@@ -374,12 +434,33 @@ A probe never supplies a credential and never waits for input.
 
 ### 7.4 Evidence transcripts (D8)
 
-`docs/evidence/<id>-<version>.md` holds, for one probe run: a first line naming the custody shape, the
-install command including the resolved version, the pre-launch baseline, the behavioural delta,
-`--version` output, the `--help` excerpt containing the mechanism token, the strings excerpt listing
-candidate bypass variables, and a **chain of custody** — the workflow run URL, `run-id:`, the body's
-`sha256:`, the harness commit, and every recorded step's exit code verbatim. §5.3 is what makes those
-fields load-bearing rather than decorative.
+`docs/evidence/<id>-<version>.md` is **written whole by the probe job** (§5.3) and holds, for one probe
+run, in this order:
+
+```text
+custody: ci
+run-id: <digits>
+run-url: <url>
+harness-commit: <40 hex>
+---                          <- everything below this line is the hashed body
+install: <command, with the resolved version>
+exit-codes: <one line per recorded step, verbatim>
+version: ...
+help: <excerpt containing the mechanism token>
+strings: <candidate bypass variables>
+baseline: <default location, and the profile directory>
+delta: <both locations, against the baseline>
+```
+
+**The hashed body starts after the `---` line and runs to the end of file, including the trailing
+newline.** A file cannot contain its own hash, so the header above the marker is excluded and everything
+else is inside — in particular `exit-codes:`, which the earlier draft placed in the custody header and
+therefore left unbound. Those codes decide which of §9's four outcomes a probe landed in; leaving the one
+field that determines the verdict outside the signed region would have made §5.1's claim about §5.3 false
+of the bytes that matter most. The four header lines are bound instead by the API check: `run-id` and
+`harness-commit` are compared against the run itself.
+
+§5.3 is what makes these fields load-bearing rather than decorative.
 
 Captured output is untrusted vendor text. Before it becomes a committed file it is stripped of terminal
 control sequences and bounded in size; an excerpt that must be truncated says so at the truncation point.
@@ -410,6 +491,14 @@ of scope for SP4; defining how it must be recorded is not.
 
 ### 7.5 Workflow (D9)
 
+`sandbox.yml` ends with **three** jobs, and naming only two is how the draft silently deleted the one CI
+that keeps the harness working. The `test` job runs `sandbox/run.sh test` for the `pull_request` trigger
+and for a `workflow_dispatch` with `mode == test`; it is the job the workflow's own header promises
+("A pull request that changes the harness runs it in `test` mode only … so the harness itself stays
+working", `.github/workflows/sandbox.yml:8-9`). It is unchanged by SP4 except that the existing single
+job is split, and it must not be dropped: the input rename below would otherwise leave the surviving job
+running `sandbox/run.sh probe ""`, which `sandbox/run.sh:51-54` refuses with exit 2.
+
 The `agent` input is renamed to `agents` and accepts a whitespace- or comma-separated list, or `all`. A
 `prepare` job — **which runs only for `workflow_dispatch` with `mode == probe`** — parses it, validates
 each name against `[a-z0-9-]` and against the existence of `sandbox/probes/<name>.sh`, **deduplicates**,
@@ -428,13 +517,21 @@ failure or hang cannot consume another's budget, and each job keeps its own 60-m
 `concurrency` group prevents a re-dispatch from running twelve more installer jobs alongside twelve
 already in flight; `docs.yml:17-19` is the repository's idiom.
 
-Each job uploads two artifacts: `sandbox-transcript-<id>`, holding only the curated files that become the
-transcript — this is the artifact §5.3 hashes against — and `sandbox-logs-<id>`, holding the raw
-`build.log`, `output.log` and `diff.txt`. They are separate because the raw upload is the whole container
-delta (`sandbox/run.sh:154`) plus the image build log including toolchain downloads, and burying the
-reviewable artefact in megabytes of build noise is how §5.1's manual review stops happening.
+Each probe job uploads two artifacts. `sandbox-transcript-<id>` holds the finished transcript §5.3 hashes
+against, and **a bounded summary of `diff.txt` goes inside it**, not alongside: `diff.txt` is the whole
+container delta (`sandbox/run.sh:154`) and therefore the only record that can show a write to a location
+nobody predicted, which is the only way §9 outcome 4 — "the agent exposes a different mechanism from the
+claimed one" — is ever detected. The transcript's own delta is scoped to two locations chosen in advance,
+so routing the unscoped observation into the unhashed, expiring artifact would leave the broadest evidence
+the least protected. `sandbox-logs-<id>` keeps the raw `build.log`, `output.log` and the full `diff.txt`;
+the split exists to keep megabytes of toolchain-download noise out of the file a human reviews (§5.1), not
+to discard the container delta.
 
-The `pull_request` trigger keeps running `test` mode only, and no secret is added.
+Both uploads set an explicit retention period, long enough that committing a transcript inside its
+artifact's lifetime is routine rather than a race — §5.3 depends on that window, and the current upload
+step sets no retention at all (`.github/workflows/sandbox.yml:53-59`).
+
+No secret is added to any job.
 
 ## 8. The nine adapters
 
@@ -530,9 +627,11 @@ requires a committed transcript and theirs were never committed — their SP2 ev
 `target/sandbox`, which means the three adapters carrying the strongest claims in the repository are the
 only three with no checkable evidence. SP4 inverts that rather than grandfathering it.
 
-**The commit is manual and human-performed.** A maintainer downloads the artifacts, reviews each
-transcript, and commits them together with Gate A's transcript half (§5.2); §5.3's job then verifies each
-committed file against its run. The probe job keeps `permissions: contents: read`
+**The commit is manual and human-performed, and the human does not edit.** A maintainer downloads the
+artifacts, reads each transcript, and commits them **byte for byte** together with Gate A's transcript
+half (§5.2); §5.3's job then verifies each committed file against its run. A transcript that looks wrong
+is not corrected by hand — the probe script is corrected and the probe re-runs, because the moment a human
+edits the bytes, §5.3 can no longer bind them to anything. The probe job keeps `permissions: contents: read`
 (`.github/workflows/sandbox.yml:28-29`) and **must never be granted write access**: it runs
 `npm install --global` and vendor install scripts for twelve third-party packages, any of which can
 execute arbitrary code in a postinstall hook. A repository-write credential in that job would let one
@@ -600,9 +699,13 @@ discipline: a test that cannot fail is a test that certifies nothing.
   and §6.1's ruling depends on it.
 - **Evidence is a snapshot.** A transcript pins one version on one day. Drift detection is `doctor` (SP5),
   and until then a mechanism can change upstream without the repository noticing.
-- **§5.3 proves provenance, not content.** It proves the committed bytes came from a real green run of
-  this workflow for this agent; it cannot prove the right excerpt was captured, and after artifact expiry
-  it degrades to proving the run existed.
+- **§5.3 proves provenance, not content.** It proves the committed bytes are the bytes a real green run of
+  this workflow produced, from a harness commit on the base branch; it cannot prove the probe script
+  captured the right excerpt. Its cost falls entirely on someone with push access — it is not a defence
+  against an outside attacker, who cannot commit at all.
+- **A transcript cannot be introduced after its artifact expires.** That is deliberate (§5.3 fails
+  closed), but it means a probe run left uncommitted past the retention window must be re-run, and the
+  window is a workflow setting someone can shorten without noticing what depends on it.
 - **The behavioural probe proves where files landed, not that nothing leaked.** A delta shows the config
   directory moved; it cannot show that no credential was read from a shared location.
 - **`StateIsolation` measurement is partial** for agents that write history only after a network call.
