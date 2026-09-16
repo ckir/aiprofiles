@@ -459,8 +459,18 @@ The hedge's remaining limits are recorded in §12 rather than papered over.
 
 `common.sh` is repaired first:
 
-- `probe_record` returns the recorded status and accumulates failures, so a probe that failed exits
-  non-zero. This is D13's core fix; without it the probe run's green light carries no information.
+- `probe_record` **returns 0 and accumulates** the failure, and an EXIT trap (`probe_finish`) is what
+  turns any accumulation into a non-zero exit. A probe that failed still exits non-zero — that is D13's
+  core fix, and without it the probe run's green light carries no information — but the status must not
+  be returned by `probe_record` itself.
+
+  **Corrected while prototyping, 2026-09-16.** The draft said `probe_record` "returns the recorded
+  status". Probe scripts run under `set -e`, so returning a non-zero status aborts the probe at its first
+  failing step and leaves every later step unrecorded — and the later steps are the evidence. An agent
+  whose install fails is §9 outcome 2, and outcome 2 still has to produce a transcript. The trap also
+  makes the rule unforgettable: a probe script cannot omit the final check because it never writes one.
+  `probe_finish` preserves a non-zero status the script set for its own reason, so "you asked for
+  something this probe cannot do" (exit 2) stays distinct from "a step failed" (exit 1).
 - every recorded command runs under `timeout <n>`, and a timeout status is recorded as the "cannot run
   non-interactively" fact rather than being left to the job cap.
 - `cargo build` runs once per job, not once per recorded step, and its failure is recorded rather than
@@ -487,8 +497,21 @@ The hedge's remaining limits are recorded in §12 rather than papered over.
 `cursor`/`cursor-agent`, `continue`/`cn` (§8) — and `common.sh` has no registry to look one up in. Files
 and artifacts stay named by id; only the thing being launched is the executable.
 
-`<mechanism>` is `env:<VAR>` or `flag:<flag>`, and a `flag:` probe takes a further argument: the candidate
-file content to write. **Steps 5 and 6 repeat as a pair, once per mechanism under test**, each repetition
+`<mechanism>` is one of **four** words — `env:<VAR>`, `envfile:<VAR>`, `flagdir:<FLAG>`, `flagfile:<FLAG>`
+— and a `file` mechanism takes a further argument: the candidate file content to write.
+
+**Corrected while prototyping, 2026-09-16.** The draft named two, `env:` and `flag:`, which cannot express
+what §8 asks this probe to test. `OPENCODE_CONFIG` is a variable naming a *file* (§8.2) and Cline's
+`--data-dir` is a flag naming a *directory* (§8.3). Under a two-word vocabulary the probe would have
+pointed a file variable at a directory and a directory flag at a file; the agent would have refused, and
+the refusal would have been recorded as evidence that the mechanism does not isolate — a wrong answer
+that is indistinguishable from a measurement. The vocabulary is the cross product of {variable, flag} and
+{directory, file}, which is closed, so no fifth word can be needed.
+
+§8.4's acceptance question — the smallest file content an agent accepts — is a *separate* function
+(`probe_candidates`), not a mode of the behaviour step. They ask different things: one records an exit
+code per candidate, the other records a filesystem delta, and folding them into one call made neither
+legible. **Steps 5 and 6 repeat as a pair, once per mechanism under test**, each repetition
 re-baselining first — a second launch measured against the first launch's baseline is not attributable,
 which is the whole point of step 5. That repetition is what answers the questions a single application
 cannot: Q8 iterates candidate contents for Continue and Amp and records each exit code (exactly how
@@ -886,6 +909,12 @@ for.
   Linux container, so the evidence behind their claims is Linux evidence. SP2 measured Windows binaries
   through Sandboxie (SP2 design D9); SP4 does not, because twelve agents through a manual Windows sandbox
   is not a repeatable gate. These two facts compound and the README must say so plainly.
+- **A script-installed agent cannot have its version pinned.** Kiro and Cursor are installed by a vendor
+  script, which takes whatever version it takes; only npm and uv accept the request `run.sh` passes. The
+  probe **refuses** a version argument for those two rather than ignoring it, because a silently dropped
+  request would produce a transcript whose `install:` line names a version the installer never saw, and
+  §5.3 then commits that false statement byte-for-byte. The consequence is that a measurement of those
+  two cannot be repeated against the same version — only re-taken against whatever the vendor now serves.
 - **Twelve adapters share one probe run.** If the harness changes between SP4a and the run, transcripts and
   harness can disagree; the chain of custody records the harness commit.
 - **A matrix dispatch costs up to twelve times one job's budget.** The concurrency group bounds
