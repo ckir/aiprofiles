@@ -875,8 +875,8 @@ for.
 - `ROADMAP.md`: SP4 done, SP5 next; the `ProfilePresence::Known` note added at `8741ea0` is resolved by
   D10 — the variant is reserved, not dead.
 - `TODO.md`: any capability left `Unknown` that an authenticated measurement could settle; any adapter
-  dropped under outcome 3 of §9; any adapter registered with `upstream_version: "unknown"`; and §6.1's two
-  binding consequences for SP5.
+  dropped under outcome 3 of §9; any adapter registered with `upstream_version: "unknown"`; and §6.1's
+  three binding consequences for SP5.
 
 ## 12. Known limits
 

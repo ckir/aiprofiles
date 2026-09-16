@@ -1048,6 +1048,84 @@ mod tests {
         use std::os::windows::ffi::OsStringExt;
         assert_eq!(render_arg(&OsString::from_wide(&[0x66, 0xD800])), "\"f\u{fffd}\" (non-UTF-8)");
     }
+
+    /// `TEST_METADATA` with the support level and the state-isolation claim replaced.
+    ///
+    /// The hedge's own branches are unreachable through any shipped adapter: `fake` is the only
+    /// non-`Proven` one and all three of its claims are `Unknown`, so nothing in the workspace ever sends
+    /// a `NotGuaranteed` claim through `support_hedge`. That is the branch §10 asks for a fixture for.
+    fn hedged(support: SupportLevel, state: CapabilityState) -> AdapterMetadata {
+        const CLAIMS: [CapabilityClaim; 3] = [
+            CapabilityClaim {
+                capability: Capability::ConfigIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: the fixture writes only under the profile directory",
+            },
+            CapabilityClaim {
+                capability: Capability::CredentialIsolation,
+                state: CapabilityState::Unknown,
+                basis: "unmeasured: the fixture has no credentials",
+            },
+            CapabilityClaim {
+                capability: Capability::StateIsolation,
+                state: CapabilityState::NotGuaranteed,
+                basis: "measured: the fixture keeps no state",
+            },
+        ];
+        let mut claims = CLAIMS;
+        claims[2].state = state;
+        // `capabilities` is `&'static [_]`, so the modified claims have to outlive this call.
+        let leaked: &'static [CapabilityClaim] = Box::leak(Box::new(claims));
+        AdapterMetadata { support, capabilities: leaked, ..TEST_METADATA }
+    }
+
+    #[test]
+    fn a_proven_adapter_does_not_hedge() {
+        assert_eq!(
+            support_hedge(&hedged(SupportLevel::Proven, CapabilityState::NotGuaranteed)),
+            None
+        );
+    }
+
+    /// The regression the design names: an earlier draft listed only `Unknown` capabilities, which would
+    /// have hedged about an adapter whose configuration demonstrably leaks without ever saying so.
+    #[test]
+    fn the_hedge_names_every_capability_that_is_not_supported() {
+        let hedge =
+            support_hedge(&hedged(SupportLevel::Experimental, CapabilityState::NotGuaranteed))
+                .expect("a non-proven adapter hedges");
+        assert_eq!(
+            hedge,
+            "fake is experimental: credentials unknown, state not guaranteed. \
+             Run with --dry-run for detail.",
+            "{hedge}"
+        );
+    }
+
+    #[test]
+    fn the_hedge_lists_only_the_capabilities_that_are_weak() {
+        // `CredentialIsolation` stays `Unknown` in the fixture, so that is all this should name.
+        assert_eq!(
+            support_hedge(&hedged(SupportLevel::Experimental, CapabilityState::Supported))
+                .as_deref(),
+            Some("fake is experimental: credentials unknown. Run with --dry-run for detail.")
+        );
+    }
+
+    /// `report_lines` is reachable from a fixture that declares no capabilities at all
+    /// (`adapter/mod.rs`'s `SECRETIVE`). A lookup-and-unwrap would panic there; a silent skip would make
+    /// "not claimed" indistinguishable from "not rendered".
+    #[test]
+    fn a_capability_with_no_claim_renders_as_not_declared() {
+        let metadata = AdapterMetadata { capabilities: &[], ..TEST_METADATA };
+        let launch = planned(home_env(), Vec::new(), false);
+        let lines = report_lines(&launch, &resolution(), ReportMode::DryRun, &metadata);
+        assert!(field(&lines, "isolation").contains("config: not declared"), "{lines:?}");
+        assert!(
+            lines.iter().all(|line| !line.contains("measured:") && !line.contains("unmeasured:")),
+            "a capability with no claim has no basis line: {lines:?}"
+        );
+    }
 }
 ```
 
@@ -2970,9 +3048,9 @@ with:
 cargo nextest run --workspace --no-tests=pass
 ```
 
-Expected: passes, including `verbose_launch_reports_the_plan_and_still_launches`, `stdin_and_stderr_are_inherited`.
+Expected: passes, including `the_hedge_names_every_capability_that_is_not_supported`, `a_capability_with_no_claim_renders_as_not_declared`, `stdin_and_stderr_are_inherited`.
 
-- [ ] **Step 7: Run the gate** (see "Gate commands"). Expected on Windows: `228 tests run: 228 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 7: Run the gate** (see "Gate commands"). Expected on Windows: `232 tests run: 232 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 8: Commit**
 
@@ -2983,21 +3061,21 @@ git commit -m "feat: report the capability matrix, and hedge on a non-proven lau
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 9: Prove this task's tests are not vacuous** (rule 6). Inverting the hedge's early return makes a Proven adapter hedge and an Experimental one stay silent, which is the exact confusion the hedge exists to prevent. The named test is the PLAIN launch, not the verbose one: the design excludes the hedge from a verbose launch on purpose, so the verbose test cannot see this mutant at all.
+- [ ] **Step 9: Prove this task's tests are not vacuous** (rule 6). This is the draft defect the design names: a hedge listing only Unknown capabilities stays silent about a NotGuaranteed one — the very state predicted for an adapter whose documented mechanism part of the agent ignores. No shipped adapter can reach that branch, because `fake` is the only non-Proven one and all three of its claims are Unknown, which is why the fixture exists.
 
 In `crates/agent-profile/src/output.rs` replace exactly:
 
 ```rust
-if metadata.support == SupportLevel::Proven {
+(claim.state != CapabilityState::Supported)
 ```
 
 with:
 
 ```rust
-if metadata.support != SupportLevel::Proven {
+(claim.state == CapabilityState::Unknown)
 ```
 
-Run `cargo nextest run --no-fail-fast --workspace --no-tests=pass`. Expected: it FAILS, and a line reporting FAIL names `stdin_and_stderr_are_inherited`. Then restore with `git checkout -- crates/agent-profile/src/output.rs` and confirm `git status --short` prints nothing.
+Run `cargo nextest run --no-fail-fast --workspace --no-tests=pass`. Expected: it FAILS, and a line reporting FAIL names `the_hedge_names_every_capability_that_is_not_supported`. Then restore with `git checkout -- crates/agent-profile/src/output.rs` and confirm `git status --short` prints nothing.
 
 
 ### Task 2: The evidence gates, as library predicates with negative fixtures
@@ -4188,7 +4266,7 @@ cargo nextest run --workspace --no-tests=pass
 
 Expected: passes, including `the_sound_fixture_passes_every_gate`, `gate_b_rejects_an_unknown_state_without_the_unmeasured_prefix`.
 
-- [ ] **Step 9: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 9: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 10: Commit**
 
@@ -4533,6 +4611,27 @@ probe_snapshot() {
     done
 }
 
+# probe_delta <baseline-file> <after-file> <out-file>: what the launch actually changed.
+#
+# This is a COMPUTED difference, not the after-state under a suggestive name. The distinction is the whole
+# measurement: the probe creates the target directory itself, and for a file mechanism it writes the
+# candidate file, so a post-launch listing contains the probe's own bytes. Reading that listing as "what
+# the agent wrote" yields a false `ConfigIsolation: Supported` carrying a `measured:` basis — and every
+# gate still passes, because the gates check a claim's shape, not whether the measurement behind it meant
+# anything.
+#
+# `+` is a path that appeared, `-` one that went away. An empty file means the launch changed nothing,
+# unambiguously, which is a finding rather than a gap.
+probe_delta() {
+    LC_ALL=C sort "$1" > "$PROBE_OUT/.delta-before"
+    LC_ALL=C sort "$2" > "$PROBE_OUT/.delta-after"
+    {
+        comm -13 "$PROBE_OUT/.delta-before" "$PROBE_OUT/.delta-after" | sed 's/^/+ /'
+        comm -23 "$PROBE_OUT/.delta-before" "$PROBE_OUT/.delta-after" | sed 's/^/- /'
+    } > "$3"
+    rm -f "$PROBE_OUT/.delta-before" "$PROBE_OUT/.delta-after"
+}
+
 # probe_label <mechanism>: the filename-safe form a mechanism's artefacts are named by.
 probe_label() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9_' '-'
@@ -4625,7 +4724,9 @@ probe_behaviour() {
     probe_snapshot "baseline-$probe_lbl" "$PROBE_TARGET" $probe_default
     probe_apply "behaviour-$probe_lbl" "$probe_exe" "$probe_mech" "$@"
     # shellcheck disable=SC2086
-    probe_snapshot "delta-$probe_lbl" "$PROBE_TARGET" $probe_default
+    probe_snapshot "after-$probe_lbl" "$PROBE_TARGET" $probe_default
+    probe_delta "$PROBE_OUT/baseline-$probe_lbl.txt" "$PROBE_OUT/after-$probe_lbl.txt" \
+        "$PROBE_OUT/delta-$probe_lbl.txt"
 }
 
 # probe_candidates <executable> <mechanism> <candidate|@none>...
@@ -4840,6 +4941,24 @@ check "the behaviour step records a baseline" \
     "$([ -f "$PROBE_OUT_DIR/baseline-env-SOME_HOME.txt" ] && echo yes || echo no)" "yes"
 check "the baseline covers the default location too" \
     "$(grep -c '^# ' "$PROBE_OUT_DIR/baseline-env-SOME_HOME.txt")" "2"
+
+# THE assertion that separates "the agent's config moved" a from "the probe created it". The probe makes
+# the target directory itself and, for a file mechanism, writes the candidate file — so a post-launch
+# LISTING always contains the probe's own bytes. Reading that as the agent's work yields a false
+# ConfigIsolation: Supported carrying a `measured:` basis, and every gate still passes, because the gates
+# check a claim's shape and not whether the measurement meant anything.
+stage quiet 'exit 0'
+run_staged 'probe_behaviour quiet /nonexistent-default flagfile:--config "{}"'
+check "a target populated before the launch is not in the delta" \
+    "$(cat "$PROBE_OUT_DIR/delta-flagfile---config.txt")" ""
+check "the candidate the PROBE wrote is in the baseline" \
+    "$(grep -c 'config$' "$PROBE_OUT_DIR/baseline-flagfile---config.txt")" "1"
+
+# The positive control, without which the check above passes for a delta that is always empty.
+stage noisy 'mkdir -p "$2"/sub 2>/dev/null || true; : > "$(dirname "$2")/written-by-the-agent"'
+run_staged 'probe_behaviour noisy /nonexistent-default flagfile:--config "{}"'
+check "a file the agent wrote IS in the delta" \
+    "$(grep -c '^+ f written-by-the-agent$' "$PROBE_OUT_DIR/delta-flagfile---config.txt")" "1"
 
 # Each of the four mechanism kinds must reach the agent as the SHAPE it expects. Two kinds cannot express
 # OpenCode's OPENCODE_CONFIG (a variable naming a file) or Cline's --data-dir (a flag naming a directory),
@@ -5074,9 +5193,9 @@ check: fmt-check clippy typos test probe-tests
 sh sandbox/tests/probe-harness.sh
 ```
 
-Expected: passes, including `a probe whose only step failed exits non-zero`, `a coloured banner does not become the version`.
+Expected: passes, including `a probe whose only step failed exits non-zero`, `a coloured banner does not become the version`, `a target populated before the launch is not in the delta`.
 
-- [ ] **Step 12: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 12: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 13: Commit**
 
@@ -5087,21 +5206,21 @@ git commit -m "fix: make a failed probe exit non-zero, and fix the step order
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 14: Prove this task's tests are not vacuous** (rule 6). Without the strip, a coloured --version banner beginning ESC[0m yields the digit-bearing run `0m` — which Gate A accepts, because `0m` is inside the charset it checks.
+- [ ] **Step 14: Prove this task's tests are not vacuous** (rule 6). The design calls this the highest error-cost class in the document, and it is the one defect here no gate can catch. A "delta" that is really the after-state lists the files the PROBE created — it makes the target directory itself, and for a file mechanism writes the candidate — which reads as the agent having moved its configuration. The result is a false `ConfigIsolation: Supported` carrying a `measured:` basis, and every gate passes.
 
-In `sandbox/probes/text.sh` replace exactly:
+In `sandbox/probes/common.sh` replace exactly:
 
 ```bash
-sed "s,${probe_esc}\\[[0-9;?]*[ -/]*[@-~],,g" | tr -d '\000-\010\013-\037\177'
+        comm -13 "$PROBE_OUT/.delta-before" "$PROBE_OUT/.delta-after" | sed 's/^/+ /'
 ```
 
 with:
 
 ```bash
-cat
+        sed 's/^/+ /' "$PROBE_OUT/.delta-after"
 ```
 
-Run `sh sandbox/tests/probe-harness.sh`. Expected: it FAILS, and a line reporting FAIL names `a coloured banner does not become the version`. Then restore with `git checkout -- sandbox/probes/text.sh` and confirm `git status --short` prints nothing.
+Run `sh sandbox/tests/probe-harness.sh`. Expected: it FAILS, and a line reporting FAIL names `a target populated before the launch is not in the delta`. Then restore with `git checkout -- sandbox/probes/common.sh` and confirm `git status --short` prints nothing.
 
 
 ### Task 4: The nine new probe scripts
@@ -5367,7 +5486,7 @@ sh sandbox/tests/probe-harness.sh
 
 Expected: passes, including `gemini.sh follows the six-step order`, `amp.sh follows the six-step order`.
 
-- [ ] **Step 11: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 11: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 12: Commit**
 
@@ -5701,7 +5820,7 @@ sh sandbox/tests/transcript.sh
 
 Expected: passes, including `the file is named by id and recorded version`, `a missing artefact is stated, not skipped`.
 
-- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 5: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 6: Commit**
 
@@ -5827,6 +5946,24 @@ if [ -n "$version" ] && [ "$count" -ne 1 ]; then
     exit 1
 fi
 
+# The same charset Gate A requires of `upstream_version`, applied at the other end of the pipe. A version
+# reaches a probe's install command and then names an evidence file, so anything outside this set could
+# not have produced a resolvable transcript anyway.
+#
+# It also closes a hole that has nothing to do with versions. The caller writes both this value and the
+# agent list to `$GITHUB_OUTPUT`, which is a `key=value`-per-line file — so a version containing a NEWLINE
+# writes a second `agents=` line that overrides the validated one, and the list reaching the matrix would
+# never have passed a single check above. MEASURED: `version` of `1.0\nagents=["evil"]` yields exactly
+# that. Validating here rather than at the call site keeps every rule about these two inputs in the one
+# file that is tested.
+case "$version" in
+    '') ;;
+    *[!A-Za-z0-9._-]*)
+        echo "resolve-agents: version '$version' is not [A-Za-z0-9._-]" >&2
+        exit 1
+        ;;
+esac
+
 # No escaping, and none needed: every name has been checked against [a-z0-9-], which contains no character
 # JSON gives a meaning to. That check is what makes this safe, so it must stay above this line.
 printf '%s\n' "$list" | awk 'BEGIN { printf "[" } { printf "%s\"%s\"", (NR > 1 ? "," : ""), $0 } END { print "]" }'
@@ -5916,6 +6053,19 @@ check "a version with one agent is accepted" "$status" "0"
 # another's version number, and the refusal would be recorded as a failed install.
 resolve "claude codex" 2.1.270
 check "a version with several agents is refused" "$status" "1"
+
+# The agent list is validated one name at a time, and then BOTH values are written to $GITHUB_OUTPUT,
+# which is a key=value-per-line file. A version containing a newline writes a second `agents=` line that
+# overrides the validated one, so the list reaching the matrix would have passed no check at all.
+resolve claude 'x
+agents=["evil"]'
+check "a version carrying a newline is refused" "$status" "1"
+
+resolve claude 'v1.0 --flag'
+check "a version outside Gate A's charset is refused" "$status" "1"
+
+resolve claude 1.2.3-beta.1
+check "a version using every permitted character is accepted" "$status" "0"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
@@ -6141,9 +6291,9 @@ with:
 sh sandbox/tests/resolve-agents.sh
 ```
 
-Expected: passes, including `a repeated name appears once, in the order given`, `all excludes the harness itself`.
+Expected: passes, including `a repeated name appears once, in the order given`, `a version carrying a newline is refused`.
 
-- [ ] **Step 6: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 6: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 7: Commit**
 
@@ -6661,6 +6811,14 @@ on:
   # Run from the Actions tab or `gh workflow run ci.yml --ref <branch>`, on any branch.
   workflow_dispatch:
 
+# Least privilege, workflow-wide. Every job here runs code the pull request supplies -- `cargo nextest
+# run --workspace` executes its tests, `cargo doc` its build scripts -- so the token those jobs hold is
+# bounded here rather than left to the repository's default Actions permission, which is a setting outside
+# this file and can be widened without anyone reading this workflow. `sandbox.yml` already pins it; this
+# workflow did not. A job that needs more grants it for itself.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -6786,21 +6944,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: steps.changed.outputs.files != ''
 
+      # Building the manifest compiles pull-request-supplied Rust: the example itself, and every build
+      # script of every dependency its Cargo.toml names. That is unavoidable -- the id and version must
+      # come from the REGISTRY as the pull request states it, never from the filename, because
+      # upstream_version permits `-` and `cursor-1.0.0-beta.1.md` splits two ways. What IS avoidable is
+      # holding an API token while doing it, so this step declares none.
+      - name: Build the registry manifest
+        if: steps.changed.outputs.files != ''
+        run: cargo run --quiet --example evidence-manifest > "$RUNNER_TEMP/manifest"
+
       - name: Verify each against its run
         if: steps.changed.outputs.files != ''
         env:
-          # The id and version come from the REGISTRY, never from the filename: upstream_version permits
-          # `-`, so `cursor-1.0.0-beta.1.md` splits two ways and the wrong split verifies the wrong file.
           GH_TOKEN: ${{ github.token }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           FILES: ${{ steps.changed.outputs.files }}
-        # Nothing from the transcript is interpolated into this shell. The script opens the files itself,
+        # Nothing from a transcript is interpolated into this shell. The script opens the files itself,
         # which is what keeps a pull-request-supplied run id out of the runner's generated script.
         run: |
           set -eu
-          cargo run --quiet --example evidence-manifest > /tmp/manifest
           # shellcheck disable=SC2086 # $FILES is a space-separated list of paths, and the split is wanted
-          sandbox/verify-transcripts.sh /tmp/manifest "$HEAD" $FILES
+          sandbox/verify-transcripts.sh "$RUNNER_TEMP/manifest" "$HEAD" $FILES
 ```
 
 - [ ] **Step 5: Edit `justfile`** — Each suite joins the gate with the code it covers. Replace exactly this text, which occurs once:
@@ -6824,7 +6988,7 @@ sh sandbox/tests/verify-transcripts.sh
 
 Expected: passes, including `an edited transcript is refused`, `a harness commit outside the pull request's history is refused`.
 
-- [ ] **Step 7: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 7: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 8: Commit**
 
@@ -7717,6 +7881,21 @@ Also open after SP4:
 - [ ] A transcript cannot be introduced or modified after its artifact expires, so a probe run left
       uncommitted past the retention window must be re-run. The window is a workflow setting that can be
       shortened without noticing what depends on it.
+- [ ] **The `Evidence` job only gates a merge if someone makes it a required status check.** That is a
+      branch-protection setting, not a file in this repository, so nothing here can assert it. Until it is
+      set, the byte-binding in the design's §5.3 is advice: a pull request can go green with the job red.
+- [ ] **`custody: off-ci` currently exempts a transcript from every mechanical check.** The clause that
+      confines it — Gate A requiring `custody: ci` for any transcript backing a config or state claim —
+      lands with the transcript clauses in the fold commit, not in SP4a. Between SP4a merging and that
+      commit, a green `Evidence` check on a pull request that adds an `off-ci` transcript conveys nothing,
+      and the only backstop is a human reading it.
+- [ ] **The `Evidence` job runs pull-request-supplied code in a job that later holds an API token.** The
+      manifest build is a separate step that declares no token, and the workflow pins `contents: read`, so
+      the exposure is bounded — but `sandbox/verify-transcripts.sh` is itself supplied by the pull request
+      and does hold one. This is true of every `pull_request` job here (`cargo nextest run --workspace`
+      runs the pull request's tests), and on a public repository with a fork's read-only token the
+      marginal grant is `actions: read`. Recorded because it is a real property, not because it is
+      currently exploitable.
 
 ## Housekeeping
 
@@ -7757,7 +7936,7 @@ typos
 
 Expected: prints nothing.
 
-- [ ] **Step 8: Run the gate** (see "Gate commands"). Expected on Windows: `239 tests run: 239 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 8: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
 - [ ] **Step 9: Commit**
 
