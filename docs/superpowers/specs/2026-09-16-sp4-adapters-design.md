@@ -41,7 +41,7 @@ each adapter is proven.
 | Area | V3 |
 |---|---|
 | Rendering support level and capability states in the dry-run and `--verbose` report | §3, §26, §37 |
-| A launch-path hedge for adapters that are not `Proven`, and a key to suppress it | §3, §37 |
+| A launch-path hedge for adapters that are not `Proven` | §3, §37 |
 | Evidence invariants enforced by the contract suite (gates A–C, §5) | §28, §37 |
 | Binding each committed transcript to the CI run that produced it (§5.3) | §28 |
 | Probe-harness correctness fixes: exit status, per-command timeout, step order, baseline snapshot (D13) | §34 |
@@ -99,7 +99,7 @@ Evidence marks: **measured** (run and observed; for this document, in the reposi
 |---|---|---|
 | D1 | SP4 runs in two phases with a measurement step between them: **SP4a** (visibility, invariants, probe-harness fixes, twelve probe scripts, workflow, transcript verification) against code that exists now; **the probe run**, twelve agents in CI; **the fold commit**, which lands the transcripts and Gate A's transcript half together; then **SP4b**, the nine adapters. | reasoned: the owner's plan-vs-spec rule forbids a line-level plan whose "existing code" is an unmeasured third-party product. measured: `sandbox/run.sh:51-54` refuses a probe with no script, so every probe script must exist before the probe run — the scripts are SP4a deliverables. The fold commit is separate because Gate A's transcript assertion cannot land before the transcripts do: see §5.2. |
 | D2 | The report gains a `support:` line and an `isolation:` block naming each capability's state and its `basis`, in both report modes, unconditionally. | measured: the report is the only surface carrying `mechanism` (`output.rs:51`). Unconditional because §1.1's tier-B ruling rests on the matrix always accompanying the support level. The `basis` shows in both modes because D3's hedge directs the user to the report for the reason. |
-| D3 | An adapter whose support level is not `Proven` prints one line to stderr before the agent starts — but only when no report is rendered, since `--dry-run` and `--verbose` already show the whole block. It names **every** capability whose state is not `Supported`. A configuration key suppresses it. | measured: the report renders only for `--dry-run` and `--verbose` (`crates/agent-profile/src/cli.rs:596`, `:605`), and the verbose report already goes to stderr on a real launch (`cli.rs:603-608`), so printing both would tell a user who just read the matrix to run `--dry-run` for detail. Listing only `Unknown` and `NotSupported` would have omitted `NotGuaranteed`, which is exactly Kiro's predicted `ConfigIsolation` state (§8.5) — the earlier draft's own example contradicted its own rule. `Capability::ALL` has a fixed order (`metadata.rs:39-41`). |
+| D3 | An adapter whose support level is not `Proven` prints one line to stderr before the agent starts — but only when no report is rendered, since `--dry-run` and `--verbose` already show the whole block. It names **every** capability whose state is not `Supported`. **No suppression key ships in SP4** (§7.2). | measured: the report renders only for `--dry-run` and `--verbose` (`crates/agent-profile/src/cli.rs:596`, `:605`), and the verbose report already goes to stderr on a real launch (`cli.rs:603-608`), so printing both would tell a user who just read the matrix to run `--dry-run` for detail. Listing only `Unknown` and `NotSupported` would have omitted `NotGuaranteed`, which is exactly Kiro's predicted `ConfigIsolation` state (§8.5) — the earlier draft's own example contradicted its own rule. `Capability::ALL` has a fixed order (`metadata.rs:39-41`). |
 | D4 | **Gate A.** No adapter is registered unless its mechanism token was observed in the agent's own artefact at the version recorded in `evidence.upstream_version`. Enforced mechanically, **over `REAL_ADAPTERS` only**, by the clauses in §5, and bound to a real CI run by §5.3. | measured: `metadata_invariants` asserts only non-emptiness today (`crates/agent-profile/tests/adapter_contract.rs:264-266`), which any placeholder satisfies; a URL-shape check alone is satisfied by `https://example.com/`. The `REAL_ADAPTERS` scope is load-bearing: `registry()` includes `Fake` in every debug build (`adapter/mod.rs:112-120`) and tests build in debug, so an unscoped Gate A would demand `docs/evidence/fake-0.0.0.md` (`adapter/fake.rs:24`) for a fixture with no upstream product — satisfiable only by hand-writing the exact artefact §7.4 exists to detect. The pinned-support assertion already uses `REAL_ADAPTERS` (`adapter_contract.rs:275`). |
 | D5 | **Gate B.** Every `basis` begins with `measured: `, `cited: ` or `unmeasured: `, contains no newline, and **`unmeasured:` and `CapabilityState::Unknown` imply each other**. The prefix names the provenance of the evidence that **establishes the state**; any supporting fact of weaker provenance is marked inline. Separately, and manually (§5.1), a `basis` for any state other than `NotSupported` either names a specific bypass or states that a search found none. | measured: this is what the shipped adapters already do informally — `claude.rs:25-27` enumerates eight override variables, `codex.rs:29-31` four. The biconditional is what makes D7 enforceable: without it, an implementer reaches `Proven` by writing `NotGuaranteed` with an `unmeasured:` basis, and every mechanical gate still passes. reasoned: the prefix names the *decisive* evidence rather than the weakest fact mentioned, because a weakest-wins rule rewards deleting an inconvenient sentence — it would demote a 90%-measured claim for admitting one inference, so the cheapest compliance is a shorter basis. The no-newline rule protects the "one `Vec` entry is one line" contract (`output.rs:30`, `cli.rs:596-597`). |
 | D6 | **Gate C.** `SupportLevel::Proven` requires non-empty `notes` and **at most one** `Unknown` capability claim. The pinned support list at `adapter_contract.rs:275-286` is **kept** alongside the new invariant. | owner ruling, 2026-09-16 (§4.1): V3:132-133 permits exactly this. measured: the pinned triple and the invariant catch opposite mistakes. Gate C never asserts that any adapter *is* `Proven`, so replacing the list would let a one-word demotion of `claude` pass the suite silently while adding a permanent stderr banner to the flagship adapter. |
@@ -111,10 +111,17 @@ Evidence marks: **measured** (run and observed; for this document, in the reposi
 | D12 | All nine ship in one wave rather than split by measurability. | cited: research on 2026-09-16 established that every one of the nine installs and runs `--help`/`--version` with no account, and every one needs an account to do real work. The proposed split axis puts all nine in the same bucket. |
 | D13 | The probe harness is repaired **before** the probe run: `probe_record` propagates failure, every recorded command runs under a timeout, `cargo build` runs once per job rather than once per recorded step and its failure is recorded, and `probe_behaviour` takes a baseline snapshot. | measured, and this is the finding that would have wasted the whole run: `probe_record` ends with `set -e` (`sandbox/probes/common.sh:18`), and a shell function returns the status of its last command, so `probe_record` **always returns 0**. Every probe script ends in `probe_agent_profile`, which ends in `probe_record dry-run`, so a probe whose install failed and whose every later command returned 127 still exits 0 and the Actions job is green. There is no `timeout` anywhere in `common.sh` or `run.sh`, and `cargo build` at `common.sh:23` is unguarded, so under `set -eu` (`:7`) a build failure aborts the probe after the install, leaving transcripts that look complete with no behavioural step. Scope note: under D9's matrix the crate is built once per *job*, which is once per agent; building it once across all agents is not achievable and is not claimed. |
 
-### 4.1 D6: the oracle conflict, and the owner's ruling
+### 4.1 D6: the owner's ruling, and a correction to how it was framed
 
-The draft rule was "`Proven` requires that no capability claim is `Unknown`". V3 states the opposite
-permission directly:
+**This was never an oracle conflict, and the panel round that called it one was wrong.** V3:132-133
+grants a *permission* — an adapter **may** be `Proven` with one `Unknown` — and declining a permission is
+not divergence. Nothing in V3 requires any particular adapter to *be* `Proven`; §37 asks only that all
+twelve have evidence. The stricter gate was therefore always available without anything to report, and
+§1.1 carries no row for it. The ruling below stands on its merits, not on deference to the oracle, and
+the record is corrected here so that a later reader does not mistake a product decision for a forced one.
+
+The draft rule was "`Proven` requires that no capability claim is `Unknown`". V3 states the permission
+directly:
 
 > `agent-profile-implementation-spec-v3.md:132-133` — "An adapter may be `Proven` while one capability
 > remains `Conditional`, `NotGuaranteed`, or `Unknown`."
@@ -252,9 +259,13 @@ and in the same block, so a user cannot read `support: proven` without also read
 "Presented as a guaranteed isolated account" would require a surface that asserts isolation without that
 qualification, and SP4 ships none.
 
-Two consequences are binding. D2's matrix may not become conditional or opt-in in a later sub-project
-without revisiting this ruling, and SP5's JSON output must carry the capability states in the same
-object as the support level for the same reason. Both are recorded in `TODO.md`.
+**Three consequences are binding, and they are the price of the ruling.** D2's matrix may not become
+conditional or opt-in in a later sub-project without revisiting it. SP5's JSON output must carry the
+capability states in the same object as the support level. And **every other surface that names a support
+level must name the capabilities too** — which the draft broke in its own §11, by proposing a README
+column listing tier-B agents as `proven` with no caveat anywhere near them. That is fixed in §11; the
+general rule is recorded here because the next surface to show a support level will face it again. All
+three are in `TODO.md`.
 
 ## 7. Architecture
 
@@ -313,15 +324,21 @@ every capability is `Supported`, the line names the support level alone. The `--
 because that report also goes to stderr on a real launch (`cli.rs:603-608`), and pointing a user who just
 read the full matrix at `--dry-run` would be absurd.
 
-**Suppression.** A top-level boolean `hide_support_warning` in `config.toml`, default `false`, applying to
-every adapter. It needs a new arm in the strict schema at `crates/agent-profile/src/config.rs:210-220`,
-whose `_` arm rejects any unrecognised key as `"unknown key"` (`:219`). One consequence must be
-documented rather than discovered: a configuration file using this key is rejected by any earlier binary,
-because that binary's schema does not know it.
+**No suppression key ships in SP4, and that is a consequence of D6's ruling.** The draft carried a
+`hide_support_warning` configuration key, justified by the argument that a warning which can never be
+cleared is trained away within a week. That argument described the *stricter* Gate C, under which the
+hedge would have fired on nine of twelve adapters forever. Under the ruling it fires only for an adapter
+with two `Unknown` capabilities — one whose mechanism was never established at all.
 
-Under D6's ruling this line is rare rather than universal — it marks an adapter whose mechanism is not
-established, not merely one with an unmeasured credential claim. That is what keeps it readable. Its
-limits are recorded in §12 rather than papered over.
+How often that happens is not known, and §6 says why: it depends on which agents write state files before
+they need the network, which is exactly what the probe run measures. The key is also not free — the
+schema is strict (`crates/agent-profile/src/config.rs:219` rejects any unrecognised key as
+`"unknown key"`), so shipping it means a configuration file written for the new binary is rejected by
+every earlier one. Breaking configuration compatibility to mute a warning whose frequency nobody has
+measured is the behaviour this document forbids everywhere else, so the key waits for the evidence. If
+the probe run shows the hedge is common, SP5 adds suppression with a measured reason.
+
+The hedge's remaining limits are recorded in §12 rather than papered over.
 
 ### 7.3 Probe harness (D8, D13)
 
@@ -553,8 +570,7 @@ remains available for a later authenticated measurement under §7.4.1.
 | `tests/adapter_contract.rs` | gates A-shape, B and C in `metadata_invariants` (SP4a); Gate A's transcript clauses in the fold commit (§5.2); one `expected()` row per new adapter (the `panic!` at `:131` makes a missing row a failure, not a silent pass); one `conflict_contract` row each, non-empty for Continue and Amp per D11. |
 | `tests/adapters_e2e.rs` | one row per new adapter, launching `fake-agent` under the adapter's own executable name, proving the plan reaches the child. No real agent runs in CI. |
 | `src/output.rs` unit tests | the `support:` and `isolation:` rendering for each `CapabilityState` spelling; the `basis` line in both modes; **a capability with no claim renders `not declared` and does not panic** (§7.1). **Re-baseline the positional assertions at `output.rs:392-393` and `:400`.** |
-| `tests/launch.rs` | the D3 stderr hedge: present for an `Experimental` adapter, absent for a `Proven` one, absent on a dry run, **absent under `--verbose`**, listing every capability that is not `Supported` (including a `NotGuaranteed` one, which the earlier draft would have omitted), suppressed by `hide_support_warning`, and on stderr rather than stdout. **Re-baseline `launch.rs:143`.** |
-| `src/config.rs` unit tests | `hide_support_warning` parses as a boolean, defaults to `false`, and rejects a non-boolean with the schema's existing error shape. |
+| `tests/launch.rs` | the D3 stderr hedge: present for an `Experimental` adapter, absent for a `Proven` one, absent on a dry run, **absent under `--verbose`**, listing every capability that is not `Supported` (including a `NotGuaranteed` one, which the earlier draft would have omitted), and on stderr rather than stdout. **Re-baseline `launch.rs:143`.** |
 | Probe harness | `probe_record` returns non-zero for a failed command — the D13 regression that would otherwise make the whole probe run meaningless. Testable without any agent: record `sh -c 'exit 3'`. |
 | `ProfilePresence::Known` | the variant stays; a test asserts the `status` label renders it, so the arm at `cli.rs:739` is not dead code that a later reader deletes. |
 
@@ -563,8 +579,10 @@ discipline: a test that cannot fail is a test that certifies nothing.
 
 ## 11. Documentation
 
-- `README.md`: the supported-agent table grows to twelve, with a support-level column, and states the
-  Windows shim consequence of §12.
+- `README.md`: the supported-agent table grows to twelve. It carries a support-level column **and a
+  capability summary in the same row**, so `proven` never appears without its credential caveat beside
+  it — §6.1's argument is only true if it holds on every surface, and a support column alone would be
+  exactly the presentation V3:139-140 forbids. The table also states the Windows shim consequence of §12.
 - `CONTRIBUTING.md`: how to add an adapter, pointing at the gates and at `docs/evidence/`.
 - `docs/evidence/README.md`: what a transcript is for, both custody shapes (§7.4, §7.4.1), how §5.3
   verifies one, how to refresh one, and that a refresh replaces rather than accumulates.
@@ -592,8 +610,9 @@ discipline: a test that cannot fail is a test that certifies nothing.
   `exec` hands the terminal over, and an agent that opens a full-screen alternate-screen TUI may clear it
   before it is read. The durable disclosures are the report and the README; a first-launch acknowledgement
   belongs with `create` in SP5.
-- **`hide_support_warning` breaks backward compatibility of the configuration file.** The schema is strict
-  (`config.rs:219` rejects any unknown key), so a file using the new key fails on an earlier binary.
+- **The hedge cannot be turned off in SP4.** Suppression was deferred (§7.2) because its frequency is
+  unmeasured and the strict schema makes a new key a compatibility break. A user who finds the line
+  repetitive has no escape hatch until SP5.
 - **On Windows, most of the nine are both unmeasured and refused by default.** They are npm-installed, so
   the executable is a shim, and a shim is refused with a hint rather than parsed (`src/exe.rs:32`, SP2
   design D2, V3 §23.2) — a user must set `executable` in the configuration. Meanwhile the probe runs in a
