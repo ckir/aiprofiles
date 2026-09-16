@@ -53,6 +53,14 @@ mkdir -p "$PROBE_STATE"
 : > "$PROBE_STATE/failures"
 : > "$PROBE_STATE/steps"
 mkdir -p "$PROBE_TARGET"
+# Where `probe_pristine` keeps the pre-launch copy of each watched default location — beside `failures`
+# and `steps`, and for the same reason: the measured party must not be able to rewrite the state the
+# harness restores it to, and /out is writable by it. Cleared rather than merely created, because the
+# archives are numbered from the index and a stale `1.tar` beside a fresh index would be restored over a
+# location it was never taken from.
+rm -rf "$PROBE_STATE/pristine"
+mkdir -p "$PROBE_STATE/pristine"
+: > "$PROBE_STATE/pristine/index"
 
 # probe_record <name> <command...>: run a command under a timeout, keep its output and exit code in /out.
 #
@@ -299,6 +307,114 @@ probe_prepare_target() {
     esac
 }
 
+# --- keeping every launch attributable, not just the first ----------------------------------------
+#
+# `probe_prepare_target` resets the TARGET before each launch; nothing reset the DEFAULT LOCATION, and an
+# agent initialises that location on its first launch. So a probe that launches more than once — cline's
+# three mechanisms, opencode's two, every candidate in an acceptance sweep — took its second baseline over
+# a location the first launch had already populated, and the files whose appearance IS the
+# isolation-failure signal sat on both sides of `comm` and cancelled out of the delta. Measured with a stub
+# that ignores the mechanism and recreates its config on every launch: the delta was 0 bytes where the same
+# stub measured first produced `+ f .aider.chat.history.md` and `+ f .aider.conf.yml`. A reader does not see
+# a gap — it reads as the mechanism isolating, which is the exact wrong answer.
+#
+# Restoration is EXACT: a tar of the pre-launch state, unpacked over a cleared location. Deleting whatever
+# appeared would be cheaper and wrong — an agent that rewrites or deletes its own config between launches
+# leaves a MODIFIED file that a delete-what-is-new pass keeps, and the next delta is then missing the row
+# it exists to record.
+#
+# HOW THE HELPERS LEARN THE LOCATIONS. `probe_behaviour` is told its default location as an argument;
+# `probe_candidates` is not told at all, because §8.4's question is about acceptance rather than about
+# where files land. The choice made here is LAZY ON FIRST USE — `probe_behaviour` registers the location
+# it is handed the first time it sees it, and every later launch of either kind restores everything
+# registered so far. The alternative, a `probe_pristine` line or a variable in each of the twelve probe
+# scripts, was rejected because it puts the contract in twelve places that can each forget it; lazy
+# registration keeps it in this file, and the nine probe scripts that launch only through `probe_behaviour`
+# need no change at all.
+#
+# Lazy registration has one requirement, and it is the one §7.3 already states: the FIRST launch of a probe
+# must be a `probe_behaviour`, or the archive captures a default location an earlier sweep has already
+# dirtied. `sandbox/tests/probe-harness.sh`'s order check now REJECTS a script that sweeps candidates
+# first, so that is enforced mechanically rather than assumed — and a probe whose first launch cannot be a
+# behaviour step can call `probe_pristine` itself, up front, which is what the three sweep scripts do.
+
+# probe_pristine_id <location>: the number this location was registered under, or nothing if it was not.
+probe_pristine_id() {
+    while read -r probe_id_n probe_id_p; do
+        if [ "$probe_id_p" = "$1" ]; then
+            printf '%s' "$probe_id_n"
+            return 0
+        fi
+    done < "$PROBE_STATE/pristine/index"
+    return 0
+}
+
+# probe_pristine <location...>: record each location's pre-launch state, once, the first time it is seen.
+#
+# Idempotent by design: a location already registered KEEPS its first archive, so calling this again after
+# a launch cannot quietly re-baseline the measurement onto a dirtied location.
+probe_pristine() {
+    for probe_loc in "$@"; do
+        [ -n "$probe_loc" ] || continue
+        [ -z "$(probe_pristine_id "$probe_loc")" ] || continue
+        probe_pn=$(($(wc -l < "$PROBE_STATE/pristine/index") + 1))
+        printf '%s %s\n' "$probe_pn" "$probe_loc" >> "$PROBE_STATE/pristine/index"
+        if [ ! -e "$probe_loc" ]; then
+            # A location the agent has not created yet. Its ABSENCE is the state to restore, and a marker
+            # records it: "registered and absent" and "never registered" must not look the same to
+            # `probe_restore_default`, or a failed archive would read as absence and delete a real one.
+            : > "$PROBE_STATE/pristine/$probe_pn.absent"
+        elif ! tar -cf "$PROBE_STATE/pristine/$probe_pn.tar" \
+            -C "$(dirname "$probe_loc")" "$(basename "$probe_loc")" 2>/dev/null; then
+            rm -f "$PROBE_STATE/pristine/$probe_pn.tar"
+            echo "probe: could not archive $probe_loc before the first launch" >&2
+            probe_fail "pristine-$probe_pn" 1
+        fi
+    done
+}
+
+# probe_restore_default <location>: put the location back the way `probe_pristine` found it.
+probe_restore_default() {
+    probe_rloc=$1
+    # A destructive step, so the two values that would make it catastrophic are refused outright rather
+    # than trusted to never be passed.
+    if [ -z "$probe_rloc" ] || [ "$probe_rloc" = / ]; then
+        echo "probe: refusing to restore '$probe_rloc'" >&2
+        return 0
+    fi
+    probe_rn=$(probe_pristine_id "$probe_rloc")
+    # Not registered: there is no pre-launch state to restore TO, and deleting the location would destroy
+    # the very evidence the caller is about to snapshot.
+    [ -n "$probe_rn" ] || return 0
+    if [ -f "$PROBE_STATE/pristine/$probe_rn.tar" ]; then
+        rm -rf "$probe_rloc"
+        mkdir -p "$(dirname "$probe_rloc")"
+        # stdin is closed to it because callers iterate the index over the loop's stdin; `-f` means tar
+        # never wants stdin anyway, and this makes that independent of tar's implementation.
+        if ! tar -xf "$PROBE_STATE/pristine/$probe_rn.tar" \
+            -C "$(dirname "$probe_rloc")" < /dev/null; then
+            echo "probe: could not restore $probe_rloc from its pristine copy" >&2
+            probe_fail "restore-$probe_rn" 1
+        fi
+    elif [ -f "$PROBE_STATE/pristine/$probe_rn.absent" ]; then
+        rm -rf "$probe_rloc"
+    else
+        echo "probe: no pristine copy of $probe_rloc; leaving it as it is" >&2
+    fi
+}
+
+# probe_restore_known: restore every location registered so far.
+#
+# `probe_candidates` has no location argument, so this is how a sweep runs each candidate against the same
+# default location the one before it saw. That also makes the sweep's own exit codes attributable: state a
+# previous candidate left behind can decide whether the next one is accepted.
+probe_restore_known() {
+    while read -r probe_kn probe_kp; do
+        [ -n "$probe_kn" ] || continue
+        probe_restore_default "$probe_kp"
+    done < "$PROBE_STATE/pristine/index"
+}
+
 # probe_apply <name> <executable> <mechanism> <arg>...: run the agent once with the mechanism applied.
 #
 # The mechanism vocabulary is FOUR words, not the two §7.3 first named, because two cannot express what §8
@@ -360,6 +476,18 @@ probe_behaviour() {
     [ $# -gt 0 ] || set -- --version
     probe_lbl=$(probe_label "$probe_mech")
 
+    # Measurement n has to be attributable, not just measurement 1: register the default location's
+    # pre-launch state the first time it is seen, and put it back before every launch after that. Without
+    # this, cline's second and third mechanisms and opencode's second read as clean because the FIRST
+    # launch already wrote the files — and those repetitions cannot be reordered away, because measuring
+    # three mechanisms means launching three times.
+    # shellcheck disable=SC2086 # <default-location> is a whitespace-separated LIST; the split is the point
+    probe_pristine $probe_default
+    # shellcheck disable=SC2086
+    for probe_bloc in $probe_default; do
+        probe_restore_default "$probe_bloc"
+    done
+
     # Baseline BOTH locations, after the install and after anything this probe itself created. The install
     # ran vendor code, and a file mechanism means the probe wrote the candidate; neither is the agent's
     # doing, and attributing them to the agent would read as isolation that did not happen.
@@ -395,6 +523,9 @@ probe_candidates() {
     : > "$PROBE_OUT/candidates.txt"
     for probe_cand in "$@"; do
         probe_n=$((probe_n + 1))
+        # Each candidate is its own launch, and each launch initialises the agent's default location.
+        # Restoring first keeps the sweep from deciding what a LATER behaviour step can still observe.
+        probe_restore_known
         probe_prepare_target "$probe_cand"
         printf '%s: %s\n' "$probe_n" "$(printf '%s' "$probe_cand" | tr '\n' ' ')" \
             >> "$PROBE_OUT/candidates.txt"

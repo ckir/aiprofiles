@@ -231,6 +231,50 @@ check "the accepted candidate is recorded as accepted" \
 check "the index says what each candidate held" \
     "$(sed -n 4p "$PROBE_OUT_DIR/candidates.txt")" "4: {}"
 
+# --- the default location, between launches -------------------------------------------------------
+
+# The defect: nothing reset the agent's DEFAULT location between launches, so only the FIRST launch of a
+# probe was attributable. `probe_candidates` launches once per candidate and each launch initialises that
+# location; the `probe_behaviour` that followed then baselined over the files the sweep had already
+# written, and they sat on both sides of `comm` and cancelled out of the delta — which reads as the
+# mechanism isolating, the exact wrong answer. Measured before the fix, with this stub: 0 bytes.
+default_loc_3=$(mktemp -d)
+rm -rf "$default_loc_3"
+repeater_body='mkdir -p "'"$default_loc_3"'"; : > "'"$default_loc_3"'/config.json"'
+stage repeater "$repeater_body"
+run_staged "probe_pristine $default_loc_3
+probe_candidates repeater flagfile:--config \"{}\" \"{}\"
+probe_behaviour repeater $default_loc_3 flagfile:--config \"{}\""
+check "a launch after an earlier launch is still attributable" \
+    "$(grep -Fxc "+ f $default_loc_3/config.json" "$PROBE_OUT_DIR/delta-flagfile---config.txt")" "1"
+
+# The same defect where reordering cannot reach it: measuring cline's three mechanisms or opencode's two
+# means launching three times or twice, and every launch after the first was blind. Nothing here calls
+# `probe_pristine` — the registration has to happen on its own, the first time `probe_behaviour` is handed
+# the location — because the nine probe scripts that only measure behaviour say nothing about it.
+default_loc_4=$(mktemp -d)
+rm -rf "$default_loc_4"
+rewriter_body='mkdir -p "'"$default_loc_4"'"; : > "'"$default_loc_4"'/config.json"'
+stage rewriter "$rewriter_body"
+run_staged "probe_behaviour rewriter $default_loc_4 env:SOME_HOME @none
+probe_behaviour rewriter $default_loc_4 flagdir:--data-dir @none"
+check "a second mechanism's delta is not blinded by the first mechanism's launch" \
+    "$(grep -Fxc "+ f $default_loc_4/config.json" "$PROBE_OUT_DIR/delta-flagdir---data-dir.txt")" "1"
+
+# A default location is not always a directory — Aider's is the file `.aider.conf.yml` (aider.rs:15) — and
+# it is not always the agent CREATING something: this stub DELETES its own config, which is why the
+# restore is an exact unpack of the pre-launch state rather than "remove whatever appeared". A heuristic
+# that only undoes additions leaves the second launch with nothing left to delete, and the `- f` row that
+# says the agent removed its config never appears again.
+default_file=$(mktemp)
+: > "$default_file"
+deleter_body='rm -f "'"$default_file"'"'
+stage deleter "$deleter_body"
+run_staged "probe_behaviour deleter $default_file env:SOME_HOME @none
+probe_behaviour deleter $default_file flagdir:--data-dir @none"
+check "a file default location is restored between launches" \
+    "$(grep -Fxc -e "- f $default_file" "$PROBE_OUT_DIR/delta-flagdir---data-dir.txt")" "1"
+
 # --- probe_strip_ansi and probe_excerpt -----------------------------------------------------------
 
 run_probe 'printf "\033[1;31mred\033[0m plain\n" | probe_strip_ansi > "$PROBE_OUT/stripped"'
@@ -307,6 +351,40 @@ check "the refusal is recorded as a failed install" \
 # only exists in prose is one a twelfth probe script can quietly break — and it would not fail, it would
 # produce a plausible, wrong measurement: a baseline taken after a launch attributes the launch's own
 # files to the install.
+# order_fault <order-string>: what the contract says is wrong with this step order, or nothing.
+#
+# A FUNCTION, rather than a case statement inline in the loop below, so that the REJECTING half can be
+# tested. The loop only ever feeds it orders that should pass; a check that proves acceptance and never
+# rejection is what let the candidates-before-behaviour inversion through for three scripts while printing
+# `ok` for each of them.
+order_fault() {
+    case "$1" in
+        # install, version, help, strings, then one or more behaviour/candidates steps.
+        "npm version help strings "* | "uv version help strings "* | "script version help strings "*) ;;
+        *) echo "does not follow the six-step order"; return 0 ;;
+    esac
+    case "$1" in
+        *behaviour*) ;;
+        *) echo "never measures behaviour"; return 0 ;;
+    esac
+    # The rationale above, made mechanical. `common.sh` learns a default location's pre-launch state the
+    # first time that location is named, and only `probe_behaviour` names one — so a candidate sweep that
+    # runs first launches the agent before anything has archived the location it writes to, and the
+    # behaviour delta that follows cancels to nothing. Measured with a stub that recreates its config on
+    # every launch: candidates-then-behaviour gave a 0-byte delta where behaviour-first named the file.
+    case "$1" in
+        *candidates*behaviour*) echo "sweeps candidates before it measures behaviour"; return 0 ;;
+    esac
+    return 0
+}
+
+# The distractor: the check must REJECT the inversion, not merely accept the right order.
+check "the order check rejects a sweep before the behaviour step" \
+    "$(order_fault "npm version help strings candidates behaviour ")" \
+    "sweeps candidates before it measures behaviour"
+check "the order check accepts the behaviour step before the sweep" \
+    "$(order_fault "uv version help strings behaviour candidates ")" ""
+
 for script in "$root"/sandbox/probes/*.sh; do
     name=$(basename "$script" .sh)
     case "$name" in
@@ -317,23 +395,12 @@ for script in "$root"/sandbox/probes/*.sh; do
     order=$(grep -n '^probe_\(npm_install\|uv_install\|script_install\|version\|help\|strings\|behaviour\|candidates\)' \
         "$script" | sed 's/:.*probe_/ /' | sed 's/_install//' | awk '{print $2}' | tr '\n' ' ')
 
-    case "$order" in
-        # install, version, help, strings, then one or more behaviour/candidates steps.
-        "npm version help strings "* | "uv version help strings "* | "script version help strings "*) ;;
-        *)
-            echo "FAIL - $name.sh does not follow the six-step order: '$order'"
-            failures=$((failures + 1))
-            continue
-            ;;
-    esac
-    case "$order" in
-        *behaviour*) ;;
-        *)
-            echo "FAIL - $name.sh never measures behaviour"
-            failures=$((failures + 1))
-            continue
-            ;;
-    esac
+    fault=$(order_fault "$order")
+    if [ -n "$fault" ]; then
+        echo "FAIL - $name.sh $fault: '$order'"
+        failures=$((failures + 1))
+        continue
+    fi
     echo "ok   - $name.sh follows the six-step order"
 done
 

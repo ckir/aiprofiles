@@ -15,10 +15,13 @@
 . sandbox/probes/common.sh
 
 PROBE_CONFIG_NAME=settings.json
+default="$HOME/.config/amp"
 
 probe_npm_install @ampcode/cli
 probe_version amp
 probe_help amp
 probe_strings amp AMP_API_KEY AMP_URL AMP_SETTINGS_FILE
+# See aider.sh: recorded before the first launch of either step, so both stay attributable.
+probe_pristine "$default"
+probe_behaviour amp "$default" flagfile:--settings-file "{}"
 probe_candidates amp flagfile:--settings-file @none "" "{}"
-probe_behaviour amp "$HOME/.config/amp" flagfile:--settings-file "{}"

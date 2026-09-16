@@ -15,10 +15,13 @@
 . sandbox/probes/common.sh
 
 PROBE_CONFIG_NAME=config.yaml
+default="$HOME/.continue"
 
 probe_npm_install @continuedev/cli
 probe_version cn
 probe_help cn
 probe_strings cn CONTINUE_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY
+# See aider.sh: recorded before the first launch of either step, so both stay attributable.
+probe_pristine "$default"
+probe_behaviour cn "$default" flagfile:--config "{}"
 probe_candidates cn flagfile:--config @none "" "# nothing" "{}"
-probe_behaviour cn "$HOME/.continue" flagfile:--config "{}"
