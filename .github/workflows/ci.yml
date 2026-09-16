@@ -8,6 +8,14 @@ on:
   # Run from the Actions tab or `gh workflow run ci.yml --ref <branch>`, on any branch.
   workflow_dispatch:
 
+# Least privilege, workflow-wide. Every job here runs code the pull request supplies -- `cargo nextest
+# run --workspace` executes its tests, `cargo doc` its build scripts -- so the token those jobs hold is
+# bounded here rather than left to the repository's default Actions permission, which is a setting outside
+# this file and can be widened without anyone reading this workflow. `sandbox.yml` already pins it; this
+# workflow did not. A job that needs more grants it for itself.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -88,3 +96,77 @@ jobs:
         run: cargo nextest run --workspace --no-tests=pass --no-fail-fast
       - name: Run doctests
         run: cargo test --doc --workspace
+
+  evidence:
+    # Binds every evidence transcript this pull request changes to the CI run that produced it (§5.3).
+    #
+    # Every gate in the contract suite checks a transcript's SHAPE. None checks that it came from
+    # anywhere, and a convincing one — real run URL from the public Actions tab, plausible --help excerpt,
+    # a column of zero exit codes — can be written by hand in minutes and passes all of them.
+    #
+    # It lives here rather than in sandbox.yml because that workflow filters on `paths: sandbox/**`
+    # (.github/workflows/sandbox.yml:13-15) and would never fire on an evidence-only pull request; ci.yml
+    # has no paths filter.
+    #
+    # `pull_request`, NEVER `pull_request_target`. The reflex when a fork's token cannot reach the API is
+    # to switch, which would run a base-repository token against pull-request-supplied bytes. Fork
+    # coverage is a separate problem and is not solved that way.
+    name: Evidence
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # `actions: read` and nothing else, and this is a SEPARATE job from the probe — which keeps
+    # `contents: read`, because the probe executes third-party installers and must stay the least
+    # privileged thing in the repository.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The ancestry check needs the harness commit and the base branch, neither of which a
+          # depth-1 checkout of the merge commit has.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find the transcripts this pull request changes
+        id: changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          files=$(git diff --name-only "$BASE" "$HEAD" -- docs/evidence/ | tr '\n' ' ')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -z "$files" ]; then
+            echo "no evidence transcript changed"
+          else
+            echo "changed: $files"
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.changed.outputs.files != ''
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.changed.outputs.files != ''
+
+      # Building the manifest compiles pull-request-supplied Rust: the example itself, and every build
+      # script of every dependency its Cargo.toml names. That is unavoidable -- the id and version must
+      # come from the REGISTRY as the pull request states it, never from the filename, because
+      # upstream_version permits `-` and `cursor-1.0.0-beta.1.md` splits two ways. What IS avoidable is
+      # holding an API token while doing it, so this step declares none.
+      - name: Build the registry manifest
+        if: steps.changed.outputs.files != ''
+        run: cargo run --quiet --example evidence-manifest > "$RUNNER_TEMP/manifest"
+
+      - name: Verify each against its run
+        if: steps.changed.outputs.files != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          FILES: ${{ steps.changed.outputs.files }}
+        # Nothing from a transcript is interpolated into this shell. The script opens the files itself,
+        # which is what keeps a pull-request-supplied run id out of the runner's generated script.
+        run: |
+          set -eu
+          # shellcheck disable=SC2086 # $FILES is a space-separated list of paths, and the split is wanted
+          sandbox/verify-transcripts.sh "$RUNNER_TEMP/manifest" "$HEAD" $FILES

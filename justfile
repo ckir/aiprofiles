@@ -50,6 +50,7 @@ probe-tests:
     sh sandbox/tests/probe-harness.sh
     sh sandbox/tests/transcript.sh
     sh sandbox/tests/resolve-agents.sh
+    sh sandbox/tests/verify-transcripts.sh
 
 # The local gate: fmt + clippy + typos + shellcheck + test + the probe harness
 check: fmt-check clippy typos shellcheck test probe-tests
