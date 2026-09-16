@@ -64,6 +64,46 @@ Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superp
 - [ ] A top-level `unlink` that removes the repository profile while agent mappings remain prints only `unlinked …`;
       the "agent mappings remain" note appears on the next run. Consider showing it on the run that creates the state.
 
+## SP4 known limits
+
+The support level and the capability states are one statement, not two. V3:139-140 forbids presenting an
+agent as a guaranteed isolated account without evidence, and SP4's answer is that `proven` never appears
+without its capability row beside it. Three consequences bind everything after SP4:
+
+- [ ] The report's capability matrix may not become conditional, opt-in or hidden behind a flag. It is what
+      makes an honest `proven` honest; making it optional reintroduces exactly the presentation V3 forbids.
+- [ ] SP5's JSON output must carry the capability states **in the same object** as the support level, for
+      the same reason. A consumer that can read one field without the other is the flag case again.
+- [ ] Any future surface that names a support level must name the capabilities too. The draft README broke
+      this rule while §6.1 was being written, which is why it is recorded here rather than assumed.
+
+Also open after SP4:
+
+- [ ] Credential isolation is unproven for every adapter that has not had an authenticated measurement.
+      Each one is a metadata edit plus an `off-ci` transcript, not new code.
+- [ ] The launch hedge cannot be suppressed. Deferred to SP5 deliberately: its frequency is unmeasured
+      until the probe run, and the strict configuration schema makes a new key a compatibility break.
+- [ ] The hedge can be erased by the agent it warns about — it is written to stderr immediately before
+      `exec`, and a full-screen TUI may clear it. A first-launch acknowledgement belongs with `create`.
+- [ ] A transcript cannot be introduced or modified after its artifact expires, so a probe run left
+      uncommitted past the retention window must be re-run. The window is a workflow setting that can be
+      shortened without noticing what depends on it.
+- [ ] **The `Evidence` job only gates a merge if someone makes it a required status check.** That is a
+      branch-protection setting, not a file in this repository, so nothing here can assert it. Until it is
+      set, the byte-binding in the design's §5.3 is advice: a pull request can go green with the job red.
+- [ ] **`custody: off-ci` currently exempts a transcript from every mechanical check.** The clause that
+      confines it — Gate A requiring `custody: ci` for any transcript backing a config or state claim —
+      lands with the transcript clauses in the fold commit, not in SP4a. Between SP4a merging and that
+      commit, a green `Evidence` check on a pull request that adds an `off-ci` transcript conveys nothing,
+      and the only backstop is a human reading it.
+- [ ] **The `Evidence` job runs pull-request-supplied code in a job that later holds an API token.** The
+      manifest build is a separate step that declares no token, and the workflow pins `contents: read`, so
+      the exposure is bounded — but `sandbox/verify-transcripts.sh` is itself supplied by the pull request
+      and does hold one. This is true of every `pull_request` job here (`cargo nextest run --workspace`
+      runs the pull request's tests), and on a public repository with a fork's read-only token the
+      marginal grant is `actions: read`. Recorded because it is a real property, not because it is
+      currently exploitable.
+
 ## Housekeeping
 
 - [ ] Enable GitHub private vulnerability reporting (see [SECURITY.md](SECURITY.md)). Branch

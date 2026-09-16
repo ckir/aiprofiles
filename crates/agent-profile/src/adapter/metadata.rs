@@ -97,8 +97,23 @@ impl ConflictOption {
 /// Whether a profile exists for an adapter (spec §8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfilePresence {
+    /// Nothing has been created for this profile yet.
     Absent,
+    /// Every path the adapter declares exists on disk.
     Materialized,
+    /// The profile can be identified from the agent's own profile mechanism, without anything of ours
+    /// existing on disk.
+    ///
+    /// **Reserved, not dead.** No adapter constructs this today and the SP3 review flagged it as unused
+    /// code, which it is — but it is unclaimed rather than obsolete. Spec §8 defines it normatively for
+    /// an agent that manages named profiles itself, where a profile is real because the agent says so
+    /// and `agent-profile` may have created no directory at all. Every adapter shipped so far is
+    /// directory-based, so the distinction has not yet had a case to express.
+    ///
+    /// Deleting it was considered in SP4 and rejected: the variant costs one line, while removing it
+    /// would make the first native-profile adapter a change to a public enum — and in the meantime
+    /// `presence()` would have to report such a profile as `Absent`, which is a false statement about a
+    /// profile the agent itself lists.
     Known,
 }
 
