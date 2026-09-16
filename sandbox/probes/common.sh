@@ -20,7 +20,9 @@ fi
 # Where the probe puts the profile it points the agent at. Fixed, so a probe script never invents one.
 # `/out` in the container; overridable so the shell suite can run this file outside one.
 PROBE_OUT=${PROBE_OUT:-/out}
-# Where the harness keeps the two files that decide the RUN'S STATUS: `failures` and `steps`.
+# Where the harness keeps its own bookkeeping: `failures`, which alone decides the RUN'S STATUS, and
+# `steps`, the ordered record of what ran and with what code. `steps` has never decided the status — it
+# carries a non-zero row for a refused candidate, which is a measurement rather than a failure.
 #
 # NOT under $PROBE_OUT. `/out` is a read-write host mount (`run.sh:167,172`, beside `/src:ro`), and the
 # measured party runs at the same uid inside the same container — an agent, or the install scripts an

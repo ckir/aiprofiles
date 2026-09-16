@@ -122,9 +122,15 @@ jobs:
           AGENT_PROFILE_SANDBOX_ENGINE: podman
           AGENT: ${{ matrix.agent }}
           VERSION: ${{ needs.prepare.outputs.version }}
-        # A failed probe is a RESULT, not a broken job: §9's outcomes 2 and 3 are both recorded by a
+        # A failed probe is a RESULT, not a broken job: §9's outcomes 2, 3 and 4 are recorded by a
         # non-zero exit, and the transcript that states them is written by the next step. The job's own
         # status is set at the end, after the evidence has been assembled and uploaded.
+        #
+        # A REFUSED CANDIDATE IS NOT ONE OF THEM. The acceptance sweep asks what the smallest config the
+        # agent tolerates is, so a refusal is the measurement, not a failure — it exits ZERO and is
+        # recorded in `exit-codes:` only. Coupling the two made aider, amp and continue unverifiable by
+        # construction, because their sweeps are designed to refuse. `verify-transcripts.sh` reads
+        # `probe-exit:` from the transcript rather than inferring the expected conclusion from the version.
         continue-on-error: true
         run: sandbox/run.sh probe "$AGENT" $VERSION
 
