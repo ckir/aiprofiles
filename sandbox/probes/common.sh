@@ -168,7 +168,21 @@ probe_script_install() {
 # the registry.
 #
 # The extraction rule is §7.3 step 2's: the first `[A-Za-z0-9._-]` run in the output that contains a
-# digit. It lives here rather than in a reviewer's head because Gate A resolves a path from the recorded
+# digit — drawn from ONE LINE, not the whole capture. `probe_record` folds stderr into the same capture
+# as stdout (`2>&1`), and ordinary startup noise on stderr sits ahead of the real version line and used
+# to win outright: `(node:1234) [DEP0040] DeprecationWarning: ...` then `fakeagent 2.7.1` extracted
+# `1234`, and a python traceback path `/usr/lib/python3.12/site-packages/x.py:41: SyntaxWarning: ...`
+# then `fakeagent 0.86.2` extracted `python3.12`. Both sit inside Gate A's charset, so nothing downstream
+# caught it, and nine of the twelve probes are npm installs, where an `(node:NNN) ...Warning` on stderr
+# is routine — this was not a rare input.
+#
+# The line is chosen by: prefer the first line that names the executable itself (`$1`); otherwise fall
+# back to the last non-empty line. Last-line-alone was considered and rejected — it breaks on an npm
+# update-notifier banner, which prints AFTER the version line, so the executable-name preference has to
+# run first. Requiring a dotted shape (`grep -E '[0-9]+\.[0-9]'`) was also rejected — it rejects `1234`
+# but still accepts `python3.12`, so it would not have fixed the actual defect.
+#
+# It lives here rather than in a reviewer's head because Gate A resolves a path from the recorded
 # version and SP4b resolves the same path from the registry; if the two derive the token differently, the
 # gate fails on a file that exists. `aider --version` prints `aider 0.86.2` — a line, not a token, and the
 # space alone violates Gate A's charset.
@@ -177,8 +191,13 @@ probe_script_install() {
 # coloured banner begins `ESC[0m`, whose `0m` is a digit-bearing run that Gate A would happily accept.
 probe_version() {
     probe_record version "$1" --version
+    probe_stripped=$(probe_strip_ansi < "$PROBE_OUT/version.txt")
+    probe_vline=$(printf '%s\n' "$probe_stripped" | grep -F -m1 -- "$1" || true)
+    if [ -z "$probe_vline" ]; then
+        probe_vline=$(printf '%s\n' "$probe_stripped" | grep -v '^[[:space:]]*$' | tail -n1 || true)
+    fi
     probe_extracted=$(
-        probe_strip_ansi < "$PROBE_OUT/version.txt" \
+        printf '%s\n' "$probe_vline" \
             | tr -cs 'A-Za-z0-9._-' '\n' \
             | grep -m1 '[0-9]' \
             || true

@@ -316,6 +316,33 @@ check "an agent that prints no version records unknown" \
 stage fakeagent 'echo "boom" >&2; exit 4'
 run_staged 'probe_version fakeagent'
 check "a failing --version fails the probe" "$probe_status" "1"
+check "a failing --version with no digit anywhere records unknown" \
+    "$(cat "$PROBE_OUT_DIR/version.extracted")" "unknown"
+
+# The defect: the extraction used to take the first digit-bearing token in the WHOLE capture, and
+# `probe_record` folds stderr into that same capture (`2>&1`). Ordinary npm/python startup noise on
+# stderr then out-races the real version line. Measured with stubs that print what real CLIs print:
+# `(node:1234) [DEP0040] DeprecationWarning: ...` then `fakeagent 2.7.1` extracted `1234`, and a python
+# traceback path then `fakeagent 0.86.2` extracted `python3.12`. Both sit inside Gate A's charset.
+stage fakeagent 'echo "(node:1234) [DEP0040] DeprecationWarning: '"'"'punycode'"'"' is deprecated" >&2
+echo "fakeagent 2.7.1"'
+run_staged 'probe_version fakeagent'
+check "a node deprecation warning on stderr does not become the version" \
+    "$(cat "$PROBE_OUT_DIR/version.extracted")" "2.7.1"
+
+stage fakeagent 'echo "/usr/lib/python3.12/site-packages/x.py:41: SyntaxWarning: invalid escape" >&2
+echo "fakeagent 0.86.2"'
+run_staged 'probe_version fakeagent'
+check "a python warning path on stderr does not become the version" \
+    "$(cat "$PROBE_OUT_DIR/version.extracted")" "0.86.2"
+
+# The rejected wrong fix: extracting from the LAST non-empty line alone breaks here, because an npm
+# update-notifier banner prints AFTER the version line. The executable-name preference has to run first.
+stage fakeagent 'echo "fakeagent 3.1.0"
+echo "Update available 3.1.0 -> 4.0.0"'
+run_staged 'probe_version fakeagent'
+check "an update-notifier banner after the version does not override it" \
+    "$(cat "$PROBE_OUT_DIR/version.extracted")" "3.1.0"
 
 # --- probe_strings --------------------------------------------------------------------------------
 
