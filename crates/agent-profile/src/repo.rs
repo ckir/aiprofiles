@@ -490,6 +490,16 @@ mod tests {
                 "invalid commondir file: empty",
             ),
             (
+                "gitdir without the space",
+                Box::new(|outer, inner| {
+                    // The gitdir target is valid, so only the missing space can refuse this layout.
+                    write(&outer.join("admin").join("HEAD"), "x\n");
+                    write(&inner.join(".git"), "gitdir:../admin\n");
+                }),
+                ".git",
+                "invalid .git file: no gitdir line",
+            ),
+            (
                 "non-UTF-8 .git file",
                 Box::new(|_, inner| write(&inner.join(".git"), b"gitdir: \xff\n")),
                 ".git",
@@ -542,6 +552,25 @@ mod tests {
                 other => panic!("{name}: {other:?}"),
             }
         }
+    }
+
+    /// The cap is "at most 64 KiB" (design §5.2), so a file of exactly that size is still read. The refusals one
+    /// byte over are in the table above.
+    #[test]
+    fn a_git_file_and_a_commondir_of_exactly_64_kib_are_accepted() {
+        let dir = guarded();
+        let root = root_of(&dir);
+        let padded = |first: &str| {
+            let mut text = first.to_owned();
+            text.push_str(&"#".repeat(MAX_METADATA_FILE as usize - text.len()));
+            assert_eq!(text.len() as u64, MAX_METADATA_FILE);
+            text
+        };
+        write(&root.join("admin").join("HEAD"), "x\n");
+        write(&root.join("admin").join("commondir"), padded(".\n"));
+        let worktree = root.join("wt");
+        write(&worktree.join(".git"), padded("gitdir: ../admin\n"));
+        assert_eq!(found(&worktree), worktree);
     }
 
     #[test]

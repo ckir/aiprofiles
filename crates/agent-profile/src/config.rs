@@ -1076,12 +1076,69 @@ mod tests {
         );
     }
 
+    /// Design §6.2 step 1 searches the candidate keys in order, not the stored entries in file order: the first
+    /// *key* that matches any entry wins, even when another entry sits earlier in the file.
+    #[test]
+    fn unlink_removes_the_first_key_that_matches_not_the_first_stored_entry() {
+        let (_dir, root) = temp_root();
+        let later = PathBuf::from(host("/base/acme", r"C:\base\acme"));
+        let earlier = PathBuf::from(host("/base/wt/../acme", r"C:\base\wt\..\acme"));
+        // `earlier` is written first and is a different key by components, so an entry-major search finds it first.
+        fs::write(
+            root.config_path(),
+            format!(
+                "[repositories.{}]\nprofile = \"stale\"\n\n[repositories.{}]\nprofile = \"live\"\n",
+                key(earlier.to_str().unwrap()),
+                key(later.to_str().unwrap()),
+            ),
+        )
+        .unwrap();
+        let keys = [later.clone(), earlier.clone()];
+        assert_eq!(
+            unlink(&root, &keys, None).unwrap(),
+            UnlinkOutcome::Unlinked { root: later, old: name("live") }
+        );
+        let config = Config::load(&root).unwrap();
+        assert_eq!(
+            config.mapping(&earlier).and_then(|mapping| mapping.profile.as_ref()),
+            Some(&name("stale")),
+            "the entry the second key names must survive"
+        );
+    }
+
+    /// Design §4.2: keys are compared by `Path` components, and letter case is part of a component.
+    #[test]
+    fn a_key_differing_only_in_letter_case_never_matches_a_root() {
+        let stored = host("/src/Acme", r"C:\src\Acme");
+        let other_case = host("/src/acme", r"C:\src\acme");
+        let text = format!("[repositories.{}]\nprofile = \"work\"\n", key(stored));
+        let config = parse(Path::new("c"), text.as_bytes()).unwrap();
+        assert!(config.mapping(Path::new(stored)).is_some());
+        assert_eq!(config.mapping(Path::new(other_case)), None);
+    }
+
     #[test]
     fn unlink_of_nothing_creates_no_configuration_file() {
         let (_dir, root) = temp_root();
         let keys = [PathBuf::from(host("/a", r"C:\a"))];
         assert!(matches!(unlink(&root, &keys, None), Ok(UnlinkOutcome::NothingToRemove { .. })));
         assert!(!root.config_path().exists());
+    }
+
+    /// "No write" (design §6.2) means no configuration is written; the locked update still creates the application
+    /// root and its lock file, and nothing else.
+    #[test]
+    fn a_no_op_unlink_creates_the_application_root_and_its_lock_file_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = AppRoot::from_path(dir.path().join("missing-root"));
+        let keys = [PathBuf::from(host("/a", r"C:\a"))];
+        assert!(matches!(unlink(&root, &keys, None), Ok(UnlinkOutcome::NothingToRemove { .. })));
+        let mut entries: Vec<String> = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        entries.sort();
+        assert_eq!(entries, ["config.toml.lock"]);
     }
 
     #[test]

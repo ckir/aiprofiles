@@ -385,6 +385,28 @@ fn unlink_repo_removes_orphan_mappings_and_never_an_enclosing_one() {
     );
 }
 
+/// A discovery error is not "not inside a Git repository": `unlink` without `--repo` must report the reason
+/// design §5.3.1 gives for the broken entry, so a broken repository is never mistaken for an unmapped directory.
+#[test]
+fn unlink_without_repo_reports_the_discovery_error_not_not_in_a_repository() {
+    let root = Root::new();
+    let (_dir, base) = scratch();
+    let broken = base.join("broken");
+    fs::create_dir_all(broken.join(".git")).unwrap();
+    for args in [&["unlink"][..], &["fake", "unlink"]] {
+        let output = run(&root, &broken, args);
+        assert_eq!(output.status.code(), Some(4), "{args:?}: {}", stderr(&output));
+        assert_eq!(
+            stderr(&output),
+            format!(
+                "agent-profile: error: repository {}: invalid .git directory: no HEAD file\n",
+                broken.join(".git").display()
+            ),
+            "{args:?}"
+        );
+    }
+}
+
 #[test]
 fn unlink_notes_an_ancestor_mapping_and_remaining_agent_mappings() {
     let root = Root::new();
