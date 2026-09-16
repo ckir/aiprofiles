@@ -9,7 +9,8 @@
 # `test` and `probe` have network (crates and agent installs need it); `shell` has none unless --net is given.
 # Results: target/sandbox/<mode>[-<agent>]-<timestamp>/ holds build.log, exit-code, output.log (not for `shell`),
 # diff.txt (the files the run added, changed or deleted inside the container) and whatever the workload writes
-# to /out.
+# to /out. A probe's `failures` and `steps` arrive there too, but they are NOT written to /out: they are
+# copied out of the container afterwards, because /out is writable by the very agent being measured.
 #
 # Cleanup on a normal exit, Ctrl-C, TERM or HUP: the container and its image are removed. With local Podman every
 # run also uses its own temporary image store under ${TMPDIR:-/var/tmp}, deleted at the end, so no image, layer or
@@ -44,6 +45,16 @@ case "$mode" in
         agent=$1
         case "$agent" in
             '' | *[!a-z0-9-]*) echo "sandbox: agent names are [a-z0-9-]" >&2; exit 2 ;;
+        esac
+        # The version is spliced into the container's shell command below, so it is charset-checked
+        # exactly like the agent word beside it. Without this, `probe claude '1.0; cmd; echo'` ran `cmd`
+        # AS THE HARNESS — before the install, with /out writable and /src readable — so an entire
+        # evidence transcript could be authored with no agent misbehaving at all. The charset is the one
+        # `resolve-agents.sh:93` and `transcript.sh:45` already enforce: a version that passed here but
+        # not there could not name its own evidence file downstream.
+        case "$version" in
+            '') ;;
+            *[!A-Za-z0-9._-]*) echo "sandbox: versions are [A-Za-z0-9._-]" >&2; exit 2 ;;
         esac
         ;;
     *) usage ;;
@@ -137,7 +148,15 @@ fi
 copy='mkdir -p /home/probe/work && tar -C /src --exclude=./target -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
 case "$mode" in
     test) script="$copy && cargo nextest run --workspace --no-tests=pass" ;;
-    probe) script="$copy && sh sandbox/probes/$agent.sh $version" ;;
+    probe)
+        # `${version:+ ...}` appends the argument only when there IS one: measured, an unconditional
+        # `'$version'` passes one EMPTY argument for an absent version where today's form passes none.
+        #
+        # shellcheck disable=SC2016 # the single quotes are literal on purpose. They are for the
+        # container's `sh -c "$script"`, which has to see the version as one word; `$version` itself
+        # still expands here, because the quotes sit inside a double-quoted string.
+        script="$copy && sh sandbox/probes/$agent.sh${version:+ '$version'}"
+        ;;
     shell) script="$copy && exec bash" ;;
 esac
 
@@ -155,6 +174,12 @@ fi
 code=$(eng inspect --format '{{.State.ExitCode}}' "$id" 2>/dev/null || echo 125)
 set -e
 echo "$code" > "$out/exit-code"
+# The harness's `failures` and `steps` are kept at /home/probe/.probe-state, off the writable /out mount,
+# so the measured party cannot forge the run's status (`sandbox/probes/common.sh:23-37`). Lift them out
+# now that the container has stopped, into the results directory where `transcript.sh:85` reads `steps`.
+# Failure is expected and ignored: `shell` never sources the harness, and a container that died before it
+# ran has no such directory. The container itself is removed by the EXIT trap, after this.
+eng cp "$id:/home/probe/.probe-state/." "$out/" >/dev/null 2>&1 || true
 eng diff "$id" > "$out/diff.txt" 2>&1 || true
 [ "$mode" = shell ] || tail -n 20 "$out/output.log"
 echo "sandbox: exit code $code" >&2

@@ -25,7 +25,7 @@ check() {
 }
 
 # A probe script, written to a temporary directory and run exactly as the container runs one: from the
-# repository root, because that is where `sandbox/run.sh:135` leaves a probe and it is how common.sh
+# repository root, because that is where `sandbox/run.sh:148` leaves a probe and it is how common.sh
 # resolves its own sibling files.
 run_probe() {
     out=$(mktemp -d)
@@ -33,6 +33,7 @@ run_probe() {
     cat > "$script" <<SCRIPT
 cd $root
 PROBE_OUT=$out
+PROBE_STATE=$out/state
 PROBE_TARGET=$out/target
 PROBE_TIMEOUT=5
 PATH=$out/bin:\$PATH
@@ -44,6 +45,12 @@ SCRIPT
     sh "$script" > "$out/stdout" 2>&1
     probe_status=$?
     set -e
+    # What `sandbox/run.sh:182` does once the container has stopped: lift `failures` and `steps` out of
+    # the state directory — which is NOT under the writable /out mount, so the measured party cannot
+    # forge them — into the results directory, which is where `transcript.sh:85` reads `steps` from.
+    # A scratch state path, never the container's real /home/probe/.probe-state: this suite runs on the
+    # host. Emulating the copy here is what lets every check below keep reading $PROBE_OUT_DIR.
+    cp -R "$out/state/." "$out/" 2>/dev/null || true
     PROBE_OUT_DIR=$out
 }
 
@@ -99,6 +106,19 @@ run_probe 'probe_record ok true
 probe_strings nosuchagent SOME_KEY'
 check "a non-command failure is logged once" \
     "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" "ok 0,strings 127,"
+
+# The measured party can WRITE /out: it is mounted read-write (`run.sh:167,172`, beside `/src:ro`) and the
+# agent — or the install scripts `npm install --global` runs before the agent exists — shares that
+# directory at the same uid. When `failures` lived there, truncating it made `probe_finish` exit 0 and the
+# matrix job go green, and §5.3's byte-comparison could not tell: artifact and committed file both derive
+# from the forged bytes. This stub does exactly that, and the run must still be recorded as failed.
+run_probe 'probe_record boom sh -c "exit 3"
+: > "$PROBE_OUT/failures"
+printf "boom 0\nafter 0\n" > "$PROBE_OUT/steps"
+probe_record after true'
+check "forging /out's bookkeeping does not make a failed probe exit zero" "$probe_status" "1"
+check "the copy-back replaces the forged steps log with the real one" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" "boom 3,after 0,"
 
 run_probe 'probe_record slow sleep 30'
 check "a hanging step is killed and recorded" "$(cat "$PROBE_OUT_DIR/slow.exit-code")" "124"

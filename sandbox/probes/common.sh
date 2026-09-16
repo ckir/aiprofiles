@@ -9,7 +9,7 @@
 set -eu
 
 # Sourced by relative path, because the container runs a probe from the copied checkout's root
-# (`sandbox/run.sh:135` cds to /home/probe/work) and so does the shell suite. A missing file here would
+# (`sandbox/run.sh:148` cds to /home/probe/work) and so does the shell suite. A missing file here would
 # otherwise surface as `probe_strip_ansi: not found` three steps later, naming a symptom instead of a cause.
 if [ ! -f sandbox/probes/text.sh ]; then
     echo "probe: run from the repository root; sandbox/probes/text.sh is not here" >&2
@@ -20,21 +20,38 @@ fi
 # Where the probe puts the profile it points the agent at. Fixed, so a probe script never invents one.
 # `/out` in the container; overridable so the shell suite can run this file outside one.
 PROBE_OUT=${PROBE_OUT:-/out}
+# Where the harness keeps the two files that decide the RUN'S STATUS: `failures` and `steps`.
+#
+# NOT under $PROBE_OUT. `/out` is a read-write host mount (`run.sh:167,172`, beside `/src:ro`), and the
+# measured party runs at the same uid inside the same container — an agent, or the install scripts an
+# `npm install --global` runs before the agent even exists. `probe_finish` derives the run's exit status
+# from `failures`, that status becomes the container's, the matrix job's, and the conclusion
+# `verify-transcripts.sh` requires before it accepts a committed transcript as evidence. Truncating
+# `failures` under /out therefore turned a failed probe green, and §5.3's byte-comparison could not see
+# it: the uploaded artifact and the committed file both derive from the forged bytes, so they match.
+#
+# This protects the BOOKKEEPING only. `help.txt`, `strings.txt` and every other recorded artefact are
+# agent-produced and always were; what is restored is that the agent cannot control WHETHER its run is
+# recorded as failed. `run.sh:182` copies this directory into the results directory after the container
+# exits, so `transcript.sh:85` still finds `steps` where it has always been.
+PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 PROBE_TARGET=${PROBE_TARGET:-/home/probe/probe-target}
 # How long any one recorded command may run. A probe never waits for input; a hang is a recorded fact, not
 # a job that burns its whole budget.
 PROBE_TIMEOUT=${PROBE_TIMEOUT:-300}
-# The version the maintainer asked for, or empty for "whatever the registry serves" (§7.4). `run.sh:138`
-# passes it as the probe script's first argument, and a sourced file sees its caller's positional
-# parameters, so no probe script has to thread it through.
+# The version the maintainer asked for, or empty for "whatever the registry serves" (§7.4). `run.sh:158`
+# passes it as the probe script's first argument — charset-checked at `run.sh:55` and quoted there, so it
+# reaches this file as one word — and a sourced file sees its caller's positional parameters, so no probe
+# script has to thread it through.
 PROBE_VERSION=${PROBE_VERSION:-${1:-}}
 # The candidate file's name inside the profile directory. Some agents key on the extension — Continue
 # reads a `config.yaml` and Amp a `settings.json` — so a probe that must name it can, and one whose agent
 # does not care leaves it alone.
 PROBE_CONFIG_NAME=${PROBE_CONFIG_NAME:-config}
 
-: > "$PROBE_OUT/failures"
-: > "$PROBE_OUT/steps"
+mkdir -p "$PROBE_STATE"
+: > "$PROBE_STATE/failures"
+: > "$PROBE_STATE/steps"
 mkdir -p "$PROBE_TARGET"
 
 # probe_record <name> <command...>: run a command under a timeout, keep its output and exit code in /out.
@@ -57,9 +74,9 @@ probe_record() {
     echo "$status" > "$PROBE_OUT/$name.exit-code"
     # Appended in STEP ORDER, which a directory listing cannot reconstruct: sorted by name, `behaviour`
     # precedes `install`, and a transcript in that order reads as an agent launched before it existed.
-    printf '%s %s\n' "$name" "$status" >> "$PROBE_OUT/steps"
+    printf '%s %s\n' "$name" "$status" >> "$PROBE_STATE/steps"
     if [ "$status" -ne 0 ]; then
-        echo "$name $status" >> "$PROBE_OUT/failures"
+        echo "$name $status" >> "$PROBE_STATE/failures"
     fi
     return 0
 }
@@ -77,16 +94,16 @@ probe_record() {
 # `steps` twice, which reads as the probe having run it twice.
 probe_fail() {
     echo "$2" > "$PROBE_OUT/$1.exit-code"
-    echo "$1 $2" >> "$PROBE_OUT/failures"
-    printf '%s %s\n' "$1" "$2" >> "$PROBE_OUT/steps"
+    echo "$1 $2" >> "$PROBE_STATE/failures"
+    printf '%s %s\n' "$1" "$2" >> "$PROBE_STATE/steps"
 }
 
 # probe_finish: write the summary and exit non-zero if any recorded command failed.
 probe_finish() {
     status=$?
-    if [ -s "$PROBE_OUT/failures" ]; then
+    if [ -s "$PROBE_STATE/failures" ]; then
         echo "probe: recorded failures:" >&2
-        cat "$PROBE_OUT/failures" >&2
+        cat "$PROBE_STATE/failures" >&2
         # A script that already failed for its own reason KEEPS that status. `exit 2` means "you asked
         # for something this probe cannot do" and 1 means "the probe ran and a step failed" — a maintainer
         # re-runs after the first and investigates after the second. Flattening both to 1 would hide the
