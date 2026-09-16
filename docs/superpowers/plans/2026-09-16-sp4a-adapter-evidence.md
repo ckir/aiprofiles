@@ -57,11 +57,12 @@ Gate commands (every task, after its own checks):
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 typos
+find sandbox -name '*.sh' -exec shellcheck -s sh {} +
 cargo nextest run --workspace --no-tests=pass
 just probe-tests
 ```
 
-Expected: `cargo fmt` and `typos` print nothing; clippy prints no warnings; nextest ends with `N tests run: N passed`, 0 failed; every shell suite ends with `all ... checks passed`. `just probe-tests` does not exist until Task 3 adds it — skip that line for Tasks 1 and 2.
+Expected: `cargo fmt`, `typos` and `shellcheck` print nothing; clippy prints no warnings; nextest ends with `N tests run: N passed`, 0 failed; every shell suite ends with `all ... checks passed`. `just probe-tests` and the `shellcheck` line do not exist until Task 3 adds them — skip both for Tasks 1 and 2, which touch no shell file. The `find` form matters: an unmatched glob passes through literally, and `sandbox/tests/` does not exist until Task 3.
 
 ## File structure
 
@@ -4306,9 +4307,10 @@ Make a failed probe fail, give every recorded command a timeout, and put the thr
 - Modify (whole file): `sandbox/probes/codex.sh` — Same.
 - Modify (whole file): `sandbox/probes/aider.sh` — Same, plus the candidate sweep that re-establishes SP2 design D5's `{}` finding.
 - Create: `sandbox/tests/probe-harness.sh` — The harness's own tests, including the six-step order asserted over every probe script in the directory.
-- Modify: `sandbox/run.sh` — Without this the argument cannot reach a probe at all: run.sh accepts exactly one. Unquoted on purpose: an empty version must produce no argument, not an empty one.
+- Modify: `sandbox/run.sh` — Without this the argument cannot reach a probe at all: run.sh accepts exactly one. Unquoted on purpose: an empty version must produce no argument, not an empty one. The one finding shellcheck reports on the existing harness, and it is a false positive: the function is reached through a trap. Silenced where it happens, with the reason, rather than by lowering the severity the whole gate runs at.
 - Modify: `.gitattributes` — Without this every transcript fails verification, and the only message is "not byte-identical": the file is written in a Linux container and committed from a workstation whose working tree is CRLF.
-- Modify: `justfile` — The suite needs no container and no agent, so it belongs in the ordinary gate.
+- Modify: `.github/workflows/ci.yml` — The same check CI runs, so a maintainer whose local gate is green is not told otherwise by a pull request.
+- Modify: `justfile` — The suite needs no container and no agent, so it belongs in the ordinary gate; and the shell files are now load-bearing enough to lint, since they decide what an evidence transcript says.
 
 **Before:** `sandbox/probes/common.sh` contains `probe_agent_profile`; `sandbox/probes/text.sh` does not exist; `sandbox/tests/probe-harness.sh` does not exist. Every "Edit" anchor below occurs exactly once.
 
@@ -5168,7 +5170,43 @@ sandbox/Containerfile text eol=lf
 docs/evidence/** -text
 ```
 
-- [ ] **Step 10: Edit `justfile`** — The suite needs no container and no agent, so it belongs in the ordinary gate. Replace exactly this text, which occurs once:
+- [ ] **Step 10: Edit `sandbox/run.sh`** — The one finding shellcheck reports on the existing harness, and it is a false positive: the function is reached through a trap. Silenced where it happens, with the reason, rather than by lowering the severity the whole gate runs at. Replace exactly this text, which occurs once:
+
+```bash
+cleanup() {
+```
+
+with:
+
+```bash
+# shellcheck disable=SC2329 # invoked by the EXIT/INT/TERM/HUP traps below, which shellcheck does
+# not follow. Removing it as "unused" would leave every run's container and image behind.
+cleanup() {
+```
+
+- [ ] **Step 11: Edit `.github/workflows/ci.yml`** — The same check CI runs, so a maintainer whose local gate is green is not told otherwise by a pull request. Replace exactly this text, which occurs once:
+
+```yaml
+  clippy:
+    name: Clippy
+```
+
+with:
+
+```yaml
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pre-installed on ubuntu-latest, so there is nothing to pin and nothing to download.
+      - run: find sandbox -name '*.sh' -exec shellcheck -s sh {} +
+
+  clippy:
+    name: Clippy
+```
+
+- [ ] **Step 12: Edit `justfile`** — The suite needs no container and no agent, so it belongs in the ordinary gate; and the shell files are now load-bearing enough to lint, since they decide what an evidence transcript says. Replace exactly this text, which occurs once:
 
 ```
 # The local gate: fmt + clippy + typos + test
@@ -5178,16 +5216,23 @@ check: fmt-check clippy typos test
 with:
 
 ```
+# Every shell file in the repository. SP4a took this from three files to seventeen, and the harness is
+# now load-bearing: it decides what an evidence transcript says. `-s sh` because these run under the
+# container's /bin/sh, not bash, and `find` rather than a glob because an unmatched glob passes through
+# literally and would hand shellcheck a filename that does not exist.
+shellcheck:
+    find sandbox -name '*.sh' -exec shellcheck -s sh {} +
+
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
 probe-tests:
     sh sandbox/tests/probe-harness.sh
 
-# The local gate: fmt + clippy + typos + test + the probe harness
-check: fmt-check clippy typos test probe-tests
+# The local gate: fmt + clippy + typos + shellcheck + test + the probe harness
+check: fmt-check clippy typos shellcheck test probe-tests
 ```
 
-- [ ] **Step 11: Run this task's own checks**
+- [ ] **Step 13: Run this task's own checks**
 
 ```bash
 sh sandbox/tests/probe-harness.sh
@@ -5195,18 +5240,18 @@ sh sandbox/tests/probe-harness.sh
 
 Expected: passes, including `a probe whose only step failed exits non-zero`, `a coloured banner does not become the version`, `a target populated before the launch is not in the delta`.
 
-- [ ] **Step 12: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
+- [ ] **Step 14: Run the gate** (see "Gate commands"). Expected on Windows: `243 tests run: 243 passed`. Linux and macOS run fewer tests, because the Windows-only tests are compiled out; every test must pass.
 
-- [ ] **Step 13: Commit**
+- [ ] **Step 15: Commit**
 
 ```bash
-git add sandbox/probes/text.sh sandbox/probes/common.sh sandbox/probes/claude.sh sandbox/probes/codex.sh sandbox/probes/aider.sh sandbox/tests/probe-harness.sh sandbox/run.sh .gitattributes justfile
+git add sandbox/probes/text.sh sandbox/probes/common.sh sandbox/probes/claude.sh sandbox/probes/codex.sh sandbox/probes/aider.sh sandbox/tests/probe-harness.sh sandbox/run.sh .gitattributes .github/workflows/ci.yml justfile
 git commit -m "fix: make a failed probe exit non-zero, and fix the step order
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 14: Prove this task's tests are not vacuous** (rule 6). The design calls this the highest error-cost class in the document, and it is the one defect here no gate can catch. A "delta" that is really the after-state lists the files the PROBE created — it makes the target directory itself, and for a file mechanism writes the candidate — which reads as the agent having moved its configuration. The result is a false `ConfigIsolation: Supported` carrying a `measured:` basis, and every gate passes.
+- [ ] **Step 16: Prove this task's tests are not vacuous** (rule 6). The design calls this the highest error-cost class in the document, and it is the one defect here no gate can catch. A "delta" that is really the after-state lists the files the PROBE created — it makes the target directory itself, and for a file mechanism writes the candidate — which reads as the agent having moved its configuration. The result is a false `ConfigIsolation: Supported` carrying a `measured:` basis, and every gate passes.
 
 In `sandbox/probes/common.sh` replace exactly:
 
@@ -6840,6 +6885,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: crate-ci/typos@512fc24f32f44ab01972217aaaf3dc86ec234d53 # v1.50.2
+
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pre-installed on ubuntu-latest, so there is nothing to pin and nothing to download.
+      - run: find sandbox -name '*.sh' -exec shellcheck -s sh {} +
 
   clippy:
     name: Clippy
