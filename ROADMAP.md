@@ -17,4 +17,9 @@ green on Linux, macOS and Windows.
 without a way to create the mappings it resolves. The remaining adapters (SP4) build on the SP2
 adapter model and contract suite.
 
+SP4 must also settle `ProfilePresence::Known`. Spec §8 defines a profile as *known* when it can be
+identified from the adapter's documented profile mechanism rather than a materialized directory, but
+every adapter shipped so far is directory-based, so no code constructs the variant. SP4 either gives
+it a constructor in a native-profile adapter or removes it, along with its `status` label.
+
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
