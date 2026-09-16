@@ -48,6 +48,13 @@ PROBE_VERSION=${PROBE_VERSION:-${1:-}}
 # reads a `config.yaml` and Amp a `settings.json` — so a probe that must name it can, and one whose agent
 # does not care leaves it alone.
 PROBE_CONFIG_NAME=${PROBE_CONFIG_NAME:-config}
+# Whether a non-zero step is a FAILURE of the probe or a MEASUREMENT taken by it. Empty means failure,
+# which is every step's default; `probe_candidates` sets it for the length of one launch.
+#
+# NOT read from the environment, unlike every setting above it. `run.sh` passes the container no `--env`,
+# so nothing legitimate would arrive that way, and a variable that decides whether a failed step counts is
+# the one thing an install script must not be able to preset.
+PROBE_SOFT=
 
 mkdir -p "$PROBE_STATE"
 : > "$PROBE_STATE/failures"
@@ -83,7 +90,12 @@ probe_record() {
     # Appended in STEP ORDER, which a directory listing cannot reconstruct: sorted by name, `behaviour`
     # precedes `install`, and a transcript in that order reads as an agent launched before it existed.
     printf '%s %s\n' "$name" "$status" >> "$PROBE_STATE/steps"
-    if [ "$status" -ne 0 ]; then
+    # `steps` records EVERY step and its code; `failures` records only what constitutes a probe FAILURE,
+    # and those are not the same set. An acceptance sweep's refusals are the measurement (§8.4) — Aider
+    # refuses a missing, an empty and a comment-only `.aider.conf.yml` by design (`aider.rs:17-18`) — so
+    # routing them here would make the probe exit non-zero, the matrix job conclude failure, and
+    # `verify-transcripts.sh` refuse the transcript the sweep exists to produce.
+    if [ "$status" -ne 0 ] && [ -z "$PROBE_SOFT" ]; then
         echo "$name $status" >> "$PROBE_STATE/failures"
     fi
     return 0
@@ -548,6 +560,13 @@ probe_candidates() {
         probe_prepare_target "$probe_cand"
         printf '%s: %s\n' "$probe_n" "$(printf '%s' "$probe_cand" | tr '\n' ' ')" \
             >> "$PROBE_OUT/candidates.txt"
+        # A REFUSAL IS THE ANSWER, not an error. The sweep asks which contents the agent accepts, and
+        # three of Aider's four are designed to be rejected; a rejection therefore lands in `candidate-N
+        # .exit-code` and in `steps` — the transcript states every one of them — but not in `failures`.
+        # Scoped to the launch itself, so an unknown mechanism, a failed restore, or anything else this
+        # loop does still fails the probe the way it always did.
+        PROBE_SOFT=1
         probe_apply "candidate-$probe_n" "$probe_exe" "$probe_mech" --version
+        PROBE_SOFT=
     done
 }

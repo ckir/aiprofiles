@@ -31,6 +31,9 @@ fixture() {
     printf '# /target\n# /home/probe/.example\n' > "$results/baseline-env-EXAMPLE_HOME.txt"
     printf '# /target\nd .example\n' > "$results/delta-env-EXAMPLE_HOME.txt"
     printf 'A /home/probe/.example\nA /home/probe/work/src\nC /home/probe/.npm\n' > "$results/diff.txt"
+    # Written by `sandbox/run.sh:176` from OUTSIDE the container, which is what makes it the one status in
+    # the transcript the measured party could not have chosen.
+    printf '0\n' > "$results/exit-code"
 }
 
 run_assembler() {
@@ -68,6 +71,16 @@ check "exit codes are in step order" \
     "$(sed -n '/^exit-codes:/{n;p;}' "$written")" "  install 0"
 check "the extracted version is stated beside the raw output" \
     "$(field version-extracted)" "1.2.3"
+
+# `verify-transcripts.sh` decides the matrix job's expected conclusion from this field, so it must come
+# from the container's status and not be derived from the per-step codes above it: once a candidate
+# refusal stopped being a failure, `exit-codes:` can carry a non-zero line for a probe that exited 0.
+check "the probe's exit code is carried from the results directory" "$(field probe-exit)" "0"
+
+fixture
+printf '1\n' > "$results/exit-code"
+run_assembler example
+check "a probe that exited non-zero says so" "$(field probe-exit)" "1"
 check "each mechanism's baseline is emitted" \
     "$(grep -c '^baseline-env-EXAMPLE_HOME:$' "$written")" "1"
 check "each mechanism's delta follows its baseline" \
@@ -134,6 +147,25 @@ rm "$results/version.extracted"
 run_assembler example
 check "a probe that recorded no version yields an unknown transcript" \
     "$(basename "$written")" "example-unknown.md"
+
+# FAIL CLOSED. `probe-exit` is what the verifier checks the matrix job's conclusion against, so a status
+# the assembler could not read must be written as something that FAILS that check. `unknown` is neither
+# `0` nor a number, so `verify-transcripts.sh` refuses the transcript; writing `0` would turn a missing
+# status into the value that passes against a green job.
+fixture
+rm "$results/exit-code"
+run_assembler example
+check "a missing exit code is not silently a clean run" "$(field probe-exit)" "unknown"
+
+fixture
+printf 'boom\n' > "$results/exit-code"
+run_assembler example
+check "a non-numeric exit code is not silently a clean run" "$(field probe-exit)" "unknown"
+
+fixture
+: > "$results/exit-code"
+run_assembler example
+check "an empty exit code is not silently a clean run" "$(field probe-exit)" "unknown"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"

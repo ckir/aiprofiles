@@ -48,6 +48,23 @@ case "$version" in
         ;;
 esac
 
+# The probe's own exit status, as `sandbox/run.sh:176` recorded it from OUTSIDE the container — the one
+# number in this file that the measured party could not have written. It is what `verify-transcripts.sh`
+# compares the matrix job's conclusion against, and it is why §9's outcomes 3 and 4 (agent installed,
+# version known, a step refused) have a committable form at all: the version no longer has to stand in for
+# the run's status.
+#
+# FAILS CLOSED. A missing, empty or non-numeric file yields `unknown`, which is not `0` and not a number,
+# so the verifier refuses the transcript rather than reading the gap as a clean run. Writing `0` there
+# would turn an absent status into the value that passes.
+probe_exit=unknown
+if [ -s "$results/exit-code" ]; then
+    probe_exit=$(head -n1 "$results/exit-code")
+fi
+case "$probe_exit" in
+    '' | *[!0-9]*) probe_exit=unknown ;;
+esac
+
 mkdir -p "$outdir"
 out="$outdir/$id-$version.md"
 
@@ -89,6 +106,11 @@ section() {
     else
         echo "  (not recorded)"
     fi
+
+    # Beside the per-step codes, and deliberately not derived from them: once a candidate refusal stopped
+    # being a failure, the `exit-codes:` block above can carry a non-zero line for a probe that exited 0.
+    # This is the status the container returned, which is the status the matrix job concluded from.
+    echo "probe-exit: $probe_exit"
 
     section version "$results/version.txt" 20
     echo "version-extracted: $version"

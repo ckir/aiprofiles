@@ -83,6 +83,7 @@ harness-commit: $harness_sha
 ---
 install:
   npm install --global @example/agent@1.2.3
+probe-exit: 0
 version-extracted: 1.2.3
 TRANSCRIPT
     cp "$work/repo/docs/evidence/example-1.2.3.md" "$gh_dir/artifact.md"
@@ -109,12 +110,15 @@ verify() {
 }
 
 # The §9 outcome-2 shape: the probe failed, so `sandbox/transcript.sh` recorded `unknown` as the version,
-# named the file for it, and wrote `unknown` into `version-extracted` too.
+# named the file for it, and wrote `unknown` into `version-extracted` too — and, because the probe failed,
+# `sandbox/run.sh` recorded a non-zero container status in `probe-exit`. The version is no longer what the
+# conclusion rule reads; the exit code is.
 unknown_fixture() {
     fixture
     printf 'example unknown\n' > "$work/manifest"
     sed -i 's/^version-extracted: .*/version-extracted: unknown/' \
         "$work/repo/docs/evidence/example-1.2.3.md"
+    sed -i 's/^probe-exit: .*/probe-exit: 1/' "$work/repo/docs/evidence/example-1.2.3.md"
     mv "$work/repo/docs/evidence/example-1.2.3.md" "$work/repo/docs/evidence/example-unknown.md"
     cp "$work/repo/docs/evidence/example-unknown.md" "$gh_dir/artifact.md"
     artifact_name=example-unknown.md
@@ -188,6 +192,17 @@ verify
 check "a matrix job that failed is refused for a successful probe" "$status" "1"
 check "and the reason names the job" "$(printf '%s' "$out" | grep -c "job 'Probe example'")" "1"
 
+# --- the conclusion rule ----------------------------------------------------------------------------
+#
+# Which conclusion a transcript requires is decided by the status the PROBE EXITED WITH — `probe-exit`,
+# written by `sandbox/run.sh` from outside the container and carried into the file by
+# `sandbox/transcript.sh`. Keying it on the version instead ("unknown means the probe failed") left §9's
+# outcomes 3 and 4 with no committable form at all, which is the defect the checks below pin.
+#
+# Keying it on the `exit-codes:` block was the obvious alternative and is wrong: an acceptance sweep's
+# refusals appear there and are not failures, so a probe that legitimately exits 0 would be made to demand
+# a failed job.
+
 # §9 outcome 2 is a DESIGNED outcome: D13 makes a failed probe exit non-zero, so requiring success would
 # reject the one transcript §9 requires to exist and Gate A requires to be present.
 unknown_fixture
@@ -198,6 +213,51 @@ check "an outcome-2 transcript verifies against a job that failed" "$status" "0"
 unknown_fixture
 verify docs/evidence/example-unknown.md
 check "an outcome-2 transcript from a job that SUCCEEDED is refused" "$status" "1"
+
+# Outcomes 3 and 4: the agent installed, the version IS known, and a step was refused, so the probe
+# exited non-zero and the job concluded failure. Under the version rule this transcript could not exist —
+# a known version demanded a green job — and it is the shape aider, amp and continue produce every run.
+fixture
+sed -i 's/^probe-exit: .*/probe-exit: 1/' "$work/repo/docs/evidence/example-1.2.3.md"
+cp "$work/repo/docs/evidence/example-1.2.3.md" "$gh_dir/artifact.md"
+printf '{"jobs":[{"name":"Probe example","conclusion":"failure"}]}\n' > "$gh_dir/jobs.json"
+verify
+check "an outcome-3 transcript with a known version verifies against a job that failed" "$status" "0"
+
+# The status in the file has to AGREE with the run, in both directions.
+fixture
+sed -i 's/^probe-exit: .*/probe-exit: 1/' "$work/repo/docs/evidence/example-1.2.3.md"
+cp "$work/repo/docs/evidence/example-1.2.3.md" "$gh_dir/artifact.md"
+verify
+check "a non-zero probe-exit against a job that SUCCEEDED is refused" "$status" "1"
+check "and the reason names the conclusion it expected" \
+    "$(printf '%s' "$out" | grep -c "concluded 'success', expected 'failure'")" "1"
+
+fixture
+printf '{"jobs":[{"name":"Probe example","conclusion":"failure"}]}\n' > "$gh_dir/jobs.json"
+verify
+check "a zero probe-exit against a job that FAILED is refused" "$status" "1"
+check "and the reason names the conclusion it expected there too" \
+    "$(printf '%s' "$out" | grep -c "concluded 'failure', expected 'success'")" "1"
+
+# FAIL CLOSED. `sandbox/transcript.sh` writes `unknown` when it could not read the container's status, and
+# a hand-written transcript can simply leave the line out. Neither may pass: defaulting to either
+# conclusion would let a file stating no status at all satisfy some job.
+fixture
+sed -i '/^probe-exit: /d' "$work/repo/docs/evidence/example-1.2.3.md"
+cp "$work/repo/docs/evidence/example-1.2.3.md" "$gh_dir/artifact.md"
+verify
+check "a transcript carrying no probe-exit is refused" "$status" "1"
+check "and the reason names probe-exit" \
+    "$(printf '%s' "$out" | grep -c "probe-exit '' is not a probe exit code")" "1"
+
+fixture
+sed -i 's/^probe-exit: .*/probe-exit: unknown/' "$work/repo/docs/evidence/example-1.2.3.md"
+cp "$work/repo/docs/evidence/example-1.2.3.md" "$gh_dir/artifact.md"
+verify
+check "a transcript whose probe-exit is not a number is refused" "$status" "1"
+check "and the reason quotes the value" \
+    "$(printf '%s' "$out" | grep -c "probe-exit 'unknown' is not a probe exit code")" "1"
 
 # --- expiry fails closed --------------------------------------------------------------------------
 

@@ -231,6 +231,31 @@ check "the accepted candidate is recorded as accepted" \
 check "the index says what each candidate held" \
     "$(sed -n 4p "$PROBE_OUT_DIR/candidates.txt")" "4: {}"
 
+# The defect: every one of those three refusals used to land in `failures`, so the probe exited non-zero,
+# so the matrix job concluded failure, so `verify-transcripts.sh` refused the transcript — and aider, amp
+# and continue, whose sweeps are DESIGNED to produce refusals, could not produce a committable transcript
+# at all. A refusal is the measurement §8.4 asks for, not an error.
+check "a sweep of refused candidates does not fail the probe" "$probe_status" "0"
+check "but every refusal is still recorded, in order, with its code" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" \
+    "candidate-1 2,candidate-2 2,candidate-3 2,candidate-4 0,"
+check "and none of them is recorded as a failure" \
+    "$(wc -l < "$PROBE_OUT_DIR/failures" | tr -d ' ')" "0"
+
+# The regression the fix above could introduce, and the reason `PROBE_SOFT` is scoped to the sweep's own
+# launch: a probe that sweeps candidates must not thereby go green when the step that MEASURES ISOLATION
+# failed. Here the sweep accepts `{}` and refuses @none, and the behaviour step is then launched against a
+# target the stub rejects.
+stage picky 'test -s "$2" || exit 2; grep -q "{}" "$2" || exit 2'
+run_staged 'probe_candidates picky flagfile:--config "{}" @none
+probe_behaviour picky /nonexistent-default flagfile:--config @none'
+check "a failed behaviour step still fails a probe that swept candidates" "$probe_status" "1"
+check "and the sweep's refusal is not what failed it" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/failures")" "behaviour-flagfile---config 2,"
+check "while the sweep's refusal is still in the step log" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" \
+    "candidate-1 0,candidate-2 2,behaviour-flagfile---config 2,"
+
 # --- the default location, between launches -------------------------------------------------------
 
 # The defect: nothing reset the agent's DEFAULT location between launches, so only the FIRST launch of a

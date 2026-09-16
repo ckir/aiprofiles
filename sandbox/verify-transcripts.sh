@@ -156,13 +156,34 @@ while read -r id version; do
     conclusion=$(printf '%s' "$jobs" | jq -r --arg name "Probe $id" \
         '[.jobs[]? | select(.name == $name)] | first | .conclusion // ""')
 
-    # An outcome-2 transcript is verified against a job that CONCLUDED FAILURE, which is the whole point
-    # of outcome 2: D13 makes a failed probe exit non-zero, so requiring success here would reject the one
-    # transcript §9 requires to exist and Gate A requires to be present.
-    if [ "$version" = unknown ]; then
-        expected=failure
-    else
+    # What the job concluded is decided by what the PROBE EXITED WITH, which the transcript states.
+    # §9's outcomes 2, 3 and 4 are all recorded by a non-zero exit — an agent that would not install, and
+    # an agent that installed and then refused a step — so keying this on the version instead ("unknown
+    # means the probe failed") had no committable form for 3 and 4 at all: a known version against a job
+    # that concluded failure was refused outright.
+    #
+    # `probe-exit` is written by `sandbox/run.sh:176` from OUTSIDE the container, from the engine's own
+    # record of the container's status, so it is not a number the measured party can choose; and it sits
+    # inside the transcript, which the `cmp` below already pins byte-for-byte against the artifact.
+    #
+    # Keying on the `exit-codes:` block instead was considered and is WRONG: an acceptance sweep's
+    # refusals are recorded there and are not failures (`common.sh`'s `PROBE_SOFT`), so "any non-zero step
+    # means the job failed" would expect `failure` from a probe that legitimately exited 0.
+    #
+    # FAILS CLOSED. Absent, empty or non-numeric is refused rather than defaulted — `transcript.sh` writes
+    # `unknown` when it could not read the status, and a default of either conclusion would let a
+    # transcript with no status at all satisfy some job.
+    probe_exit=$(field probe-exit "$file")
+    case "$probe_exit" in
+        '' | *[!0-9]*)
+            fail "$file: probe-exit '$probe_exit' is not a probe exit code"
+            continue
+            ;;
+    esac
+    if [ "$probe_exit" -eq 0 ]; then
         expected=success
+    else
+        expected=failure
     fi
     if [ "$conclusion" != "$expected" ]; then
         fail "$file: job 'Probe $id' concluded '$conclusion', expected '$expected'"
