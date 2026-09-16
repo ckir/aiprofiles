@@ -1,29 +1,38 @@
 # SP4 — The remaining nine adapters: design
 
-**Status:** draft. Two panel rounds folded (twelve seats). D6 adjudicated by the owner on 2026-09-16:
-follow V3 (§4.1).
+**Status:** draft. Three panel rounds folded (fifteen seats). Owner rulings on 2026-09-16: D6 follows V3
+(§4.1); `ProfilePresence::Known` is retained (D10); tier-B adapters are governed by the visible capability
+matrix (§1.1, row §3).
 **Branch:** `sp4-adapters` (from `main` at `32e8673`).
 **Oracle:** `agent-profile-implementation-spec-v3.md` (called "V3" below). Where this document and V3
-disagree, V3 wins; report the conflict instead of resolving it silently.
+disagree, V3 wins; report the conflict instead of resolving it silently. Every known divergence is listed
+in §1.1 — that table is the discharge of this rule, and a divergence discovered later belongs in it.
 **Previous sub-project:** SP3, `docs/superpowers/specs/2026-09-15-sp3-resolution-design.md` (merged at
 `4ea5976`, released as v0.0.2).
 
 ## 1. Goal
 
-SP4 delivers V3 §35 phase 4B **less its `doctor` requirement**: the nine remaining adapters — Gemini CLI,
+SP4 delivers V3 §35 phase 4B less its `doctor` requirement: the nine remaining adapters — Gemini CLI,
 GitHub Copilot CLI, OpenCode, Cline CLI, Pi, Kiro CLI, Cursor Agent CLI, Continue CLI and Amp. It also
 closes the gap that makes shipping them honest: today an adapter's support level and capability states are
 stored and tested but never shown to a user, so an unproven adapter is indistinguishable from a proven one
 at the command line.
 
-**Reported conflict with the oracle.** V3 §35 phase 4B lists five per-adapter requirements
-(`agent-profile-implementation-spec-v3.md:1368-1374`), the last of which is "doctor support". `doctor` is
-SP5 work and returns `Error::NotYetImplemented` today (`crates/agent-profile/src/cli.rs:188`, reached for
-the `"doctor"` command name at `:94`). SP4 therefore completes four of the five; SP5 completes the fifth
-for all twelve adapters at once. This is a deliberate, recorded divergence, not an oversight.
-
 SP4 ends with twelve adapters registered, each carrying evidence that a reviewer can check against a
-committed transcript, and with the report stating plainly how far each adapter is proven.
+committed transcript bound to the CI run that produced it, and with the report stating plainly how far
+each adapter is proven.
+
+### 1.1 Reported divergences from V3
+
+| V3 | What V3 requires | What SP4 does | Disposition |
+|---|---|---|---|
+| §35, `:1374` | "doctor support" among each adapter's five phase-4B requirements | defers `doctor` to SP5 for all twelve at once; it returns `Error::NotYetImplemented` today (`crates/agent-profile/src/cli.rs:188`, reached at `:94`) | deliberate; SP4 completes four of the five |
+| §2, `:99` | OpenCode: "`OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG`", "Config/home isolation" | one variable, and config only — the second names a config *file*, an alternative rather than an addition, and "home" overstates what either covers (§8.2) | reported; probe confirms (Q2) |
+| §2, `:100` | Cline: "`--config`, `--data-dir`" | may ship `CLINE_DATA_DIR` instead, which V3's table does not name, if the probe shows the flags carry a behavioural side effect (§8.3) | reported; probe decides (Q1). V3:112-113 forbids implementing *undocumented* mechanisms; `CLINE_DATA_DIR` is documented, which is what makes this permissible |
+| §2, `:91`; §37, `:1464` | "V0.1 implements the same 12 evidence-backed adapters"; "all 12 adapters have evidence" | §9 outcome 3 registers *fewer* than twelve if a probe disproves a mechanism | reported; **outcome 3 requires owner sign-off**, because it reduces V0.1's scope and leaves V3 §37's adapter checkbox unchecked |
+| §2, `:110` | "Evidence must be reverified against the supported upstream version before release" | §9 outcome 2 registers an adapter with `upstream_version: "unknown"`, which has no upstream version to reverify against | reported; such an adapter is `Experimental` and is tracked debt in `TODO.md` until a probe succeeds |
+| §3, `:139-140` | "Tier-B agents such as Aider, Amp, Continue, and Cursor must not be presented as guaranteed isolated accounts unless evidence proves that claim" | Amp, Continue and Cursor may reach `support: proven` on a config-isolation measurement, with `credentials: unknown` in the matrix | **owner ruling, 2026-09-16**: §7.1's matrix satisfies this. `proven` describes the *mechanism*; the report never shows it without the capability states beneath it, so no user is presented with a guaranteed isolated account. See §6.1 |
+| §8, `:346-374` | `ProfilePresence::Known`; "A physical directory is not universally required"; native-profile adapters may represent existence through the native mechanism | **owner ruling, 2026-09-16**: the variant is retained (D10) | no divergence |
 
 ## 2. Scope
 
@@ -32,27 +41,35 @@ committed transcript, and with the report stating plainly how far each adapter i
 | Area | V3 |
 |---|---|
 | Rendering support level and capability states in the dry-run and `--verbose` report | §3, §26, §37 |
-| A launch-path hedge for adapters that are not `Proven` | §3, §37 |
+| A launch-path hedge for adapters that are not `Proven`, and a key to suppress it | §3, §37 |
 | Evidence invariants enforced by the contract suite (gates A–C, §5) | §28, §37 |
+| Binding each committed transcript to the CI run that produced it (§5.3) | §28 |
 | Probe-harness correctness fixes: exit status, per-command timeout, step order, baseline snapshot (D13) | §34 |
 | A behavioural probe step: launch the agent under the wrapper and diff what it wrote | §2 "reverified", §28 |
 | Twelve probe scripts — the nine new agents plus re-probes of the three shipped ones | §28 |
 | Committed evidence transcripts under `docs/evidence/`, with chain of custody and a retention rule | §28, §37 |
 | The Sandbox workflow probing several agents in one dispatch, as a bounded matrix | §34 |
 | Nine adapters, each with metadata, contract row and end-to-end row | §2, §3, §21, §22, §28 |
-| Deleting `ProfilePresence::Known` and its `status` label | §8 |
+| Documenting `ProfilePresence::Known` as reserved rather than dead | §8 |
 
 ### 2.2 Out of scope
 
-- `doctor` (SP5), including mechanism-drift detection against the recorded evidence. See §1.
+- `doctor` (SP5), including mechanism-drift detection against the recorded evidence. See §1.1.
 - JSON output of capabilities and evidence (SP5, V3 §32).
 - `create`, `list`, `delete`, `repositories` (SP5).
 - **Any authenticated measurement.** No probe logs in to any vendor, and no secret is ever placed in CI.
   SP4 therefore ships no `CredentialIsolation` claim stronger than `Unknown` for the nine. The later
   upgrade path exists and its custody shape is defined (§7.4.1), but performing it is not SP4 work.
-- Changing the isolation mechanism of the three shipped adapters. Their metadata gains the provenance
-  prefixes of D5, and they gain committed transcripts (§9), and nothing else.
-- Native-profile adapters (see D10).
+- Changing the isolation mechanism of the three shipped adapters.
+- Native-profile adapters, and therefore any constructor for `ProfilePresence::Known` (D10).
+
+**What the D5 retrofit actually touches.** Gate B applies to every adapter in the registry, so the
+provenance-prefix retrofit reaches `fake` as well as the three shipped adapters: its three bases are the
+literal `"test fixture"` with state `Unknown` (`crates/agent-profile/src/adapter/fake.rs:28-43`), which the
+biconditional requires to become `unmeasured: `-prefixed. Gate B's *assertable* clauses may also force one
+reword: `codex`'s `ConfigIsolation` basis (`crates/agent-profile/src/adapter/codex.rs:38-39`) names no
+bypass and does not say a search found none. That content rule is manual (§5.1), so the reword is a review
+outcome rather than a test failure — but SP4a must not claim the shipped adapters are untouched.
 
 ## 3. Why the visibility work belongs to SP4, not SP5
 
@@ -70,7 +87,8 @@ Measured against the tree at `32e8673`:
 So an `Experimental` adapter would today print output byte-identical to a `Proven` one. Nine adapters whose
 credential isolation cannot be measured (§6) is precisely the moment that gap stops being theoretical.
 V3 §37 already requires that "capabilities are separate from support level"; SP4 makes that separation
-visible rather than merely typed.
+visible rather than merely typed. Under §1.1's tier-B ruling the matrix is not a convenience — it is the
+mechanism by which `proven` stays honest, so it renders unconditionally.
 
 ## 4. Decisions and their evidence
 
@@ -79,19 +97,19 @@ Evidence marks: **measured** (run and observed; for this document, in the reposi
 
 | # | Decision | Evidence |
 |---|---|---|
-| D1 | SP4 runs in two phases with a measurement step between them: **SP4a** (visibility, invariants, probe-harness fixes, twelve probe scripts, workflow) against code that exists now; **the probe run**, twelve agents in CI; **the fold commit**, which lands the transcripts and Gate A's transcript half together; then **SP4b**, the nine adapters. | reasoned: the owner's plan-vs-spec rule forbids a line-level plan whose "existing code" is an unmeasured third-party product. measured: `sandbox/run.sh:51-54` refuses a probe with no script, so every probe script must exist before the probe run — the scripts are SP4a deliverables. The fold commit is a separate step because Gate A's transcript assertion cannot land before the transcripts do: see §5.2. |
-| D2 | The report gains a `support:` line and an `isolation:` block naming each capability's state and its `basis`, in both report modes. | measured: the report is the only surface carrying `mechanism` (`output.rs:51`). The `basis` shows in both modes because D3's hedge directs the user to the report for the reason, and a mode that withheld the reason would make that pointer false. |
-| D3 | An adapter whose support level is not `Proven` prints one line to stderr before the agent starts, on a real launch — not on a dry run, which already shows the whole block. It names **every** capability that is `Unknown` or `NotSupported`, not the first. A configuration key suppresses it. | measured: the report renders only for `--dry-run` and `--verbose` (`crates/agent-profile/src/cli.rs:596`, `:605`); a plain launch prints nothing. Naming only the first capability would under-report OpenCode, which §8.2 gives two `NotSupported` capabilities, and `Capability::ALL` has a fixed order (`metadata.rs:39-41`) that would always hide the same one. |
-| D4 | **Gate A.** No adapter is registered unless its mechanism token — the variable name or the flag spelling — was observed in the agent's own artefact at the version recorded in `evidence.upstream_version`. Enforced mechanically, **over `REAL_ADAPTERS` only**, by: `source_url` is a URL or the literal `measured` with non-empty `notes` (**A-shape**, lands in SP4a); and `docs/evidence/<id>-<upstream_version>.md` exists and contains the adapter's mechanism token (**A-transcript**, lands with the fold commit). | measured: `metadata_invariants` asserts only non-emptiness today (`crates/agent-profile/tests/adapter_contract.rs:264-266`), which any placeholder satisfies; a URL-shape check alone is satisfied by `https://example.com/`. The `REAL_ADAPTERS` scope is load-bearing: `registry()` includes `Fake` in every debug build (`adapter/mod.rs:112-120`) and tests build in debug, so an unscoped Gate A would demand `docs/evidence/fake-0.0.0.md` (`adapter/fake.rs:24`) for a fixture with no upstream product — satisfiable only by hand-writing the exact artefact §7.4 exists to detect. The pinned-support assertion already uses `REAL_ADAPTERS` (`adapter_contract.rs:275`), so the distinction exists in the file. |
-| D5 | **Gate B.** Every `basis` begins with `measured: `, `cited: ` or `unmeasured: `, contains no newline, and — for any state other than `NotSupported` — either names a specific bypass or states that a search found none. The prefix states the provenance of the evidence establishing the **state**; where facts of differing provenance support one state, the prefix takes the weakest and per-fact inline markers are kept. **`unmeasured:` and `CapabilityState::Unknown` imply each other**, asserted both ways. | measured: this is what the shipped adapters already do informally — `claude.rs:25-27` enumerates eight override variables, `codex.rs:29-31` four. The biconditional is what makes D7 enforceable: without it, an implementer reaches `Proven` by writing `NotGuaranteed` with an `unmeasured:` basis, and every mechanical gate still passes. The no-newline rule protects the "one `Vec` entry is one line" contract (`output.rs:30`, `cli.rs:596-597`). |
-| D6 | **Gate C.** `SupportLevel::Proven` requires non-empty `notes` and **at most one** `Unknown` capability claim. The pinned support list at `adapter_contract.rs:275-286` is **kept** alongside the new invariant. | owner ruling, 2026-09-16, adjudicating the oracle conflict in §4.1: V3:132-133 permits exactly this. measured: the pinned triple and the invariant catch opposite mistakes. Gate C constrains only `Proven ⇒ …` and never asserts that any adapter *is* `Proven`, so replacing the list would let a one-word demotion of `claude` pass the suite silently while adding a permanent stderr banner to the flagship adapter. |
-| D7 | A capability that cannot be measured because measuring it needs an authenticated session is `CapabilityState::Unknown` with an `unmeasured:` basis. No enum variant is added. | reasoned: `NotGuaranteed` and `Conditional` are claims about a mechanism that was understood — both existing uses of `NotGuaranteed` describe a known leak path (`claude.rs:44-46`, `aider.rs:38-43`), and `Conditional` promises the conditions are enumerable (`codex.rs:43-45` lists three variables by name). Using either for "we could not log in" borrows the authority of a measurement that never happened. `NotSupported` is a positive negative claim and would defame a product that may isolate correctly. D5's biconditional makes this mechanical rather than advisory. |
-| D8 | `sandbox/probes/common.sh` gains `probe_behaviour <agent> <default-location>`: snapshot `<default-location>` after install and before launch, launch the agent under `agent-profile` (not `--dry-run`), then record the delta at both the profile directory and `<default-location>`. It runs **before** any unwrapped invocation of the agent. | measured: today `probe_agent_profile` records `cargo build`, `--version` and a dry run (`sandbox/probes/common.sh:22-26`), so it captures what `agent-profile` *plans*, never what the agent *does*. Ordering is load-bearing: `claude.sh:5-7` runs `claude --version` and `claude --help` natively before `probe_agent_profile`. The baseline snapshot is equally load-bearing and ordering alone does not supply it: the install runs before everything and executes vendor code (§9), so an installer that creates the default location would otherwise be attributed to the wrapped launch, making `ConfigIsolation` read worse than the truth. The baseline itself goes in the transcript so a reviewer sees what was already there. |
-| D9 | Probes run in the Actions Sandbox workflow as a **matrix, one job per agent**, bounded by a concurrency group and a deduplicated, length-capped agent list. | measured: only the Podman branch of `sandbox/run.sh` creates a private ephemeral image store (`:84`) and deletes it at cleanup (`:105-108`); the Docker branch does `chmod a+rwx "$out"` and nothing else (`:88`), so agent install layers persist in the host daemon. Podman is absent from the owner's machine; the workflow sets `AGENT_PROFILE_SANDBOX_ENGINE: podman` (`.github/workflows/sandbox.yml:43`) on a runner VM that is discarded. A matrix is required rather than a loop: each invocation builds a fresh image (`sandbox/run.sh:124`) containing a Rust toolchain, so twelve sequential probes would not fit the job's 60-minute cap (`sandbox.yml:35`), and one hanging agent would consume the budget of all the others. The bounds are required because the matrix removes that cap: `timeout-minutes` is a job attribute, so twelve jobs are twelve independent 60-minute budgets, and `sandbox.yml` has no `concurrency` key today while `docs.yml:17-19` and `release-plz.yml:70` show the repository's idiom. |
-| D10 | `ProfilePresence::Known` and the `"known"` arm are deleted. | measured: the variant has exactly two occurrences — its declaration (`crates/agent-profile/src/adapter/metadata.rs:102`) and a `status` label (`crates/agent-profile/src/cli.rs:739`); no code constructs it. The default `presence()` can only return `Materialized` or `Absent` (`adapter/mod.rs:48-58`), so `Known` needs an adapter that identifies a profile without owning a directory. All nine mechanisms resolve to a path `agent-profile` itself creates. The repository already declined the native-profile route for Codex, the adapter V3 §2 most entitles to it (`codex.rs:69-75`, and `-p/--profile` is accepted rather than conflicting: `adapter_contract.rs:194`). cited: research on 2026-09-16 found no named-profile concept among the nine. Reversal costs one variant and one match arm. |
-| D11 | An SP4 adapter ships with `conflicts: &[]` unless a probe transcript shows the option in that agent's `--help` at the pinned version. | reasoned: V3 §21 ("If the wrapper cannot prove a conflict, it must not guess"). An empty list is already a legal contract row and both `claude` and `codex` use it (`adapter_contract.rs:194-195`). Aider's list is a measured prefix-abbreviation set (`aider.rs:56-59`), which is what a proven conflict list costs; nine of those cannot come from documentation. |
-| D12 | All nine ship in one wave rather than split by measurability. | cited: research on 2026-09-16 established that every one of the nine installs and runs `--help`/`--version` with no account, and every one needs an account to do real work. The proposed split axis puts all nine in the same bucket, so it separates nothing. |
-| D13 | The probe harness is repaired **before** the probe run: `probe_record` propagates failure, every recorded command runs under a timeout, `cargo build` runs once per job rather than once per recorded step and its failure is recorded, and `probe_behaviour` takes a baseline snapshot. | measured, and this is the finding that would have wasted the whole run: `probe_record` ends with `set -e` (`sandbox/probes/common.sh:18`), and a shell function returns the status of its last command, so `probe_record` **always returns 0**. Every probe script ends in `probe_agent_profile`, which ends in `probe_record dry-run`, so a probe whose install failed and whose every later command returned 127 still exits 0 and the Actions job is green. There is no `timeout` anywhere in `common.sh` or `run.sh`, and `cargo build` at `common.sh:23` is unguarded, so under `set -eu` (`:7`) a build failure aborts the probe after the install, leaving transcripts that look complete with no behavioural step. Note the scope: under D9's matrix the crate is built once per *job*, which is once per agent — building it once across all agents is not achievable and is not claimed. |
+| D1 | SP4 runs in two phases with a measurement step between them: **SP4a** (visibility, invariants, probe-harness fixes, twelve probe scripts, workflow, transcript verification) against code that exists now; **the probe run**, twelve agents in CI; **the fold commit**, which lands the transcripts and Gate A's transcript half together; then **SP4b**, the nine adapters. | reasoned: the owner's plan-vs-spec rule forbids a line-level plan whose "existing code" is an unmeasured third-party product. measured: `sandbox/run.sh:51-54` refuses a probe with no script, so every probe script must exist before the probe run — the scripts are SP4a deliverables. The fold commit is separate because Gate A's transcript assertion cannot land before the transcripts do: see §5.2. |
+| D2 | The report gains a `support:` line and an `isolation:` block naming each capability's state and its `basis`, in both report modes, unconditionally. | measured: the report is the only surface carrying `mechanism` (`output.rs:51`). Unconditional because §1.1's tier-B ruling rests on the matrix always accompanying the support level. The `basis` shows in both modes because D3's hedge directs the user to the report for the reason. |
+| D3 | An adapter whose support level is not `Proven` prints one line to stderr before the agent starts — but only when no report is rendered, since `--dry-run` and `--verbose` already show the whole block. It names **every** capability whose state is not `Supported`. A configuration key suppresses it. | measured: the report renders only for `--dry-run` and `--verbose` (`crates/agent-profile/src/cli.rs:596`, `:605`), and the verbose report already goes to stderr on a real launch (`cli.rs:603-608`), so printing both would tell a user who just read the matrix to run `--dry-run` for detail. Listing only `Unknown` and `NotSupported` would have omitted `NotGuaranteed`, which is exactly Kiro's predicted `ConfigIsolation` state (§8.5) — the earlier draft's own example contradicted its own rule. `Capability::ALL` has a fixed order (`metadata.rs:39-41`). |
+| D4 | **Gate A.** No adapter is registered unless its mechanism token was observed in the agent's own artefact at the version recorded in `evidence.upstream_version`. Enforced mechanically, **over `REAL_ADAPTERS` only**, by the clauses in §5, and bound to a real CI run by §5.3. | measured: `metadata_invariants` asserts only non-emptiness today (`crates/agent-profile/tests/adapter_contract.rs:264-266`), which any placeholder satisfies; a URL-shape check alone is satisfied by `https://example.com/`. The `REAL_ADAPTERS` scope is load-bearing: `registry()` includes `Fake` in every debug build (`adapter/mod.rs:112-120`) and tests build in debug, so an unscoped Gate A would demand `docs/evidence/fake-0.0.0.md` (`adapter/fake.rs:24`) for a fixture with no upstream product — satisfiable only by hand-writing the exact artefact §7.4 exists to detect. The pinned-support assertion already uses `REAL_ADAPTERS` (`adapter_contract.rs:275`). |
+| D5 | **Gate B.** Every `basis` begins with `measured: `, `cited: ` or `unmeasured: `, contains no newline, and **`unmeasured:` and `CapabilityState::Unknown` imply each other**. The prefix names the provenance of the evidence that **establishes the state**; any supporting fact of weaker provenance is marked inline. Separately, and manually (§5.1), a `basis` for any state other than `NotSupported` either names a specific bypass or states that a search found none. | measured: this is what the shipped adapters already do informally — `claude.rs:25-27` enumerates eight override variables, `codex.rs:29-31` four. The biconditional is what makes D7 enforceable: without it, an implementer reaches `Proven` by writing `NotGuaranteed` with an `unmeasured:` basis, and every mechanical gate still passes. reasoned: the prefix names the *decisive* evidence rather than the weakest fact mentioned, because a weakest-wins rule rewards deleting an inconvenient sentence — it would demote a 90%-measured claim for admitting one inference, so the cheapest compliance is a shorter basis. The no-newline rule protects the "one `Vec` entry is one line" contract (`output.rs:30`, `cli.rs:596-597`). |
+| D6 | **Gate C.** `SupportLevel::Proven` requires non-empty `notes` and **at most one** `Unknown` capability claim. The pinned support list at `adapter_contract.rs:275-286` is **kept** alongside the new invariant. | owner ruling, 2026-09-16 (§4.1): V3:132-133 permits exactly this. measured: the pinned triple and the invariant catch opposite mistakes. Gate C never asserts that any adapter *is* `Proven`, so replacing the list would let a one-word demotion of `claude` pass the suite silently while adding a permanent stderr banner to the flagship adapter. |
+| D7 | A capability that cannot be measured because measuring it needs an authenticated session is `CapabilityState::Unknown` with an `unmeasured:` basis. No enum variant is added. | reasoned: `NotGuaranteed` and `Conditional` are claims about a mechanism that was understood — both existing uses of `NotGuaranteed` describe a known leak path (`claude.rs:44-46`, `aider.rs:38-43`), and `Conditional` promises the conditions are enumerable (`codex.rs:43-45` lists three variables by name). Using either for "we could not log in" borrows the authority of a measurement that never happened. `NotSupported` is a positive negative claim and would defame a product that may isolate correctly. |
+| D8 | `sandbox/probes/common.sh` gains `probe_behaviour <id> <default-location>`: snapshot `<default-location>` after install and before launch, launch the agent under `agent-profile` (not `--dry-run`), then record the delta at both the profile directory and `<default-location>`. §7.3 fixes the whole step order explicitly. | measured: today `probe_agent_profile` records `cargo build`, `--version` and a dry run (`sandbox/probes/common.sh:22-26`), so it captures what `agent-profile` *plans*, never what the agent *does*. Ordering is load-bearing: `claude.sh:5-7` runs `claude --version` and `claude --help` natively before `probe_agent_profile`. The baseline is equally load-bearing and ordering alone does not supply it: the install runs first and executes vendor code (§9), so an installer that creates the default location would otherwise be attributed to the wrapped launch, making `ConfigIsolation` read worse than the truth. |
+| D9 | Probes run in the Actions Sandbox workflow as a **matrix, one job per agent**, bounded by a concurrency group and a deduplicated, length-capped agent list. | measured: only the Podman branch of `sandbox/run.sh` creates a private ephemeral image store (`:84`) and deletes it at cleanup (`:105-108`); the Docker branch does `chmod a+rwx "$out"` and nothing else (`:88`). Podman is absent from the owner's machine; the workflow sets `AGENT_PROFILE_SANDBOX_ENGINE: podman` (`.github/workflows/sandbox.yml:43`) on a runner VM that is discarded. A matrix is required rather than a loop: each invocation builds a fresh image (`sandbox/run.sh:124`) containing a Rust toolchain, so twelve sequential probes would not fit the job's 60-minute cap (`sandbox.yml:35`), and one hanging agent would consume the budget of all the others. The bounds are required because the matrix removes that cap: `timeout-minutes` is a job attribute, and `sandbox.yml` has no `concurrency` key today while `docs.yml:17-19` shows the repository's idiom. |
+| D10 | `ProfilePresence::Known` is **retained**, unconstructed, and documented as reserved by V3 §8 for native-profile adapters — none of which SP4 ships. The `status` label stays. | owner ruling, 2026-09-16. cited: V3:346-348 defines it normatively, V3:350 states "A physical directory is not universally required", and V3:373-374 reserves it for native-profile adapters. measured: the variant has exactly two occurrences — `metadata.rs:102` and `cli.rs:739` — and the default `presence()` returns only `Materialized` or `Absent` (`adapter/mod.rs:48-58`). The original anomaly called it a dead variant; the oracle's answer is that it is not dead, it is unclaimed. A doc comment at `metadata.rs:102` records that, so the next reader does not re-file it. |
+| D11 | An SP4 adapter ships with `conflicts: &[]` unless a probe transcript shows the option in that agent's `--help` at the pinned version — **except that an adapter whose own mechanism is a flag always declares that flag**, with no probe required. | reasoned: V3:836 says "If the wrapper cannot prove a conflict, it must not guess", which gives the default; V3:833-834 says the wrapper "must fail before launch" where an option "controls the same profile mechanism", which gives the exception. For a config-file adapter the proof is by construction: `config_file_arg_plan` emits its own flag and then appends the user's arguments after it (`adapter/mod.rs:197-198`), so a user-supplied second spelling of the same flag reaches the agent after ours. Aider, the shipped config-file adapter, carries exactly such a list (`aider.rs:56-59`). Without the exception, §9 outcome 2 would ship Continue or Amp with an empty list and `agent-profile continue work -- --config other.yaml` would silently defeat the profile it selected. Abbreviated spellings still require a transcript. |
+| D12 | All nine ship in one wave rather than split by measurability. | cited: research on 2026-09-16 established that every one of the nine installs and runs `--help`/`--version` with no account, and every one needs an account to do real work. The proposed split axis puts all nine in the same bucket. |
+| D13 | The probe harness is repaired **before** the probe run: `probe_record` propagates failure, every recorded command runs under a timeout, `cargo build` runs once per job rather than once per recorded step and its failure is recorded, and `probe_behaviour` takes a baseline snapshot. | measured, and this is the finding that would have wasted the whole run: `probe_record` ends with `set -e` (`sandbox/probes/common.sh:18`), and a shell function returns the status of its last command, so `probe_record` **always returns 0**. Every probe script ends in `probe_agent_profile`, which ends in `probe_record dry-run`, so a probe whose install failed and whose every later command returned 127 still exits 0 and the Actions job is green. There is no `timeout` anywhere in `common.sh` or `run.sh`, and `cargo build` at `common.sh:23` is unguarded, so under `set -eu` (`:7`) a build failure aborts the probe after the install, leaving transcripts that look complete with no behavioural step. Scope note: under D9's matrix the crate is built once per *job*, which is once per agent; building it once across all agents is not achievable and is not claimed. |
 
 ### 4.1 D6: the oracle conflict, and the owner's ruling
 
@@ -101,14 +119,13 @@ permission directly:
 > `agent-profile-implementation-spec-v3.md:132-133` — "An adapter may be `Proven` while one capability
 > remains `Conditional`, `NotGuaranteed`, or `Unknown`."
 
-This was material: under V3's rule an adapter whose config and state isolation are measured and whose
-credential isolation alone is `Unknown` may be `Proven` — the exact shape §6 predicts for most of the
-nine. Under the draft rule all nine would have been `Experimental`, each carrying D3's stderr hedge on
-every launch forever.
+Under V3's rule an adapter whose config and state isolation are measured and whose credential isolation
+alone is `Unknown` may be `Proven` — the exact shape §6 predicts for most of the nine. Under the draft
+rule all nine would have been `Experimental`, each carrying D3's stderr hedge on every launch forever.
 
 **Owner ruling, 2026-09-16: follow V3.** `Proven` tolerates at most one `Unknown` capability. The support
-level keeps meaning "the mechanism is proven"; the capability matrix carries the nuance, and §7.1 makes
-that matrix visible, which is what stops `proven` from overclaiming. A second `Unknown` capability means
+level keeps meaning "the mechanism is proven"; the capability matrix carries the nuance, and D2 makes that
+matrix unconditional, which is what stops `proven` from overclaiming. A second `Unknown` capability means
 the mechanism itself is not understood, and that is what `Experimental` is for.
 
 ## 5. The evidence bar, as contract-suite invariants
@@ -120,9 +137,13 @@ and must not model bad ones.
 
 ```text
 Gate A   source_url is a URL, or the literal "measured" with non-empty notes        [SP4a]
-         AND docs/evidence/<id>-<upstream_version>.md exists and contains the
-             mechanism token                                                        [fold commit, §5.2]
-         AND every file in docs/evidence/ is referenced by exactly one adapter      [fold commit]
+         AND docs/evidence/<id>-<upstream_version>.md exists                        [fold commit, §5.2]
+         AND it contains the adapter's mechanism token, unless the adapter is
+             registered under §9 outcome 2 (its transcript records a failed probe
+             and cannot contain an observation that never happened)                 [fold commit]
+         AND every file in docs/evidence/ matching <id>-<version>.md is referenced
+             by exactly one adapter, and no file there fails to match that pattern
+             except README.md                                                       [fold commit]
 Gate B   every basis starts with "measured: ", "cited: " or "unmeasured: "
          AND contains no newline
          AND starts with "unmeasured: " if and only if its state is Unknown
@@ -132,43 +153,70 @@ Gate C   support == Proven  =>  notes is non-empty
 ```
 
 `upstream_version` is constrained to `[A-Za-z0-9._-]+` so that `<id>-<version>.md` always names one
-unambiguous file: it is an unconstrained `&'static str` today (`metadata.rs:20`) and Gate A now builds a
-path from it.
+unambiguous file: it is an unconstrained `&'static str` today (`metadata.rs:20`) and Gate A builds a path
+from it. Throughout this document the filename uses the adapter's **id**, never its executable name, which
+differs for Kiro, Cursor and Continue (§8).
 
-Gate A's third clause is the converse of its second, and it exists because without it the evidence
-directory and the registry drift apart silently — an orphaned transcript asserts a measurement about a
-version nobody supports and looks, at a glance, exactly like current evidence.
+Gate A's last clause is the converse of the others. Without it the evidence directory and the registry
+drift apart silently — an orphaned transcript asserts a measurement about a version nobody supports and
+looks, at a glance, exactly like current evidence. The pattern requirement is what keeps the clause strong:
+scoping it only to matching files would let a stray `notes.md` sit there unexamined.
 
 ### 5.1 The manual surface
 
 These rules cannot be asserted, and are named here together so no one mistakes them for gates:
 
-1. **Gate B's content half** — whether a `basis` sentence describes a real bypass. No test can judge a
-   sentence; D8's transcript is what a reviewer checks it against.
+1. **Gate B's content half** — whether a `basis` sentence describes a real bypass, and whether it omits an
+   inconvenient fact. No test can judge a sentence; D8's transcript is what a reviewer checks it against.
 2. **The standing red flag** — no shipped adapter claims `CredentialIsolation: Supported`: Claude is
    `Conditional` (`claude.rs:38`), Codex `Conditional` (`codex.rs:42`), Aider `NotSupported`
    (`aider.rs:46`). Every one of the nine has a documented API-key or token variable that bypasses its
    mechanism (§8). An SP4 adapter arriving as `Supported` means the measurement is absent or wrong.
-3. **Transcript fidelity** — Gate A proves a file exists and contains a token; only a human can tell a real
-   transcript from a plausible hand-written one. §7.4's chain of custody is what makes that check possible.
+3. **Transcript content** — §5.3 binds a transcript to a real run and proves the committed bytes are the
+   uploaded bytes; it cannot judge whether the excerpt inside was the right excerpt.
 4. **§8's correction duty** — "where a probe contradicts a row, the probe wins" requires someone to re-read
    §8 after the run. Nothing enforces it.
 5. **Mutant proof of new tests** (§10) — `just mutants` exists (`justfile:68-69`) but no CI job or hook
    runs it.
+6. **Gate C's `notes` clause** is a non-emptiness check; `notes: "-"` satisfies it. §5.3, not Gate C, is
+   what makes evidence expensive to fake.
 
 ### 5.2 Why Gate A is split across two commits
 
 `docs/evidence/` does not exist in the tree today (`docs/` holds `superpowers/`, two ledgers and
 `dev-tooling.md`), and the three shipped adapters name versions — `claude` `2.1.270` (`claude.rs:23`),
 `codex` `0.153.4` (`codex.rs:27`), `aider` `0.86.2` (`aider.rs:32`) — whose transcripts were never
-committed. A Gate A that asserted transcript existence inside SP4a would therefore turn the branch red for
-three adapters, and the only artefact that could make it green is produced by the probe run that D1
-sequences *after* SP4a.
+committed. A Gate A that asserted transcript existence inside SP4a would turn the branch red for three
+adapters, and the only artefact that could make it green is produced by the probe run that D1 sequences
+*after* SP4a.
 
 So Gate A lands in two pieces: the shape half in SP4a, the transcript half in the fold commit that also
 adds the transcripts. Neither commit is ever red. This is the one place where an SP4a deliverable is not
 buildable against code that exists now, and splitting it is what preserves D1's premise rather than
 quietly breaking it.
+
+### 5.3 Binding a transcript to the run that produced it
+
+Every gate above checks a file's *shape*. None of them checks that the file came from anywhere, and a
+convincing transcript — real run URL copied from the public Actions tab, plausible `--help` excerpt, a
+column of zero exit codes — can be written by hand in minutes and passes all of them. Renaming
+`<id>-2.1.0.md` to `<id>-3.0.0.md` and editing one version string passes them too, and reads in a diff as
+a textbook evidence refresh.
+
+So a `custody: ci` transcript carries `run-id:` and, for its own body, `sha256:`, and a **verification job
+runs on pull requests**: for every changed file under `docs/evidence/` whose first line is `custody: ci`,
+it queries the Actions API and asserts that the run belongs to this repository, is the Sandbox workflow,
+concluded `success`, and published a `sandbox-transcript-<id>` artifact containing a file whose SHA-256
+matches the committed one.
+
+That job needs `actions: read` and nothing else. **It is a separate job from the probe**, which keeps
+`contents: read` and gains no new permission — the probe executes third-party installers and must remain
+the least privileged thing in the repository (§9).
+
+**Stated degradation:** Actions artifacts expire. After expiry the artifact comparison is impossible and
+the check falls back to run-exists, correct-workflow, concluded-success, and head-SHA-is-an-ancestor. That
+is weaker, but it still costs a forger a real green Sandbox run for that specific agent, which is the
+property worth buying. A transcript marked `custody: off-ci` (§7.4.1) is exempt and is reviewed by hand.
 
 ## 6. What can and cannot be measured
 
@@ -190,6 +238,23 @@ claims and is `Experimental`, which is the state meaning "the mechanism itself i
 An adapter may raise `CredentialIsolation` later without new code: it is a metadata edit plus a new
 transcript. §7.4.1 defines the custody shape such a transcript must carry, because it cannot be produced
 in CI. `doctor` (SP5) is where drift against the recorded evidence is detected.
+
+### 6.1 Tier-B adapters and V3:139-140
+
+V3 singles out Aider, Amp, Continue and Cursor: they "must not be presented as guaranteed isolated
+accounts unless evidence proves that claim". Three are SP4 adapters, and under D6 each could reach
+`support: proven` on a config-isolation measurement while its credential claim stays `Unknown`.
+
+**Owner ruling, 2026-09-16: the matrix satisfies the requirement**, on these grounds. `proven` is a
+statement about the mechanism, not about the account. D2 renders the capability states unconditionally
+and in the same block, so a user cannot read `support: proven` without also reading
+`credentials: unknown` directly beneath it — the report has no mode that shows one and hides the other.
+"Presented as a guaranteed isolated account" would require a surface that asserts isolation without that
+qualification, and SP4 ships none.
+
+Two consequences are binding. D2's matrix may not become conditional or opt-in in a later sub-project
+without revisiting this ruling, and SP5's JSON output must carry the capability states in the same
+object as the support level for the same reason. Both are recorded in `TODO.md`.
 
 ## 7. Architecture
 
@@ -235,18 +300,24 @@ than a surprise.
 
 ### 7.2 The launch hedge (D3)
 
-When `metadata().support` is not `Proven`, and the launch is real rather than a dry run, the CLI writes
-one line to stderr before the launcher runs:
+When `metadata().support` is not `Proven`, the launch is real rather than a dry run, **and no report is
+being rendered**, the CLI writes one line to stderr before the launcher runs:
 
 ```text
 agent-profile: kiro is experimental: config not guaranteed, credentials unknown. Run with --dry-run for detail.
 ```
 
-The capability names are exactly the report's — `config`, `credentials`, `state` (§7.1) — so one
-vocabulary covers both surfaces. Every capability that is `Unknown` or `NotSupported` is listed, in
-`Capability::ALL` order; if none is, the line names the support level alone. A configuration key,
-`hide_support_warning = true`, suppresses it; without an opt-out, a warning that can never be cleared is
-trained away within a week.
+Every capability whose state is **not `Supported`** is listed, in `Capability::ALL` order, using the
+report's own names — `config`, `credentials`, `state` (§7.1) — so one vocabulary covers both surfaces. If
+every capability is `Supported`, the line names the support level alone. The `--verbose` exclusion matters
+because that report also goes to stderr on a real launch (`cli.rs:603-608`), and pointing a user who just
+read the full matrix at `--dry-run` would be absurd.
+
+**Suppression.** A top-level boolean `hide_support_warning` in `config.toml`, default `false`, applying to
+every adapter. It needs a new arm in the strict schema at `crates/agent-profile/src/config.rs:210-220`,
+whose `_` arm rejects any unrecognised key as `"unknown key"` (`:219`). One consequence must be
+documented rather than discovered: a configuration file using this key is rejected by any earlier binary,
+because that binary's schema does not know it.
 
 Under D6's ruling this line is rare rather than universal — it marks an adapter whose mechanism is not
 established, not merely one with an unmeasured credential claim. That is what keeps it readable. Its
@@ -263,32 +334,42 @@ limits are recorded in §12 rather than papered over.
 - `cargo build` runs once per job, not once per recorded step, and its failure is recorded rather than
   aborting the script silently.
 
-`probe_behaviour <agent> <default-location>` then: snapshots `<default-location>` after the install and
-before any launch; runs the agent under `agent-profile` with a throwaway application root and a
-non-interactive argument; and records the delta at the profile directory and at `<default-location>`. The
-default location is a per-agent fact, so each probe script passes it; `common.sh` cannot derive it.
-`probe_behaviour` runs **before** any unwrapped invocation of the agent.
+**Every probe script then follows this order exactly.** The order is part of the contract, because
+`probe_behaviour`'s delta is only attributable if nothing has run the agent before it:
 
-The baseline is recorded in the transcript, not just used to compute the delta: the install ran vendor
-code before anything else, and a reviewer needs to see what that code had already created.
+1. `install` — the only step that runs vendor code before a snapshot exists.
+2. `baseline` — record `<default-location>` as the install left it.
+3. `behaviour` — `probe_behaviour <id> <default-location>`: launch under `agent-profile`, then record the
+   delta at the profile directory and at `<default-location>`.
+4. `version` — the agent's own `--version`, unwrapped.
+5. `help` — the agent's own `--help`, unwrapped.
+6. `strings` — the bypass-variable excerpt.
+
+Steps 4 and 5 are unwrapped invocations, which is why they move after step 3; every existing script runs
+them before (`sandbox/probes/claude.sh:5-7`). `agent-profile --version` inside `probe_agent_profile`
+(`common.sh:24`) is not an invocation of the agent and does not constrain this order.
+
+The default location is a per-agent fact, so each probe script passes it; `common.sh` cannot derive it.
+The baseline is recorded in the transcript, not merely used to compute the delta: the install ran vendor
+code before anything else, and a reviewer needs to see what it had already created.
 
 A probe never supplies a credential and never waits for input.
 
 ### 7.4 Evidence transcripts (D8)
 
-`docs/evidence/<agent>-<version>.md` holds, for one probe run: the install command including the resolved
-version, `--version` output, the `--help` excerpt containing the mechanism token, the strings excerpt
-listing candidate bypass variables, the pre-launch baseline, the behavioural delta, and a **chain of
-custody** — the workflow run URL, the harness commit, and every recorded step's exit code verbatim.
-Without the last part a plausible transcript can be hand-written in ninety seconds and no gate, human or
-mechanical, could tell.
+`docs/evidence/<id>-<version>.md` holds, for one probe run: a first line naming the custody shape, the
+install command including the resolved version, the pre-launch baseline, the behavioural delta,
+`--version` output, the `--help` excerpt containing the mechanism token, the strings excerpt listing
+candidate bypass variables, and a **chain of custody** — the workflow run URL, `run-id:`, the body's
+`sha256:`, the harness commit, and every recorded step's exit code verbatim. §5.3 is what makes those
+fields load-bearing rather than decorative.
 
 Captured output is untrusted vendor text. Before it becomes a committed file it is stripped of terminal
 control sequences and bounded in size; an excerpt that must be truncated says so at the truncation point.
 
 **Retention.** One transcript per adapter is live at a time: the one Gate A resolves from the current
 `upstream_version`. A re-measurement replaces the file it supersedes — git history holds the old one, and
-Gate A's third clause fails if an orphan is left behind. An `unknown` transcript from a failed probe
+Gate A's last clause fails if an orphan is left behind. An `unknown` transcript from a failed probe
 (§9 outcome 2) is deleted when the agent is later probed successfully; leaving it would be a durable false
 statement that the agent cannot be installed.
 
@@ -300,8 +381,9 @@ guidance covers the *interpreter*, not the package (`CONTRIBUTING.md:108-109`).
 #### 7.4.1 Off-CI custody, for authenticated measurement
 
 A transcript produced outside CI has no workflow run URL, so it carries a different, explicitly weaker
-custody block: the sandbox and its version, the host platform, the date, and who performed it. It is
-marked `custody: off-ci` on its first line so a reviewer never mistakes it for a CI transcript.
+custody block: the sandbox and its version, the host platform, the date, and who performed it. Its first
+line reads `custody: off-ci` so §5.3's verification job skips it and a reviewer never mistakes it for a
+CI transcript.
 
 This shape exists because §6's upgrade path would otherwise be unreachable: an authenticated measurement
 cannot run in CI (§2.2), so the one transcript that could ever justify raising `CredentialIsolation` is
@@ -312,22 +394,28 @@ of scope for SP4; defining how it must be recorded is not.
 ### 7.5 Workflow (D9)
 
 The `agent` input is renamed to `agents` and accepts a whitespace- or comma-separated list, or `all`. A
-`prepare` job parses it, validates each name against `[a-z0-9-]` and against the existence of
-`sandbox/probes/<name>.sh`, **deduplicates**, caps the list length, and emits a JSON array. An empty or
-unknown name fails the job loudly; a naive split-and-loop would iterate zero times and report success
-having probed nothing, and a duplicated name would double the runner cost while colliding on the artifact
-name the matrix is supposed to keep unique.
+`prepare` job — **which runs only for `workflow_dispatch` with `mode == probe`** — parses it, validates
+each name against `[a-z0-9-]` and against the existence of `sandbox/probes/<name>.sh`, **deduplicates**,
+caps the list at **24** entries, and emits a JSON array. An empty or unknown name fails the job loudly; a
+naive split-and-loop would iterate zero times and report success having probed nothing, and a duplicated
+name would double the runner cost while colliding on the artifact name the matrix keeps unique.
+
+The event gate is not optional: on `pull_request` there are no `workflow_dispatch` inputs
+(`.github/workflows/sandbox.yml:12-15`), so `inputs.agents` is empty and an ungated `prepare` would fail
+every pull request that touches `sandbox/**` — reddening the very CI that exists to keep the harness
+working. The cap is 24 rather than 12 because §9's probe run needs all twelve at once and a cap at the
+current registry size would make the thirteenth adapter a workflow edit.
 
 A `probe` job then runs `strategy: { fail-fast: false, matrix: { agent: <that array> } }`, so one agent's
 failure or hang cannot consume another's budget, and each job keeps its own 60-minute cap. A
 `concurrency` group prevents a re-dispatch from running twelve more installer jobs alongside twelve
-already in flight; `docs.yml:17-19` is the repository's idiom for this.
+already in flight; `docs.yml:17-19` is the repository's idiom.
 
-Each job uploads two artifacts: `sandbox-transcript-<agent>`, holding only the curated files that become
-the transcript, and `sandbox-logs-<agent>`, holding the raw `build.log`, `output.log` and `diff.txt`. They
-are separate because the raw upload is the whole container delta (`sandbox/run.sh:154`) plus the image
-build log including toolchain downloads, and a human reviewing twelve of those is the load-bearing step of
-§5.1 — burying the reviewable artefact in megabytes of build noise is how that step stops happening.
+Each job uploads two artifacts: `sandbox-transcript-<id>`, holding only the curated files that become the
+transcript — this is the artifact §5.3 hashes against — and `sandbox-logs-<id>`, holding the raw
+`build.log`, `output.log` and `diff.txt`. They are separate because the raw upload is the whole container
+delta (`sandbox/run.sh:154`) plus the image build log including toolchain downloads, and burying the
+reviewable artefact in megabytes of build noise is how §5.1's manual review stops happening.
 
 The `pull_request` trigger keeps running `test` mode only, and no secret is added.
 
@@ -351,8 +439,12 @@ contradicts a row, the probe wins and this table is corrected rather than the ad
 
 Agent ids are what a user types (`agent-profile gemini work`) and must satisfy `AgentId::parse`
 (`adapter_contract.rs:247-250`). Executable names are the binary the adapter discovers, and differ from
-the id for Kiro, Cursor and Continue. The install column is cited, not measured, and the probe run tests
-it: an install command is itself an unverified claim until a probe executes it.
+the id for Kiro, Cursor and Continue; probe scripts and transcripts are named by **id**. The install
+column is cited, not measured, and the probe run tests it: an install command is itself an unverified
+claim until a probe executes it.
+
+Continue and Amp each declare their own mechanism flag in `conflicts` without waiting for a probe, per
+D11's exception.
 
 ### 8.1 Gemini nests
 
@@ -369,16 +461,11 @@ empty `.gemini` would misrepresent a profile as materialized. The probe confirms
 variable is not OpenCode's — it redirects every XDG-aware program in the launched process tree, which
 exceeds what an adapter may claim to control.
 
-V3 §2 names two mechanisms for OpenCode (`agent-profile-implementation-spec-v3.md:99`:
-"`OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG`") and describes the result as "Config/home isolation". Two
-conflicts with the evidence are reported rather than resolved here: the second variable names a config
-*file* rather than a home, so it is an alternative to the first and not an addition to it; and "home"
-overstates what either variable covers. If the probe finds no OpenCode-specific data-directory variable,
-the adapter sets `OPENCODE_CONFIG_DIR` alone and declares `CredentialIsolation` and `StateIsolation`
-`NotSupported`, each with a basis naming the directory that does not move. Note the consequence under D6:
-two non-`Unknown` negative claims do not block `Proven`, so OpenCode can be `Proven` *and* honestly state
-that it isolates configuration only. The owner is asked to confirm that reading of V3 §2 when approving
-this spec.
+The divergence from V3 §2 is recorded in §1.1. If the probe finds no OpenCode-specific data-directory
+variable, the adapter sets `OPENCODE_CONFIG_DIR` alone and declares `CredentialIsolation` and
+`StateIsolation` `NotSupported`, each with a basis naming the directory that does not move. Note the
+consequence under D6: two non-`Unknown` negative claims do not block `Proven`, so OpenCode can be `Proven`
+*and* honestly state that it isolates configuration only.
 
 ### 8.3 Cline's mechanism is undecided by design
 
@@ -388,13 +475,16 @@ isolation. `CLINE_DATA_DIR` is a documented environment equivalent that may not 
 The probe answers three questions in order: does `CLINE_DATA_DIR` isolate state; does it enable sandbox
 mode; does `--config` work alongside it. The answer selects one of three shapes:
 
-1. `CLINE_DATA_DIR` alone — the existing `env_dir_plan`, no new helper.
+1. `CLINE_DATA_DIR` alone — the existing `env_dir_plan`, no new helper. This is a divergence from V3 §2,
+   recorded in §1.1: it uses neither mechanism V3's table names.
 2. `CLINE_DATA_DIR` plus `--config` — a new helper combining one variable and one flag.
-3. `--config` plus `--data-dir` — a new helper emitting two flag/value pairs.
+3. `--config` plus `--data-dir` — a new helper emitting two flag/value pairs, and the only shape V3's
+   table describes.
 
 `config_file_arg_plan` cannot express 2 or 3: it emits exactly one flag/value pair
 (`adapter/mod.rs:197`) drawn from the first `File`-kind path (`:191-195`). Whether SP4b adds a helper, and
-which, is settled by measurement. No helper is written speculatively.
+which, is settled by measurement. No helper is written speculatively. Shapes 2 and 3 pass a flag, so under
+D11 the adapter declares that flag in `conflicts`.
 
 ### 8.4 The two configuration-file adapters need a minimal accepted file
 
@@ -424,11 +514,12 @@ requires a committed transcript and theirs were never committed — their SP2 ev
 only three with no checkable evidence. SP4 inverts that rather than grandfathering it.
 
 **The commit is manual and human-performed.** A maintainer downloads the artifacts, reviews each
-transcript, and commits them together with Gate A's transcript half (§5.2). The probe job keeps
-`permissions: contents: read` (`.github/workflows/sandbox.yml:28-29`) and **must never be granted write
-access**: it runs `npm install --global` and vendor install scripts for twelve third-party packages, any
-of which can execute arbitrary code in a postinstall hook. A repository-write credential in that job would
-let one compromised package push to the default branch.
+transcript, and commits them together with Gate A's transcript half (§5.2); §5.3's job then verifies each
+committed file against its run. The probe job keeps `permissions: contents: read`
+(`.github/workflows/sandbox.yml:28-29`) and **must never be granted write access**: it runs
+`npm install --global` and vendor install scripts for twelve third-party packages, any of which can
+execute arbitrary code in a postinstall hook. A repository-write credential in that job would let one
+compromised package push to the default branch.
 
 Four outcomes, and every probe lands in exactly one:
 
@@ -438,13 +529,17 @@ Four outcomes, and every probe lands in exactly one:
    written, from cited evidence, with `ConfigIsolation: Unknown`. That is a second `Unknown` alongside
    credentials, so D6 makes it `Experimental`, which is correct: nothing about its mechanism was
    established. Its evidence entry records `upstream_version: "unknown"` and a
-   `docs/evidence/<agent>-unknown.md` transcript recording the failure, so Gate A still resolves to a real
-   file and no version string is invented. §7.4's retention rule removes that file when the agent is later
-   probed successfully.
+   `docs/evidence/<id>-unknown.md` transcript recording the failure, which Gate A exempts from the token
+   clause — a probe that never ran the agent cannot have observed the token, and requiring the string
+   anyway would reduce Gate A to a substring test that any sentence satisfies. §7.4's retention rule
+   removes that file when the agent is later probed successfully. The divergence from V3:110 is recorded
+   in §1.1.
 3. **Mechanism disproved** — the agent installs and runs, and the claimed token is absent from its
-   artefacts. Gate A then forbids registration. **The adapter is not registered in SP4**; its row moves to
-   `TODO.md` as tracked debt with the transcript as evidence. This is an explicit exception to "no adapter
-   is dropped", which covers outcome 2 only, and it is the most valuable result a probe can produce.
+   artefacts. Gate A then forbids registration. **The adapter is not registered**, its row moves to
+   `TODO.md` as tracked debt with the transcript as evidence, and — because this reduces V0.1 below V3's
+   twelve adapters (§1.1) — **the owner signs off before SP4b proceeds**. This is an explicit exception to
+   "no adapter is dropped", which covers outcome 2 only, and it is the most valuable result a probe can
+   produce.
 4. **Mechanism differs** — the agent exposes a *different* mechanism from the claimed one. §8's table is
    corrected and the adapter is written against what was measured.
 
@@ -455,12 +550,13 @@ remains available for a later authenticated measurement under §7.4.1.
 
 | Suite | Addition |
 |---|---|
-| `tests/adapter_contract.rs` | gates A-shape, B and C in `metadata_invariants` (SP4a); Gate A's transcript clauses in the fold commit (§5.2); one `expected()` row per new adapter (the `panic!` at `:131` makes a missing row a failure, not a silent pass); one `conflict_contract` row each. |
-| `tests/adapters_e2e.rs` | one row per new adapter, launching the renamed `fake-agent`, proving the plan reaches the child. No real agent runs in CI. |
+| `tests/adapter_contract.rs` | gates A-shape, B and C in `metadata_invariants` (SP4a); Gate A's transcript clauses in the fold commit (§5.2); one `expected()` row per new adapter (the `panic!` at `:131` makes a missing row a failure, not a silent pass); one `conflict_contract` row each, non-empty for Continue and Amp per D11. |
+| `tests/adapters_e2e.rs` | one row per new adapter, launching `fake-agent` under the adapter's own executable name, proving the plan reaches the child. No real agent runs in CI. |
 | `src/output.rs` unit tests | the `support:` and `isolation:` rendering for each `CapabilityState` spelling; the `basis` line in both modes; **a capability with no claim renders `not declared` and does not panic** (§7.1). **Re-baseline the positional assertions at `output.rs:392-393` and `:400`.** |
-| `tests/launch.rs` | the D3 stderr hedge: present for an `Experimental` adapter, absent for a `Proven` one, absent on a dry run, listing *every* leaking capability rather than the first, suppressed by the configuration key, and on stderr rather than stdout. **Re-baseline `launch.rs:143`.** |
+| `tests/launch.rs` | the D3 stderr hedge: present for an `Experimental` adapter, absent for a `Proven` one, absent on a dry run, **absent under `--verbose`**, listing every capability that is not `Supported` (including a `NotGuaranteed` one, which the earlier draft would have omitted), suppressed by `hide_support_warning`, and on stderr rather than stdout. **Re-baseline `launch.rs:143`.** |
+| `src/config.rs` unit tests | `hide_support_warning` parses as a boolean, defaults to `false`, and rejects a non-boolean with the schema's existing error shape. |
 | Probe harness | `probe_record` returns non-zero for a failed command — the D13 regression that would otherwise make the whole probe run meaningless. Testable without any agent: record `sh -c 'exit 3'`. |
-| Deletion of `Known` | the `status` presence labels stay covered by the existing SP3 resolution tests; no test may assert the string `known` afterwards. |
+| `ProfilePresence::Known` | the variant stays; a test asserts the `status` label renders it, so the arm at `cli.rs:739` is not dead code that a later reader deletes. |
 
 Every new test is proven non-vacuous with a logic mutant, per the repository's assertion-strength
 discipline: a test that cannot fail is a test that certifies nothing.
@@ -470,19 +566,25 @@ discipline: a test that cannot fail is a test that certifies nothing.
 - `README.md`: the supported-agent table grows to twelve, with a support-level column, and states the
   Windows shim consequence of §12.
 - `CONTRIBUTING.md`: how to add an adapter, pointing at the gates and at `docs/evidence/`.
-- `docs/evidence/README.md`: what a transcript is for, what chain of custody it must carry (both shapes,
-  §7.4 and §7.4.1), how to refresh one, and that a refresh replaces rather than accumulates.
-- `ROADMAP.md`: SP4 done, SP5 next; the `ProfilePresence::Known` note added at `8741ea0` is resolved.
-- `TODO.md`: any capability left `Unknown` that an authenticated measurement could settle is tracked debt,
-  as is any adapter dropped under outcome 3 of §9.
+- `docs/evidence/README.md`: what a transcript is for, both custody shapes (§7.4, §7.4.1), how §5.3
+  verifies one, how to refresh one, and that a refresh replaces rather than accumulates.
+- `ROADMAP.md`: SP4 done, SP5 next; the `ProfilePresence::Known` note added at `8741ea0` is resolved by
+  D10 — the variant is reserved, not dead.
+- `TODO.md`: any capability left `Unknown` that an authenticated measurement could settle; any adapter
+  dropped under outcome 3 of §9; any adapter registered with `upstream_version: "unknown"`; and §6.1's two
+  binding consequences for SP5.
 
 ## 12. Known limits
 
 - **Credential isolation is unproven for all nine.** SP4 states this rather than fixing it; fixing it
   needs a paid account per vendor. Under D6 an adapter may still be `Proven` with that single `Unknown`,
-  which is why §7.1's matrix is mandatory rather than optional: the support level alone would overclaim.
+  which is why §7.1's matrix is mandatory rather than optional: the support level alone would overclaim,
+  and §6.1's ruling depends on it.
 - **Evidence is a snapshot.** A transcript pins one version on one day. Drift detection is `doctor` (SP5),
   and until then a mechanism can change upstream without the repository noticing.
+- **§5.3 proves provenance, not content.** It proves the committed bytes came from a real green run of
+  this workflow for this agent; it cannot prove the right excerpt was captured, and after artifact expiry
+  it degrades to proving the run existed.
 - **The behavioural probe proves where files landed, not that nothing leaked.** A delta shows the config
   directory moved; it cannot show that no credential was read from a shared location.
 - **`StateIsolation` measurement is partial** for agents that write history only after a network call.
@@ -490,6 +592,8 @@ discipline: a test that cannot fail is a test that certifies nothing.
   `exec` hands the terminal over, and an agent that opens a full-screen alternate-screen TUI may clear it
   before it is read. The durable disclosures are the report and the README; a first-launch acknowledgement
   belongs with `create` in SP5.
+- **`hide_support_warning` breaks backward compatibility of the configuration file.** The schema is strict
+  (`config.rs:219` rejects any unknown key), so a file using the new key fails on an earlier binary.
 - **On Windows, most of the nine are both unmeasured and refused by default.** They are npm-installed, so
   the executable is a shim, and a shim is refused with a hint rather than parsed (`src/exe.rs:32`, SP2
   design D2, V3 §23.2) — a user must set `executable` in the configuration. Meanwhile the probe runs in a
@@ -510,13 +614,15 @@ discipline: a test that cannot fail is a test that certifies nothing.
 | Q3 | Does `KIRO_HOME` hold for all subsystems at the probed version? | probe run; decides Kiro's `ConfigIsolation` |
 | Q4 | Do Cursor's stored credentials live under `CURSOR_CONFIG_DIR`? | probe run if observable unauthenticated; otherwise `Unknown` |
 | Q5 | Does `--settings-file` affect Amp's credential or session storage? | probe run; otherwise `Unknown` |
-| Q6 | Which agents expose a conflicting option in `--help` at the pinned version? | probe transcripts; D11 defaults to `&[]` |
-| Q7 | Does any of the nine have a native named-profile concept? | probe run; if one does, D10's deletion is reversed in SP4b |
+| Q6 | Which agents expose an abbreviated conflicting spelling in `--help`? | probe transcripts; D11 gives the exact-flag answer without a probe |
+| Q7 | Does any of the nine have a native named-profile concept? | probe run; if one does, it is the first constructor for `ProfilePresence::Known` (D10) |
 | Q8 | What is the smallest file content Continue and Amp each accept that sets no option? | probe run (§8.4); no contents are guessed |
 | Q9 | Does `Proven` tolerate one `Unknown` capability, per V3, or not? | **answered**: owner ruling 2026-09-16, follow V3 (§4.1) |
+| Q10 | Is `ProfilePresence::Known` deleted or retained? | **answered**: owner ruling 2026-09-16, retained and documented as reserved (D10) |
+| Q11 | Does `support: proven` with a visible matrix satisfy V3:139-140 for tier-B agents? | **answered**: owner ruling 2026-09-16, yes (§6.1) |
 
-No question in this table is answered by reasoning in SP4b's plan. Each is answered by a transcript or
-recorded as unanswered, and an unanswered question produces `Unknown`, never a guess.
+No question in this table is answered by reasoning in SP4b's plan. Each is answered by a transcript, an
+owner ruling, or recorded as unanswered — and an unanswered question produces `Unknown`, never a guess.
 
 ## Stand-downs
 
@@ -527,6 +633,9 @@ recorded as unanswered, and an unanswered question produces `Unknown`, never a g
   (§5), so the remaining risk is zero rather than merely low.
 - `DISCARDED-BELOW-FLOOR`: long `basis` strings wrapping in a narrow terminal — display only; no contract
   claims a maximum width.
+- `DISCARDED-BELOW-FLOOR`: `notes: "-"` satisfying Gate C's non-emptiness clause — real, and named in
+  §5.1 item 6 rather than patched, because a length threshold is equally gameable and §5.3 is the control
+  that actually raises the cost of faking evidence.
 - `REJECTED`: a claim that a real adapter could reach `registry()` while omitted from `REAL_ADAPTERS`,
   making the two drift. `adapter/mod.rs:113-120` builds `registry()` from `REAL_ADAPTERS.to_vec()` and
   pushes only `Fake`, so that state is unconstructible.
