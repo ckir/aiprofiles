@@ -1,0 +1,20 @@
+# Pi probe: `sandbox/run.sh probe pi [version]`.
+#
+# Package @earendil-works/pi-coding-agent (registry-verified 2026-09-16: repository
+# github.com/earendil-works/pi, `bin` is `pi`). This is the pi.dev coding agent, not one of the several
+# unrelated tools named `pi`; the repository field is what distinguishes them.
+#
+# `--ignore-scripts` is part of the vendor's own documented npm command (https://pi.dev/), so it is passed
+# rather than dropped -- an install run differently from the way the vendor documents it measures
+# something the vendor does not ship.
+#
+# Default `$HOME/.pi/agent` and mechanism PI_CODING_AGENT_DIR are the LEAST well cited of the twelve: the
+# path comes from the providers documentation's resolution order rather than a sentence stating the
+# default. Step 6's delta is what settles it, and if the delta is empty the adapter is an outcome-2.
+. sandbox/probes/common.sh
+
+probe_npm_install @earendil-works/pi-coding-agent --ignore-scripts
+probe_version pi
+probe_help pi
+probe_strings pi ANTHROPIC_API_KEY OPENAI_API_KEY PI_CODING_AGENT_DIR
+probe_behaviour pi "$HOME/.pi" env:PI_CODING_AGENT_DIR @none
