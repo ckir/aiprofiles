@@ -29,17 +29,17 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::ConfigIsolation,
             state: CapabilityState::Unknown,
-            basis: "test fixture",
+            basis: "unmeasured: a fixture has nothing to isolate",
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::Unknown,
-            basis: "test fixture",
+            basis: "unmeasured: a fixture has nothing to isolate",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::Unknown,
-            basis: "test fixture",
+            basis: "unmeasured: a fixture has nothing to isolate",
         },
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],

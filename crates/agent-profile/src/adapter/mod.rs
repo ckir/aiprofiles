@@ -4,6 +4,7 @@
 //!
 //! Adapters never spawn processes: `plan()` returns a `LaunchPlan` and the launcher runs it (spec §4).
 
+pub mod gate;
 pub mod metadata;
 
 mod aider;

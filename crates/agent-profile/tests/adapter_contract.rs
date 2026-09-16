@@ -5,9 +5,10 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 
+use agent_profile::adapter::gate::GateFailure;
 use agent_profile::adapter::{
-    self, Adapter, Capability, PathKind, PlanContext, PlannedLaunch, ProfilePath, ProfilePresence,
-    SupportLevel,
+    self, Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
+    PathKind, PlanContext, PlannedLaunch, ProfilePath, ProfilePresence, SupportLevel, gate,
 };
 use agent_profile::config::{AppRoot, Config};
 use agent_profile::error::{Error, Result};
@@ -272,6 +273,19 @@ fn metadata_invariants() {
     ids.dedup();
     assert_eq!(ids.len(), registry.len(), "adapter ids must be unique");
 
+    // Gates A-shape, B and C over every real adapter. `fake` is excluded from A and C by design: it has no
+    // upstream product, so demanding evidence of one would force a fabricated transcript (SP4 design D4).
+    for adapter in adapter::REAL_ADAPTERS {
+        let metadata = adapter.metadata();
+        assert_eq!(gate::gates_before_transcripts(metadata), Ok(()), "{}", metadata.id);
+    }
+    // Gate B applies to every adapter including the fixture, which has real claims and must not model bad
+    // ones.
+    for adapter in &registry {
+        let metadata = adapter.metadata();
+        assert_eq!(gate::gate_b(metadata), Ok(()), "{}", metadata.id);
+    }
+
     let real: Vec<(&str, SupportLevel)> = adapter::REAL_ADAPTERS
         .iter()
         .map(|adapter| (adapter.metadata().id, adapter.metadata().support))
@@ -468,4 +482,205 @@ fn initialization_contract() {
             .unwrap();
         assert_profile_dir_error(aider.initialize(&dangling), "dangling symlink at the Aider file");
     }
+}
+
+// --- Gate negative fixtures (SP4 design §10) ---------------------------------------------------------
+//
+// The gates are library functions rather than inline assertions precisely so these can exist: a rule
+// expressed only over `static METADATA` items is unreachable by `cargo mutants`, so a weaker-than-intended
+// gate would pass because no shipped adapter exhibits the excluded combination.
+
+/// A metadata value that passes every gate, for a test to break in exactly one way.
+fn sound_metadata() -> AdapterMetadata {
+    AdapterMetadata {
+        id: "fixture",
+        executable: "fixture",
+        mechanism_summary: "environment variable FIXTURE_HOME",
+        support: SupportLevel::Proven,
+        evidence: AdapterEvidence {
+            mechanism_id: "fixture-home-v1",
+            verified_at: "2026-09-16",
+            upstream_version: "1.0.0",
+            source_url: "measured",
+            notes: "measured in a sandbox",
+        },
+        capabilities: &[
+            CapabilityClaim {
+                capability: Capability::ConfigIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: config moved with the variable",
+            },
+            CapabilityClaim {
+                capability: Capability::CredentialIsolation,
+                state: CapabilityState::Unknown,
+                basis: "unmeasured: requires an authenticated session",
+            },
+            CapabilityClaim {
+                capability: Capability::StateIsolation,
+                state: CapabilityState::NotSupported,
+                basis: "measured: sessions stay in the default location",
+            },
+        ],
+        env: &[],
+        conflicts: &[],
+    }
+}
+
+#[test]
+fn the_sound_fixture_passes_every_gate() {
+    assert_eq!(gate::gates_before_transcripts(&sound_metadata()), Ok(()));
+}
+
+#[test]
+fn gate_b_rejects_an_unmeasured_prefix_on_a_non_unknown_state() {
+    // The D5 attack verbatim: without the biconditional this reaches `Proven` with nothing measured.
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::NotGuaranteed,
+        basis: "unmeasured: no vendor session available",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::UnmeasuredMismatch {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::NotGuaranteed,
+        })
+    );
+}
+
+#[test]
+fn gate_b_rejects_an_unknown_state_without_the_unmeasured_prefix() {
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::CredentialIsolation,
+        state: CapabilityState::Unknown,
+        basis: "measured: this claim was never measured, whatever it says",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::UnmeasuredMismatch {
+            id: "fixture",
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::Unknown,
+        })
+    );
+}
+
+#[test]
+fn gate_b_rejects_a_basis_without_a_provenance_prefix() {
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "config moved with the variable",
+    }];
+    assert!(matches!(gate::gate_b(&metadata), Err(GateFailure::BasisPrefix { .. })));
+}
+
+#[test]
+fn gate_b_rejects_a_basis_containing_a_newline() {
+    // One `Vec` entry is one report line; an embedded newline would silently render as two.
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "measured: first line\nsecond line",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisNewline { id: "fixture", capability: Capability::ConfigIsolation })
+    );
+}
+
+#[test]
+fn gate_c_rejects_proven_with_two_unknown_claims() {
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: requires an authenticated session",
+        },
+    ];
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::ProvenWithTooManyUnknowns { id: "fixture", unknowns: 2 })
+    );
+}
+
+#[test]
+fn gate_c_rejects_proven_with_empty_notes() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.notes = "";
+    assert_eq!(gate::gate_c(&metadata), Err(GateFailure::ProvenWithoutNotes { id: "fixture" }));
+}
+
+#[test]
+fn gate_c_rejects_an_unknown_version_that_did_not_degrade_to_experimental() {
+    // Without this clause, Gate A's token exemption is a hole: a failed probe could still ship `Proven`
+    // beside a `Supported` config claim, with no mechanism token observed anywhere.
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "unknown";
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" })
+    );
+
+    metadata.support = SupportLevel::Experimental;
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" }),
+        "experimental alone is not enough; the config claim must be Unknown too"
+    );
+
+    metadata.capabilities = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: requires an authenticated session",
+        },
+    ];
+    assert_eq!(gate::gate_c(&metadata), Ok(()));
+}
+
+#[test]
+fn gate_a_rejects_a_version_outside_the_permitted_charset() {
+    // Gate A builds `docs/evidence/<id>-<version>.md` from this field, so it must name one file.
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "1.0.0 (build 7)";
+    assert_eq!(
+        gate::gate_a_shape(&metadata),
+        Err(GateFailure::VersionCharset { id: "fixture", version: "1.0.0 (build 7)" })
+    );
+}
+
+#[test]
+fn gate_a_rejects_a_source_url_that_is_neither_a_url_nor_measured() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.source_url = "the vendor told me";
+    assert!(matches!(gate::gate_a_shape(&metadata), Err(GateFailure::SourceUrlShape { .. })));
+    metadata.evidence.source_url = "https://example.com/docs";
+    assert_eq!(gate::gate_a_shape(&metadata), Ok(()));
+}
+
+#[test]
+fn gate_a_rejects_measured_without_notes() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.notes = "";
+    assert_eq!(
+        gate::gate_a_shape(&metadata),
+        Err(GateFailure::MeasuredWithoutNotes { id: "fixture" })
+    );
 }

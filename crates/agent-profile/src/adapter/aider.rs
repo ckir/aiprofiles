@@ -38,18 +38,18 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::ConfigIsolation,
             state: CapabilityState::NotGuaranteed,
-            basis: "the user-level ~/.aider.conf.yml, repository and cwd config files, .env files and AIDER_* \
-                    variables still apply (measured)",
+            basis: "measured: the user-level ~/.aider.conf.yml, repository and cwd config files, .env \
+                    files and AIDER_* variables still apply",
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::NotSupported,
-            basis: "API keys come from the environment, .env files and config files",
+            basis: "measured: API keys come from the environment, .env files and config files",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::NotSupported,
-            basis: "history files are written in the working directory",
+            basis: "measured: history files are written in the working directory",
         },
     ],
     env: &[],

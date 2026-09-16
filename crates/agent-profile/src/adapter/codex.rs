@@ -34,19 +34,19 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::ConfigIsolation,
             state: CapabilityState::Supported,
-            basis: "config.toml and <name>.config.toml live in CODEX_HOME; project-level configuration layering \
-                    is not measured",
+            basis: "cited: config.toml and <name>.config.toml live in CODEX_HOME; project-level \
+                    configuration layering is not measured",
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::Conditional,
-            basis: "auth.json and the keyring key follow CODEX_HOME; OPENAI_API_KEY, CODEX_API_KEY and \
-                    CODEX_ACCESS_TOKEN bypass it (measured)",
+            basis: "measured: OPENAI_API_KEY, CODEX_API_KEY and CODEX_ACCESS_TOKEN bypass it; auth.json \
+                    and the keyring key follow CODEX_HOME",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::Conditional,
-            basis: "CODEX_SQLITE_HOME relocates the state database (measured)",
+            basis: "measured: CODEX_SQLITE_HOME relocates the state database",
         },
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
