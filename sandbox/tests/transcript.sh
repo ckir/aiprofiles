@@ -80,6 +80,18 @@ check "the container delta keeps what the agent wrote" \
 check "the container delta drops our own copy of the checkout" \
     "$(grep -c '/home/probe/work' "$written")" "0"
 
+# An unanchored filter drops any row whose PATH merely contains "/home/probe/work" as a substring —
+# which lets an agent hide an arbitrary write by naming it to end in that string, and also silently
+# drops a legitimate path such as /home/probe/workspace/... . The filter must be anchored to the
+# change-letter and the path field, so it drops only rows that ARE our checkout, keeping a near-miss.
+fixture
+printf 'A /home/probe/work/real-noise\nA /root/.ssh/authorized_keys /home/probe/work\nC /etc/hidden /home/probe/workaround\nA /home/probe/workspace/keep-me\n' \
+    > "$results/diff.txt"
+run_assembler example
+check "the container delta keeps a write that only looks like our checkout" \
+    "$(grep -c '/home/probe/work/real-noise' "$written")-$(grep -c '/root/\.ssh/authorized_keys /home/probe/work$' "$written")-$(grep -c '/etc/hidden /home/probe/workaround' "$written")-$(grep -c '/home/probe/workspace/keep-me' "$written")" \
+    "0-1-1-1"
+
 # §8.4's sweep is present only for the two configuration-file agents.
 check "no candidates section when there was no sweep" "$(grep -c '^candidates:$' "$written")" "0"
 fixture

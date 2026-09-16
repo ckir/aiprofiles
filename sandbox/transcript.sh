@@ -118,7 +118,7 @@ section() {
     # nothing and bury the handful of lines that matter.
     printf 'container-delta:\n'
     if [ -s "$results/diff.txt" ]; then
-        grep -v ' /home/probe/work' "$results/diff.txt" \
+        grep -v '^[ACD] /home/probe/work\(/\|$\)' "$results/diff.txt" \
             | probe_excerpt 300 \
             | sed 's/^/  /'
     else
