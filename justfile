@@ -37,8 +37,20 @@ typos:
 deny:
     cargo deny check
 
-# The local gate: fmt + clippy + typos + test
-check: fmt-check clippy typos test
+# Every shell file in the repository. SP4a took this from three files to seventeen, and the harness is
+# now load-bearing: it decides what an evidence transcript says. `-s sh` because these run under the
+# container's /bin/sh, not bash, and `find` rather than a glob because an unmatched glob passes through
+# literally and would hand shellcheck a filename that does not exist.
+shellcheck:
+    find sandbox -name '*.sh' -exec shellcheck -s sh {} +
+
+# The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
+# No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
+probe-tests:
+    sh sandbox/tests/probe-harness.sh
+
+# The local gate: fmt + clippy + typos + shellcheck + test + the probe harness
+check: fmt-check clippy typos shellcheck test probe-tests
 
 # Background watcher
 watch:

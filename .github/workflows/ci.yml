@@ -30,6 +30,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: crate-ci/typos@512fc24f32f44ab01972217aaaf3dc86ec234d53 # v1.50.2
 
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pre-installed on ubuntu-latest, so there is nothing to pin and nothing to download.
+      - run: find sandbox -name '*.sh' -exec shellcheck -s sh {} +
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

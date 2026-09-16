@@ -37,7 +37,9 @@ case "$mode" in
     test) [ $# -eq 0 ] || usage; net= ;;
     shell) [ $# -eq 0 ] || usage ;;
     probe)
-        [ $# -eq 1 ] || usage
+        # An optional second argument pins the agent version, so a measurement can be repeated.
+        [ $# -eq 1 ] || [ $# -eq 2 ] || usage
+        version=${2:-}
         net=
         agent=$1
         case "$agent" in
@@ -96,6 +98,8 @@ eng() {
     fi
 }
 
+# shellcheck disable=SC2329 # invoked by the EXIT/INT/TERM/HUP traps below, which shellcheck does
+# not follow. Removing it as "unused" would leave every run's container and image behind.
 cleanup() {
     status=$?
     trap '' INT TERM HUP
@@ -133,7 +137,7 @@ fi
 copy='mkdir -p /home/probe/work && tar -C /src --exclude=./target -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
 case "$mode" in
     test) script="$copy && cargo nextest run --workspace --no-tests=pass" ;;
-    probe) script="$copy && sh sandbox/probes/$agent.sh" ;;
+    probe) script="$copy && sh sandbox/probes/$agent.sh $version" ;;
     shell) script="$copy && exec bash" ;;
 esac
 
