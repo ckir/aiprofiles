@@ -70,10 +70,13 @@ pub fn support_hedge(metadata: &AdapterMetadata) -> Option<String> {
     let weak: Vec<String> = Capability::ALL
         .into_iter()
         .filter_map(|capability| {
-            let claim =
-                metadata.capabilities.iter().find(|claim| claim.capability == capability)?;
-            (claim.state != CapabilityState::Supported)
-                .then(|| format!("{} {}", capability_label(capability), state_label(claim.state)))
+            match metadata.capabilities.iter().find(|claim| claim.capability == capability) {
+                None => Some(format!("{} not declared", capability_label(capability))),
+                Some(claim) if claim.state != CapabilityState::Supported => {
+                    Some(format!("{} {}", capability_label(capability), state_label(claim.state)))
+                }
+                Some(_) => None,
+            }
         })
         .collect();
     let detail = if weak.is_empty() { String::new() } else { format!(": {}", weak.join(", ")) };
@@ -1002,6 +1005,30 @@ mod tests {
             support_hedge(&hedged(SupportLevel::Experimental, CapabilityState::Supported))
                 .as_deref(),
             Some("fake is experimental: credentials unknown. Run with --dry-run for detail.")
+        );
+    }
+
+    /// A missing claim must render, not vanish: dropping it silently would let an adapter that declared
+    /// nothing at all for a capability produce the same reassuring hedge as one that measured it and found
+    /// it `Supported`.
+    #[test]
+    fn the_hedge_names_a_capability_that_was_never_declared() {
+        let mut metadata = hedged(SupportLevel::Experimental, CapabilityState::Supported);
+        let claims: Vec<CapabilityClaim> = metadata
+            .capabilities
+            .iter()
+            .filter(|claim| claim.capability != Capability::CredentialIsolation)
+            .copied()
+            .collect();
+        let leaked: &'static [CapabilityClaim] = Box::leak(claims.into_boxed_slice());
+        metadata.capabilities = leaked;
+        let hedge = support_hedge(&metadata).expect("a non-proven adapter hedges");
+        assert!(
+            hedge.contains(&format!(
+                "{} not declared",
+                capability_label(Capability::CredentialIsolation)
+            )),
+            "{hedge}"
         );
     }
 
