@@ -83,7 +83,7 @@ while read -r id version; do
     # artifact download and the byte comparison.
     custody=$(field custody "$file")
     if [ "$custody" != ci ]; then
-        fail "$file: custody is '$custody', expected ci or off-ci"
+        fail "$file: custody is '$custody', expected ci"
         continue
     fi
 
