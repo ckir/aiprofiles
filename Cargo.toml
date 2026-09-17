@@ -50,6 +50,24 @@ strip = "debuginfo"
 # `Drop` for cleanup, or holds a lock across a section -- `config.rs` writes through a temporary file and
 # an atomic rename, so an abort mid-write leaves a stray temp file and never a half-written destination.
 # Cargo ignores this setting for test and bench profiles, so `cargo test --release` still builds.
+#
+# It DOES change one observable: on Windows a panic now exits with the fastfail status 0xC0000409 instead
+# of 101, because that is how the standard library aborts there. MEASURED both ways on Windows 11 with the
+# same source: 0xC0000409 under `abort`, 101 under unwind, and the panic message reaches stderr in both,
+# so this is not a silent death. It is recorded rather than fixed because nothing reads either value --
+# `main.rs` exits with an explicit code from `cli::run`, and a panic is the only route to either one.
+# A review peer predicted this would raise a blocking Windows Error Reporting dialog and hang any pipeline
+# reading the exit code; that did not happen -- no dialog, no `WerFault`, and the process was reaped
+# immediately. The mechanism was right and the consequence was not.
+#
+# `strip = true` does NOT break the cross-compiled `aarch64-unknown-linux-gnu` release target, which is
+# worth stating because it looks as though it should. `-C strip` tells the LINKER what to leave out; it
+# never shells out to a host-native `strip(1)` that would meet an AArch64 ELF it cannot parse. The release
+# workflow already installs the matching cross linker, so the stripping rides along on a tool that is
+# target-correct by construction. MEASURED on an Ubuntu container reproducing that workflow's setup: the
+# build succeeds, and the binary is a stripped AArch64 ELF against a not-stripped control. There is also
+# no `CARGO_TARGET_<TRIPLE>_STRIP` escape hatch to reach for if this were ever wrong -- `strip` is a
+# profile key, so the override is `CARGO_PROFILE_<name>_STRIP`.
 [profile.release]
 opt-level = 3
 lto = true
