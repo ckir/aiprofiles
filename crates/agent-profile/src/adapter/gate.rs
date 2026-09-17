@@ -27,6 +27,8 @@ pub enum GateFailure {
     VersionCharset { id: &'static str, version: &'static str },
     /// Gate B: a `basis` carries no provenance prefix.
     BasisPrefix { id: &'static str, capability: Capability, basis: &'static str },
+    /// Gate B: a `basis` is only its provenance prefix, so it cites a provenance for nothing.
+    BasisWithoutContent { id: &'static str, capability: Capability, basis: &'static str },
     /// Gate B: a `basis` contains a newline, which would render as two report lines.
     BasisNewline { id: &'static str, capability: Capability },
     /// Gate B: `unmeasured:` without `Unknown`, or `Unknown` without `unmeasured:`.
@@ -78,8 +80,24 @@ pub fn gate_a_shape(metadata: &AdapterMetadata) -> Result<(), GateFailure> {
 pub fn gate_b(metadata: &AdapterMetadata) -> Result<(), GateFailure> {
     for claim in metadata.capabilities {
         let unmeasured = claim.basis.starts_with(UNMEASURED);
-        if !unmeasured && !claim.basis.starts_with(MEASURED) && !claim.basis.starts_with(CITED) {
+        let prefix = if unmeasured {
+            Some(UNMEASURED)
+        } else if claim.basis.starts_with(MEASURED) {
+            Some(MEASURED)
+        } else if claim.basis.starts_with(CITED) {
+            Some(CITED)
+        } else {
+            None
+        };
+        let Some(prefix) = prefix else {
             return Err(GateFailure::BasisPrefix {
+                id: metadata.id,
+                capability: claim.capability,
+                basis: claim.basis,
+            });
+        };
+        if claim.basis[prefix.len()..].trim().is_empty() {
+            return Err(GateFailure::BasisWithoutContent {
                 id: metadata.id,
                 capability: claim.capability,
                 basis: claim.basis,
@@ -122,7 +140,15 @@ pub fn gate_c(metadata: &AdapterMetadata) -> Result<(), GateFailure> {
     // A failed probe observed nothing, so it cannot support a claim about the mechanism. Without this the
     // token exemption in Gate A becomes a hole: `upstream_version: "unknown"` beside a `Supported` config
     // claim would reach `Proven` with no mechanism token observed anywhere.
-    if metadata.evidence.upstream_version == UNKNOWN_VERSION {
+    // Case-insensitive: Gate A's charset ([A-Za-z0-9._-]) accepts "UNKNOWN"/"Unknown" as well as the
+    // lowercase sentinel, and a cased spelling must degrade exactly like the lowercase one. This is
+    // deliberately NOT mirrored in any shell script: the harness only ever *writes* the sentinel
+    // (sandbox/probes/common.sh via `${probe_extracted:-unknown}`, sandbox/transcript.sh's
+    // `version=unknown` default), never compares it — sandbox/verify-transcripts.sh's conclusion rule
+    // reads probe-exit, not the version — so the harness cannot produce a cased variant. The only
+    // reachable path to a cased sentinel is a maintainer hand-typing it into Rust metadata, which this
+    // comparison alone must catch.
+    if metadata.evidence.upstream_version.eq_ignore_ascii_case(UNKNOWN_VERSION) {
         let config_unknown = metadata.capabilities.iter().any(|claim| {
             claim.capability == Capability::ConfigIsolation
                 && claim.state == CapabilityState::Unknown

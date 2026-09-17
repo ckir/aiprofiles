@@ -589,6 +589,57 @@ fn gate_b_rejects_a_basis_without_a_provenance_prefix() {
 }
 
 #[test]
+fn gate_b_rejects_a_basis_that_is_only_its_provenance_prefix() {
+    // A basis consisting of only its provenance prefix cites a provenance for nothing: it clears
+    // `starts_with`, contains no newline, and (for `unmeasured:`) is never `Unknown`-mismatched, so
+    // without this check it reaches `Proven` as a content-free claim.
+    let mut metadata = sound_metadata();
+
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "measured: ",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisWithoutContent {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            basis: "measured: ",
+        })
+    );
+
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "cited: ",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisWithoutContent {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            basis: "cited: ",
+        })
+    );
+
+    // Must pair with an `Unknown` state, or `gate_b` fails earlier on `UnmeasuredMismatch`.
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Unknown,
+        basis: "unmeasured: ",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisWithoutContent {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            basis: "unmeasured: ",
+        })
+    );
+}
+
+#[test]
 fn gate_b_rejects_a_basis_containing_a_newline() {
     // One `Vec` entry is one report line; an embedded newline would silently render as two.
     let mut metadata = sound_metadata();
@@ -697,6 +748,50 @@ fn gate_c_rejects_a_proven_adapter_whose_probe_failed_even_with_an_unknown_confi
         gate::gate_c(&metadata),
         Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" })
     );
+}
+
+#[test]
+fn gate_c_treats_the_failed_probe_sentinel_case_insensitively() {
+    // Gate A's charset ([A-Za-z0-9._-]) accepts cased spellings of the sentinel; Gate C must degrade
+    // them exactly like the lowercase one, not let a cased sentinel evade the rule with `==`. Mirrors
+    // `gate_c_rejects_a_proven_adapter_whose_probe_failed_even_with_an_unknown_config_claim` above,
+    // which pins the lowercase case.
+    //
+    // Exactly one `Unknown` claim (`ConfigIsolation`): a second would make `gate_c` fail earlier on
+    // `unknowns > 1` (`ProvenWithTooManyUnknowns`), pinning the wrong rule.
+    let claims = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: requires an authenticated session",
+        },
+        CapabilityClaim {
+            capability: Capability::StateIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: sessions stay in the default location",
+        },
+    ];
+
+    let mut lowercase = sound_metadata();
+    lowercase.evidence.upstream_version = "unknown";
+    lowercase.capabilities = claims;
+    let expected = Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" });
+    assert_eq!(gate::gate_c(&lowercase), expected);
+
+    let mut uppercase = sound_metadata();
+    uppercase.evidence.upstream_version = "UNKNOWN";
+    uppercase.capabilities = claims;
+    assert_eq!(gate::gate_c(&uppercase), expected, "UNKNOWN must degrade exactly like unknown");
+
+    let mut mixed_case = sound_metadata();
+    mixed_case.evidence.upstream_version = "Unknown";
+    mixed_case.capabilities = claims;
+    assert_eq!(gate::gate_c(&mixed_case), expected, "Unknown must degrade exactly like unknown");
 }
 
 #[test]
