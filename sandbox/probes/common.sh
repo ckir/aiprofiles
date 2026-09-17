@@ -9,7 +9,7 @@
 set -eu
 
 # Sourced by relative path, because the container runs a probe from the copied checkout's root
-# (`sandbox/run.sh:148` cds to /home/probe/work) and so does the shell suite. A missing file here would
+# (`sandbox/run.sh:164` cds to /home/probe/work) and so does the shell suite. A missing file here would
 # otherwise surface as `probe_strip_ansi: not found` three steps later, naming a symptom instead of a cause.
 if [ ! -f sandbox/probes/text.sh ]; then
     echo "probe: run from the repository root; sandbox/probes/text.sh is not here" >&2
@@ -24,7 +24,7 @@ PROBE_OUT=${PROBE_OUT:-/out}
 # `steps`, the ordered record of what ran and with what code. `steps` has never decided the status — it
 # carries a non-zero row for a refused candidate, which is a measurement rather than a failure.
 #
-# NOT under $PROBE_OUT. `/out` is a read-write host mount (`run.sh:167,172`, beside `/src:ro`), and the
+# NOT under $PROBE_OUT. `/out` is a read-write host mount (`run.sh:183,188`, beside `/src:ro`), and the
 # measured party runs at the same uid inside the same container — an agent, or the install scripts an
 # `npm install --global` runs before the agent even exists. `probe_finish` derives the run's exit status
 # from `failures`, that status becomes the container's, the matrix job's, and the conclusion
@@ -34,15 +34,95 @@ PROBE_OUT=${PROBE_OUT:-/out}
 #
 # This protects the BOOKKEEPING only. `help.txt`, `strings.txt` and every other recorded artefact are
 # agent-produced and always were; what is restored is that the agent cannot control WHETHER its run is
-# recorded as failed. `run.sh:182` copies this directory into the results directory after the container
+# recorded as failed. `run.sh:198` copies this directory into the results directory after the container
 # exits, so `transcript.sh:85` still finds `steps` where it has always been.
 PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
-PROBE_TARGET=${PROBE_TARGET:-/home/probe/probe-target}
+
+# --- THE PRIVILEGE SPLIT --------------------------------------------------------------------------
+#
+# The container carries TWO unprivileged users (`sandbox/Containerfile`), because one is not a boundary:
+# the paragraph above protects `failures` by MOVING it, and a move only stops an accident. Code running
+# at the harness's own uid can still write any path it knows, and the repository is public.
+#
+#   probe  the harness. Owns $PROBE_STATE at mode 700. Snapshots, deltas, step and failure bookkeeping,
+#          and the run's exit status.
+#   agent  everything measured. The INSTALL runs here too: `npm install --global <pkg>` executes the
+#          package's own install scripts, which are agent-controlled code running before the agent
+#          binary ever launches, so an install as `probe` would hand an attacker the harness uid before
+#          the boundary applied.
+#
+# WHICH HELPER RUNS AS WHICH USER. This enumeration is the boundary; a wrapper on the wrong line gives it
+# away, and nothing downstream would notice. It is stated per helper because "the agent runs as agent" is
+# not a rule a reader can apply to `probe_strings`, which runs `grep` OVER an agent file.
+#
+#   as `agent`, through probe_record_agent / probe_as_agent:
+#     probe_npm_install, probe_uv_install, probe_script_install   the install and its install scripts
+#     probe_version, probe_help                                   launches of the agent binary
+#     probe_apply (all four mechanisms)                           the behaviour and candidate launches
+#     probe_prepare_target's rm/mkdir/chmod                       destroying and recreating a tree the
+#                                                                 AGENT wrote: a `rm -rf` as `probe`
+#                                                                 cannot unlink files inside a
+#                                                                 subdirectory the agent created at 755,
+#                                                                 and the harness must not need more
+#                                                                 privilege than the party that wrote it
+#     probe_restore_default's rm and `tar -x`                     same, plus G5: an extraction that runs
+#                                                                 as `agent` can only write where the
+#                                                                 agent could already write, so a
+#                                                                 symlink planted in the archive or on
+#                                                                 the path reaches nothing new. The
+#                                                                 archive is read from a descriptor the
+#                                                                 harness opened, so $PROBE_STATE stays
+#                                                                 unreadable to the agent.
+#     probe_strings' `command -v`                                 "which file did the install put on the
+#                                                                 PATH" is a question about the AGENT's
+#                                                                 PATH. `command -v` is a shell builtin:
+#                                                                 it reads a directory, it never runs
+#                                                                 the agent.
+#
+#   as `probe`, and these must NOT be wrapped:
+#     probe_record's bookkeeping      .cmd, .exit-code, `steps`, `failures` — the records the boundary
+#                                     exists to protect. Only the command inside it crosses over.
+#     probe_fail, probe_finish        the run's status.
+#     probe_snapshot, probe_delta     the measurement itself, reading agent-owned locations through the
+#                                     shared group.
+#     probe_pristine's `tar -c`       writes into $PROBE_STATE, which the agent cannot reach.
+#     probe_strings' readlink/find/grep   harness work reading an agent file. A `sudo` misplaced onto
+#                                     THIS `find` would run agent-chosen paths at the harness uid and
+#                                     hand the boundary away — it is the single most attractive mistake
+#                                     in this file.
+#
+# THE ENVIRONMENT ACROSS THE SWITCH (G4). `sudo` resets the environment by default (`env_reset`, plus
+# `secure_path` for the command lookup), so `PATH` and `NPM_CONFIG_PREFIX` do not survive the switch and
+# every post-install launch would fail to find the binary the install just placed. The values are
+# therefore passed EXPLICITLY, on the command line, through `env` — see probe_as_agent. Not `env_keep`:
+# that puts the contract in /etc/sudoers.d where nothing in this repository reads it, and it rots
+# silently. Not a login shell (`sudo -i`): that would run the agent's own dotfiles, which the install
+# scripts can write, INSIDE the privilege switch — agent-controlled code choosing the environment the
+# harness measures under. Explicit values also mean the harness decides what the agent runs with rather
+# than exporting whatever its own environment happens to hold.
+#
+# The agent's home. Under two users `$HOME` is ambiguous — it is the HARNESS's home in every probe
+# script, which is not where the agent writes — so the twelve probe scripts name the agent's default
+# locations through this. Exported because the agent's own launch inherits the environment.
+PROBE_AGENT_HOME=${PROBE_AGENT_HOME:-/home/agent}
+export PROBE_AGENT_HOME
+PROBE_AGENT_USER=${PROBE_AGENT_USER:-agent}
+# The PATH the agent runs under: its own bin directories first, then the system ones. The harness's PATH
+# does NOT contain these (`Containerfile`), so a launch that forgot to cross the boundary fails with 127
+# instead of quietly running the agent at the harness's uid.
+PROBE_AGENT_PATH=${PROBE_AGENT_PATH:-$PROBE_AGENT_HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}
+
+# NOT under $PROBE_OUT, and for the second reason as well as the first: `agent` is a SECOND uid, and
+# `run.sh:98` maps exactly one (`--userns=keep-id:uid=1000,gid=1000`), so anything `agent` wrote to the
+# /out bind mount would land on the host as an unmapped id (G1). Keeping the profile directory
+# container-internal means no second uid ever touches the mount; `run.sh` lifts it out with `eng cp`
+# after the container stops, exactly as it already does for $PROBE_STATE.
+PROBE_TARGET=${PROBE_TARGET:-$PROBE_AGENT_HOME/probe-target}
 # How long any one recorded command may run. A probe never waits for input; a hang is a recorded fact, not
 # a job that burns its whole budget.
 PROBE_TIMEOUT=${PROBE_TIMEOUT:-300}
-# The version the maintainer asked for, or empty for "whatever the registry serves" (§7.4). `run.sh:158`
-# passes it as the probe script's first argument — charset-checked at `run.sh:55` and quoted there, so it
+# The version the maintainer asked for, or empty for "whatever the registry serves" (§7.4). `run.sh:174`
+# passes it as the probe script's first argument — charset-checked at `run.sh:59` and quoted there, so it
 # reaches this file as one word — and a sourced file sees its caller's positional parameters, so no probe
 # script has to thread it through.
 PROBE_VERSION=${PROBE_VERSION:-${1:-}}
@@ -57,11 +137,30 @@ PROBE_CONFIG_NAME=${PROBE_CONFIG_NAME:-config}
 # so nothing legitimate would arrive that way, and a variable that decides whether a failed step counts is
 # the one thing an install script must not be able to preset.
 PROBE_SOFT=
+# Whether the command `probe_record` is about to run belongs to the measured party. Empty means the
+# harness, which is every step's default; `probe_record_agent` sets it for the length of one call.
+#
+# NOT read from the environment, for PROBE_SOFT's reason and one more: this one decides WHICH UID a
+# command runs at, so a value an install script could preset would be the boundary itself.
+PROBE_AS_AGENT=
+# Whether the boundary is available at all. It is NOT available when this file is sourced outside the
+# container — `sandbox/tests/probe-harness.sh` runs on the maintainer's host, where neither `sudo` nor
+# the `agent` user exists — and there the indirection degrades to a direct call. Say the consequence
+# plainly rather than let the green suite imply otherwise: WITH THE BOUNDARY COMPILED OUT, NO TEST IN
+# THIS REPOSITORY EXERCISES IT. The suite measures the harness; only a real container run measures the
+# boundary. A guarantee no test covers must not read as though one does.
+PROBE_PRIVSEP=
+if command -v sudo >/dev/null 2>&1 && id "$PROBE_AGENT_USER" >/dev/null 2>&1; then
+    PROBE_PRIVSEP=1
+fi
 
 mkdir -p "$PROBE_STATE"
+# The whole point, made explicit rather than left to the umask: `agent` cannot write what decides the
+# run's status. `mkdir` would give 755 under the default umask, and group-readable state is state the
+# measured party can read — and, once the shared group exists for the snapshot's sake, write.
+chmod 700 "$PROBE_STATE"
 : > "$PROBE_STATE/failures"
 : > "$PROBE_STATE/steps"
-mkdir -p "$PROBE_TARGET"
 # Where `probe_pristine` keeps the pre-launch copy of each watched default location — beside `failures`
 # and `steps`, and for the same reason: the measured party must not be able to rewrite the state the
 # harness restores it to, and /out is writable by it. Cleared rather than merely created, because the
@@ -70,6 +169,46 @@ mkdir -p "$PROBE_TARGET"
 rm -rf "$PROBE_STATE/pristine"
 mkdir -p "$PROBE_STATE/pristine"
 : > "$PROBE_STATE/pristine/index"
+
+# --- the privilege switch -------------------------------------------------------------------------
+
+# probe_as_agent <command...>: run one command as the measured party.
+#
+# THE INDIRECTION DEGRADES TO A DIRECT CALL when the boundary is not available, which is the only way
+# `sandbox/tests/probe-harness.sh` can run this file at all: that suite runs on the maintainer's host,
+# where there is no `agent` user and no `sudo`. The degradation is deliberate and it has a price that is
+# stated here so no reader has to infer it — the suite exercises the harness WITH THE BOUNDARY COMPILED
+# OUT, so no test in this repository covers the boundary. Only a real container run does.
+#
+# The environment is passed explicitly because `sudo`'s `env_reset` strips it (G4, argued at THE
+# PRIVILEGE SPLIT above). `env` itself is found through `secure_path`; everything after it is found
+# through the PATH `env` has just set. `-n` because the rule is NOPASSWD and a probe must never block on
+# a prompt: a misconfiguration has to fail, not hang until the step's timeout.
+probe_as_agent() {
+    if [ -n "$PROBE_PRIVSEP" ]; then
+        sudo -n -u "$PROBE_AGENT_USER" -- env \
+            "HOME=$PROBE_AGENT_HOME" \
+            "PATH=$PROBE_AGENT_PATH" \
+            "NPM_CONFIG_PREFIX=$PROBE_AGENT_HOME/.local" \
+            "$@"
+    else
+        "$@"
+    fi
+}
+
+# probe_make_target: an empty profile directory, owned by the agent and writable by the harness.
+#
+# It is the AGENT's: created at the harness's uid it would come back harness-owned, and the agent — the
+# party that has to write into it — could not. The harness still has to put the CANDIDATE file in it, so
+# the directory needs a group both users are in and a group-write bit. The group comes from the setgid
+# /home/agent (`Containerfile`), the same way everything else under it gets one, and the write bit from
+# `umask` at creation. NOT a `chmod` afterwards: chmod on a directory you do not own is refused, and with
+# the boundary compiled out that refusal aborted the probe at its first line with nothing said — measured
+# in a container by pointing PROBE_AGENT_USER at a user that does not exist.
+probe_make_target() {
+    # shellcheck disable=SC2016 # `$1` is the INNER shell's argument; `umask` must apply to ITS mkdir.
+    probe_as_agent sh -c 'umask 0002 && mkdir -p "$1"' probe_make_target "$PROBE_TARGET"
+}
 
 # probe_record <name> <command...>: run a command under a timeout, keep its output and exit code in /out.
 #
@@ -83,9 +222,21 @@ probe_record() {
     # What was run, beside what it printed. The transcript has to say `install: npm install --global
     # @google/gemini-cli@0.60.0` rather than just the install's output, and only the probe knows the
     # command after PROBE_VERSION has been folded into it.
+    #
+    # AS THE VENDOR DOCUMENTS IT, without the privilege switch in front of it. `sudo -n -u agent -- env
+    # HOME=... npm install ...` states the same fact about the agent plus a fact about this harness, and
+    # only the first is evidence about the agent. That the install ran as `agent` is a property of the
+    # harness, established by the boundary itself, not by a string the harness wrote about itself.
     printf '%s\n' "$*" > "$PROBE_OUT/$name.cmd"
     set +e
-    timeout --kill-after=10s "$PROBE_TIMEOUT" "$@" > "$PROBE_OUT/$name.txt" 2>&1
+    # Both redirections are performed by THIS shell, as `probe`, before the switch: the agent is handed
+    # descriptors, never the ability to create a file under $PROBE_OUT. `timeout` runs on the far side so
+    # that the process it signals is the agent's own, at the agent's uid.
+    if [ -n "$PROBE_AS_AGENT" ]; then
+        probe_as_agent timeout --kill-after=10s "$PROBE_TIMEOUT" "$@" > "$PROBE_OUT/$name.txt" 2>&1
+    else
+        timeout --kill-after=10s "$PROBE_TIMEOUT" "$@" > "$PROBE_OUT/$name.txt" 2>&1
+    fi
     status=$?
     set -e
     echo "$status" > "$PROBE_OUT/$name.exit-code"
@@ -101,6 +252,18 @@ probe_record() {
         echo "$name $status" >> "$PROBE_STATE/failures"
     fi
     return 0
+}
+
+# probe_record_agent <name> <command...>: probe_record, with the command on the far side of the boundary.
+#
+# Two names rather than a `who` argument, because the call site is where the enumeration at THE PRIVILEGE
+# SPLIT has to be readable: `probe_record_agent install npm ...` says which uid the install runs at
+# without a reader tracing a variable. The bookkeeping inside is unchanged and stays with the harness —
+# only the command crosses. `probe_record` always returns 0, so the flag is always cleared.
+probe_record_agent() {
+    PROBE_AS_AGENT=1
+    probe_record "$@"
+    PROBE_AS_AGENT=
 }
 
 # probe_fail <name> <status>: record a failed step that was not a single recorded command.
@@ -136,6 +299,29 @@ probe_finish() {
 }
 trap probe_finish EXIT
 
+# The pre-flight, and IT MUST STAY AHEAD OF EVERY PRIVILEGED SWITCH — including the one that creates the
+# profile directory, below. A `sudo` that is present but cannot reach `agent` otherwise surfaces as
+# `command not found` in every step from the install onwards, a cascade that names a symptom twelve times
+# and the cause never. Checked once, here, with the run stopped at the cause.
+#
+# The ORDER is the whole of it, and it was measured the wrong way round first: with the directory created
+# before this check, a container whose sudoers rule had been removed died at that line under `set -e`,
+# BEFORE `trap probe_finish EXIT` was installed — exit 1, an empty `steps`, an empty `failures` and not
+# one word about why. Nothing may cross the boundary above this line.
+#
+# Not reachable when the boundary is compiled out: there $PROBE_PRIVSEP is empty and nothing is claimed
+# about a privilege switch that is not being made.
+if [ -n "$PROBE_PRIVSEP" ] && ! sudo -n -u "$PROBE_AGENT_USER" true >/dev/null 2>&1; then
+    echo "probe: the '$PROBE_AGENT_USER' user exists but 'sudo -n -u $PROBE_AGENT_USER true' failed;" >&2
+    echo "probe: the privilege boundary is not usable, so nothing measured here would be trustworthy" >&2
+    probe_fail privilege 1
+    exit 1
+fi
+
+# The state a probe script sees before its first launch; every launch re-creates it. The FIRST privileged
+# switch a probe makes, which is why it sits below the pre-flight rather than beside the other setup.
+probe_make_target
+
 # --- Step 1: install ------------------------------------------------------------------------------
 #
 # Each installer is a separate function rather than one with a mode argument, because only some of them
@@ -149,13 +335,13 @@ probe_npm_install() {
     # Extra flags come from the vendor's own documented command, not from us: Pi documents
     # `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`, and dropping the flag would
     # measure an install the vendor does not describe.
-    probe_record install npm install --global "$@" "$probe_pkg${PROBE_VERSION:+@$PROBE_VERSION}"
+    probe_record_agent install npm install --global "$@" "$probe_pkg${PROBE_VERSION:+@$PROBE_VERSION}"
 }
 
 # probe_uv_install <package> <python-version>: install one Python tool, at the requested version if given.
 # The interpreter is pinned by the caller; CONTRIBUTING.md:108-109's pinning guidance covers exactly this.
 probe_uv_install() {
-    probe_record install uv tool install --python "$2" "$1${PROBE_VERSION:+==$PROBE_VERSION}"
+    probe_record_agent install uv tool install --python "$2" "$1${PROBE_VERSION:+==$PROBE_VERSION}"
 }
 
 # probe_script_install <url>: run a vendor install script, as the vendor documents it.
@@ -173,7 +359,7 @@ probe_script_install() {
     # The interpreter is the vendor's, because the script is the vendor's. Both script-installed agents
     # document `| bash`, and a bash script run under dash fails in ways that would be recorded as the
     # agent failing to install.
-    probe_record install sh -c "curl -fsSL '$1' | ${2:-sh}"
+    probe_record_agent install sh -c "curl -fsSL '$1' | ${2:-sh}"
 }
 
 # --- Step 2: version ------------------------------------------------------------------------------
@@ -204,7 +390,7 @@ probe_script_install() {
 # The raw capture stays verbatim: it is the evidence. The extraction reads a stripped copy, because a
 # coloured banner begins `ESC[0m`, whose `0m` is a digit-bearing run that Gate A would happily accept.
 probe_version() {
-    probe_record version "$1" --version
+    probe_record_agent version "$1" --version
     probe_stripped=$(probe_strip_ansi < "$PROBE_OUT/version.txt")
     probe_vline=$(printf '%s\n' "$probe_stripped" | grep -F -m1 -- "$1" || true)
     if [ -z "$probe_vline" ]; then
@@ -226,7 +412,7 @@ probe_version() {
 
 # probe_help <executable>: record `--help`, the artefact Gate A reads the mechanism token from.
 probe_help() {
-    probe_record help "$1" --help
+    probe_record_agent help "$1" --help
 }
 
 # --- Step 4: strings ------------------------------------------------------------------------------
@@ -238,13 +424,22 @@ probe_help() {
 # `CLAUDE_CODE_USE_BEDROCK` and three OAuth variables as "binary strings measured" (`claude.rs:27-29`) —
 # no page documented them, and each one is a way a user defeats the isolation the adapter promises.
 #
-# There is no `strings(1)` in the image: `sandbox/Containerfile:17` installs no binutils. `grep -a` reads
-# a binary as text and is already a dependency, so this uses that rather than growing the image.
+# There is no `strings(1)` in the image: `sandbox/Containerfile` installs no binutils. `grep -a` reads a
+# binary as text and is already a dependency, so this uses that rather than growing the image.
+#
+# THE ONE HELPER THAT STRADDLES THE BOUNDARY, and the enumeration at the top of this file exists largely
+# for it. It is HARNESS work — it reads an agent file and writes the harness's record of it — so the
+# readlink, the find and the greps below stay at the harness's uid and must never be wrapped. Only the
+# path RESOLUTION crosses, because "which file did the install put on the PATH" is a question about the
+# AGENT's PATH, which the harness deliberately does not carry (`Containerfile`). `command -v` is a shell
+# builtin: it reads a directory, it never executes the agent.
 probe_strings() {
     probe_exe=$1
     shift
     probe_out_file=$PROBE_OUT/strings.txt
-    probe_resolved=$(command -v "$probe_exe" 2>/dev/null || true)
+    # shellcheck disable=SC2016 # `$1` is the INNER shell's argument, not this one's. Expanding it here
+    # would resolve the executable against the harness's PATH, which is the one answer this must not give.
+    probe_resolved=$(probe_as_agent sh -c 'command -v "$1" 2>/dev/null || true' probe_strings "$probe_exe" || true)
     if [ -z "$probe_resolved" ]; then
         printf '# %s is not on PATH; nothing to scan\n' "$probe_exe" > "$probe_out_file"
         probe_fail strings 127
@@ -281,6 +476,12 @@ probe_strings() {
 # --- Steps 5 and 6: baseline and behaviour --------------------------------------------------------
 
 # probe_snapshot <name> <dir...>: record a sorted listing of each directory, for a before/after comparison.
+#
+# HARNESS WORK, at the harness's uid, and it must stay that way: this is the measurement, and a
+# measurement taken by the party being measured is not one. Both locations it walks are agent-owned now,
+# so the reading depends on the shared group and the setgid /home/agent the Containerfile sets up — not
+# on borrowing the agent's privileges. `find` does not follow symlinks without `-L` and none is passed,
+# so a link planted in either location is LISTED rather than descended into.
 probe_snapshot() {
     name=$1
     shift
@@ -331,12 +532,20 @@ probe_label() {
 # `@none` means "create no file", which is a content worth testing in its own right: Aider refuses a
 # MISSING `.aider.conf.yml` exactly as it refuses an empty one (`aider.rs:17-18`), and an adapter that
 # creates nothing would hit that.
+#
+# The removal runs AS THE AGENT. What is being removed is whatever the agent last wrote into its own
+# profile directory, and a `rm -rf` at the harness's uid cannot unlink files inside a subdirectory the
+# agent created at mode 755 — the harness would need write access to agent-owned directories it has no
+# business writing. At the agent's uid it needs no such access and can reach nothing the agent could not
+# already reach. The candidate file is the HARNESS's content, so the harness writes it; the `umask` makes
+# it group-writable so an agent that rewrites its own config in place can, rather than failing with
+# EACCES and having that recorded as the mechanism refusing the content.
 probe_prepare_target() {
-    rm -rf "$PROBE_TARGET"
-    mkdir -p "$PROBE_TARGET"
+    probe_as_agent rm -rf "$PROBE_TARGET"
+    probe_make_target
     case "${1:-@none}" in
         @none) ;;
-        *) printf '%s' "$1" > "$PROBE_TARGET/$PROBE_CONFIG_NAME" ;;
+        *) (umask 0002 && printf '%s' "$1" > "$PROBE_TARGET/$PROBE_CONFIG_NAME") ;;
     esac
 }
 
@@ -397,6 +606,11 @@ probe_pristine() {
             # records it: "registered and absent" and "never registered" must not look the same to
             # `probe_restore_default`, or a failed archive would read as absence and delete a real one.
             : > "$PROBE_STATE/pristine/$probe_pn.absent"
+        # The archive is taken AS THE HARNESS and lands in $PROBE_STATE, which the agent cannot read or
+        # write: it is the state probe_restore_default restores TO, so the measured party must not be
+        # able to choose it. It reads the agent's files through the shared group, which is why the
+        # Containerfile gives /home/agent one; a location the agent has chmodded to 700 is unreadable
+        # and lands here as a recorded `pristine-N` failure rather than as a silently empty archive.
         elif ! tar -cf "$PROBE_STATE/pristine/$probe_pn.tar" \
             -C "$(dirname "$probe_loc")" "$(basename "$probe_loc")" 2>/dev/null; then
             rm -f "$PROBE_STATE/pristine/$probe_pn.tar"
@@ -420,17 +634,26 @@ probe_restore_default() {
     # the very evidence the caller is about to snapshot.
     [ -n "$probe_rn" ] || return 0
     if [ -f "$PROBE_STATE/pristine/$probe_rn.tar" ]; then
-        rm -rf "$probe_rloc"
-        mkdir -p "$(dirname "$probe_rloc")"
-        # stdin is closed to it because callers iterate the index over the loop's stdin; `-f` means tar
-        # never wants stdin anyway, and this makes that independent of tar's implementation.
-        if ! tar -xf "$PROBE_STATE/pristine/$probe_rn.tar" \
-            -C "$(dirname "$probe_rloc")" < /dev/null; then
+        # THE WRITING HALF RUNS AS THE AGENT; the archive stays the harness's. Three reasons, and the
+        # first two are the same ones probe_prepare_target gives: the tree being removed is the agent's,
+        # and the restored tree has to be WRITABLE BY THE AGENT afterwards — extracted at the harness's
+        # uid it would come back harness-owned, and the next launch could not rewrite its own config.
+        # The third is G5. A `tar -x` that writes through a symlink — one planted on the path between the
+        # two steps, or carried in the archive because the agent planted it in the location before the
+        # archive was taken — can then only write where the agent could already write. That is a
+        # structural answer rather than a flag: it does not depend on which hardening a given tar
+        # implements. The archive itself is read from a descriptor THIS shell opened, so $PROBE_STATE
+        # stays unreadable to the agent; that also keeps tar off the caller's stdin, which the loops in
+        # probe_restore_known and probe_pristine_id are reading the index from.
+        probe_as_agent rm -rf "$probe_rloc"
+        probe_as_agent mkdir -p "$(dirname "$probe_rloc")"
+        if ! probe_as_agent tar -xf - -C "$(dirname "$probe_rloc")" \
+            < "$PROBE_STATE/pristine/$probe_rn.tar"; then
             echo "probe: could not restore $probe_rloc from its pristine copy" >&2
             probe_fail "restore-$probe_rn" 1
         fi
     elif [ -f "$PROBE_STATE/pristine/$probe_rn.absent" ]; then
-        rm -rf "$probe_rloc"
+        probe_as_agent rm -rf "$probe_rloc"
     else
         echo "probe: no pristine copy of $probe_rloc; leaving it as it is" >&2
     fi
@@ -468,13 +691,13 @@ probe_apply() {
     shift 3
     case "$probe_mech" in
         env:*)
-            probe_record "$probe_name" env "${probe_mech#env:}=$PROBE_TARGET" "$probe_exe" "$@" ;;
+            probe_record_agent "$probe_name" env "${probe_mech#env:}=$PROBE_TARGET" "$probe_exe" "$@" ;;
         envfile:*)
-            probe_record "$probe_name" env "${probe_mech#envfile:}=$PROBE_TARGET/$PROBE_CONFIG_NAME" "$probe_exe" "$@" ;;
+            probe_record_agent "$probe_name" env "${probe_mech#envfile:}=$PROBE_TARGET/$PROBE_CONFIG_NAME" "$probe_exe" "$@" ;;
         flagdir:*)
-            probe_record "$probe_name" "$probe_exe" "${probe_mech#flagdir:}" "$PROBE_TARGET" "$@" ;;
+            probe_record_agent "$probe_name" "$probe_exe" "${probe_mech#flagdir:}" "$PROBE_TARGET" "$@" ;;
         flagfile:*)
-            probe_record "$probe_name" "$probe_exe" "${probe_mech#flagfile:}" "$PROBE_TARGET/$PROBE_CONFIG_NAME" "$@" ;;
+            probe_record_agent "$probe_name" "$probe_exe" "${probe_mech#flagfile:}" "$PROBE_TARGET/$PROBE_CONFIG_NAME" "$@" ;;
         *)
             echo "probe: unknown mechanism $probe_mech" >&2
             probe_fail "$probe_name" 2

@@ -9,8 +9,10 @@
 # `test` and `probe` have network (crates and agent installs need it); `shell` has none unless --net is given.
 # Results: target/sandbox/<mode>[-<agent>]-<timestamp>/ holds build.log, exit-code, output.log (not for `shell`),
 # diff.txt (the files the run added, changed or deleted inside the container) and whatever the workload writes
-# to /out. A probe's `failures` and `steps` arrive there too, but they are NOT written to /out: they are
-# copied out of the container afterwards, because /out is writable by the very agent being measured.
+# to /out. A probe's `failures` and `steps` arrive there too, and so does `target/`, the profile directory
+# the agent was pointed at — but none of the three is WRITTEN to /out. They live inside the container and
+# are copied out after it stops: the bookkeeping because the measured party must not be able to forge the
+# run's status, the profile directory because the agent is a second uid and the userns mapping admits one.
 #
 # Cleanup on a normal exit, Ctrl-C, TERM or HUP: the container and its image are removed. With local Podman every
 # run also uses its own temporary image store under ${TMPDIR:-/var/tmp}, deleted at the end, so no image, layer or
@@ -85,6 +87,14 @@ store=
 userns=
 if [ "$engine" = podman ]; then
     # The host user becomes the container's `probe` user, so /out is writable and its files stay yours.
+    #
+    # It maps ONE id, and the container now has two unprivileged users: `probe` the harness and `agent`
+    # everything measured (`sandbox/Containerfile`). Anything `agent` wrote to this bind mount would
+    # therefore land on the host as an UNMAPPED id. Nothing does: the agent's profile directory is
+    # container-internal and is lifted out with `eng cp` after the container stops, below, and the
+    # harness opens every /out descriptor itself before handing the agent the command. Widening the
+    # mapping was the alternative and was rejected — an explicit --uidmap could carry a second id, but
+    # keeping the second uid off the mount needs no mapping at all.
     userns=--userns=keep-id:uid=1000,gid=1000
     # Remote Podman (a Podman machine, as on macOS) has no --root/--runroot; it keeps its own store.
     if ! remote=$(podman info --format '{{.Host.ServiceIsRemote}}' 2>&1); then
@@ -145,7 +155,13 @@ if ! eng build --tag "$id" --build-arg "NEXTEST_PLATFORM=$nextest_platform" \
 fi
 
 # The checkout is mounted read-only and copied without `target/`, so a run never writes to your tree.
-copy='mkdir -p /home/probe/work && tar -C /src --exclude=./target -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
+#
+# The copy is the harness's, and the agent is launched with it as the working directory — `sudo` does not
+# change directory. So it is given the group `probe` and `agent` share, and made group-writable: an agent
+# that writes beside its config (aider's `.aider.chat.history.md` lands in the working directory) would
+# otherwise fail for lack of a writable cwd, and that failure would be recorded as the agent's behaviour
+# rather than as the harness's setup.
+copy='mkdir -p /home/probe/work && chgrp probe-share /home/probe/work && chmod 2775 /home/probe/work && tar -C /src --exclude=./target -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
 case "$mode" in
     test) script="$copy && cargo nextest run --workspace --no-tests=pass" ;;
     probe)
@@ -180,6 +196,15 @@ echo "$code" > "$out/exit-code"
 # Failure is expected and ignored: `shell` never sources the harness, and a container that died before it
 # ran has no such directory. The container itself is removed by the EXIT trap, after this.
 eng cp "$id:/home/probe/.probe-state/." "$out/" >/dev/null 2>&1 || true
+# The profile directory the agent was pointed at, lifted out the same way and for a related reason. It
+# does not live under /out either: `agent` is a SECOND uid and the userns mapping above admits one, so
+# anything the agent wrote to the mount would land on the host as an unmapped id. Keeping it inside and
+# copying it out afterwards means no second uid ever writes the mount. Kept for `probe` only — it is the
+# only mode that has an agent — and, like the copy above, a run that died before creating it is fine.
+if [ "$mode" = probe ]; then
+    mkdir -p "$out/target"
+    eng cp "$id:/home/agent/probe-target/." "$out/target/" >/dev/null 2>&1 || true
+fi
 eng diff "$id" > "$out/diff.txt" 2>&1 || true
 [ "$mode" = shell ] || tail -n 20 "$out/output.log"
 echo "sandbox: exit code $code" >&2

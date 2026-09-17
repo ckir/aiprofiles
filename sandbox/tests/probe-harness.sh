@@ -25,7 +25,7 @@ check() {
 }
 
 # A probe script, written to a temporary directory and run exactly as the container runs one: from the
-# repository root, because that is where `sandbox/run.sh:148` leaves a probe and it is how common.sh
+# repository root, because that is where `sandbox/run.sh:164` leaves a probe and it is how common.sh
 # resolves its own sibling files.
 run_probe() {
     out=$(mktemp -d)
@@ -45,7 +45,7 @@ SCRIPT
     sh "$script" > "$out/stdout" 2>&1
     probe_status=$?
     set -e
-    # What `sandbox/run.sh:182` does once the container has stopped: lift `failures` and `steps` out of
+    # What `sandbox/run.sh:198` does once the container has stopped: lift `failures` and `steps` out of
     # the state directory — which is NOT under the writable /out mount, so the measured party cannot
     # forge them — into the results directory, which is where `transcript.sh:85` reads `steps` from.
     # A scratch state path, never the container's real /home/probe/.probe-state: this suite runs on the
@@ -107,7 +107,7 @@ probe_strings nosuchagent SOME_KEY'
 check "a non-command failure is logged once" \
     "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" "ok 0,strings 127,"
 
-# The measured party can WRITE /out: it is mounted read-write (`run.sh:167,172`, beside `/src:ro`) and the
+# The measured party can WRITE /out: it is mounted read-write (`run.sh:183,188`, beside `/src:ro`) and the
 # agent — or the install scripts `npm install --global` runs before the agent exists — shares that
 # directory at the same uid. When `failures` lived there, truncating it made `probe_finish` exit 0 and the
 # matrix job go green, and §5.3's byte-comparison could not tell: artifact and committed file both derive
@@ -123,6 +123,43 @@ check "the copy-back replaces the forged steps log with the real one" \
 run_probe 'probe_record slow sleep 30'
 check "a hanging step is killed and recorded" "$(cat "$PROBE_OUT_DIR/slow.exit-code")" "124"
 check "a hanging step fails the probe" "$probe_status" "1"
+
+# --- the privilege boundary, COMPILED OUT ----------------------------------------------------------
+#
+# READ THIS BEFORE TRUSTING THE GREEN. The container runs the harness as `probe` and everything measured
+# as `agent`, and that split is the only thing that makes the bookkeeping above tamper-proof rather than
+# merely moved. THIS SUITE DOES NOT EXERCISE IT. It runs on the maintainer's host, where there is no
+# `agent` user and no `sudo`, so `common.sh` detects their absence and every crossing degrades to a
+# direct call — deliberately, because otherwise the suite could not run this file at all. What follows
+# therefore tests the DEGRADATION and the contract around it, never the boundary: that a step still runs
+# and is still recorded with the switch compiled out, that the privilege plumbing stays out of the
+# evidence, and that the flag which selects the uid cannot leak into the next step. The boundary itself
+# is verified only by a real container run. A guarantee no test covers must not read as though one does.
+
+run_probe 'probe_record_agent direct true'
+check "a step that would cross the boundary still runs when it is compiled out" "$probe_status" "0"
+check "and is recorded exactly as a harness step is" \
+    "$(cat "$PROBE_OUT_DIR/direct.exit-code")" "0"
+
+# The transcript states what the VENDOR documents. `sudo -n -u agent -- env HOME=... npm install ...`
+# states that plus a fact about this harness, and only the first is evidence about the agent.
+run_probe 'probe_record_agent boom sh -c "exit 3"'
+check "the privilege switch is not written into the recorded command" \
+    "$(cat "$PROBE_OUT_DIR/boom.cmd")" "sh -c exit 3"
+check "a failed agent-side step still fails the probe" "$probe_status" "1"
+
+# The flag decides WHICH UID a command runs at, so a value left set after a call would silently put the
+# next step — a snapshot, a restore, anything the harness does for itself — on the wrong side.
+run_probe 'probe_record_agent one true
+printf "[%s]\n" "$PROBE_AS_AGENT" > "$PROBE_OUT/flag"'
+check "the agent flag does not leak past the call that set it" \
+    "$(cat "$PROBE_OUT_DIR/flag")" "[]"
+
+# The twelve probe scripts name the agent's default locations through this, because under two users
+# `$HOME` is the HARNESS's home and not where the agent writes.
+run_probe 'printf "%s\n" "$PROBE_AGENT_HOME" > "$PROBE_OUT/agent-home"'
+check "PROBE_AGENT_HOME names the agent's home, not the harness's" \
+    "$(cat "$PROBE_OUT_DIR/agent-home")" "/home/agent"
 
 # --- probe_behaviour ------------------------------------------------------------------------------
 
