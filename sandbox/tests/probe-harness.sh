@@ -45,9 +45,9 @@ SCRIPT
     sh "$script" > "$out/stdout" 2>&1
     probe_status=$?
     set -e
-    # What `sandbox/run.sh:198` does once the container has stopped: lift `failures` and `steps` out of
-    # the state directory — which is NOT under the writable /out mount, so the measured party cannot
-    # forge them — into the results directory, which is where `transcript.sh:85` reads `steps` from.
+    # What `sandbox/run.sh`'s `eng cp` block does once the container has stopped: lift `failures` and
+    # `steps` out of the state directory — which the measured party cannot reach, so it cannot forge them
+    # — into the results directory, which is where `transcript.sh`'s `exit-codes:` block reads `steps`.
     # A scratch state path, never the container's real /home/probe/.probe-state: this suite runs on the
     # host. Emulating the copy here is what lets every check below keep reading $PROBE_OUT_DIR.
     cp -R "$out/state/." "$out/" 2>/dev/null || true
@@ -74,6 +74,26 @@ run_staged() {
 $1"
     staged=
 }
+
+# --- where the harness writes -----------------------------------------------------------------------
+#
+# THE DEFECT CLASS: every artefact in $PROBE_OUT is written by a `>` the harness performs, and `>` follows
+# a symlink. While $PROBE_OUT was `/out` — a host mount `run.sh`'s docker branch has to make
+# world-writable, inside a container the measured party shares — the agent never had to write one of those
+# files. It only had to create the PATH first, as a link to $PROBE_STATE/failures, and the harness's own
+# redirect did the rest. Measured end-to-end in a container: an empty `delta-<label>.txt` (the label is
+# deterministic and public) truncated `failures` to 0 bytes and `probe_finish` exited 0 with a failed step
+# already recorded. `rm -f` before each redirect does not close it — shell has no `O_NOFOLLOW`, so the
+# link comes back between the unlink and the open — and a per-redirect guard is the wrong shape when a
+# dozen redirects share the defect. The directory moved instead, which is what these two checks pin.
+#
+# Asserted against the SOURCE, not by running the harness: every run below overrides PROBE_OUT to a
+# scratch directory, so the DEFAULT — the one value the container uses — is the one thing no run can see.
+probe_out_default=$(sed -n 's/^PROBE_OUT=${PROBE_OUT:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
+check "the harness's output directory is not the /out bind mount" \
+    "$probe_out_default" "/home/probe/.probe-out"
+check "run.sh lifts the harness's output directory out of the stopped container" \
+    "$(grep -c "^eng cp \"\$id:/home/probe/\.probe-out/\.\" \"\$out/\"" "$root/sandbox/run.sh")" "1"
 
 # --- probe_record ---------------------------------------------------------------------------------
 
@@ -107,11 +127,15 @@ probe_strings nosuchagent SOME_KEY'
 check "a non-command failure is logged once" \
     "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" "ok 0,strings 127,"
 
-# The measured party can WRITE /out: it is mounted read-write (`run.sh:183,188`, beside `/src:ro`) and the
-# agent — or the install scripts `npm install --global` runs before the agent exists — shares that
-# directory at the same uid. When `failures` lived there, truncating it made `probe_finish` exit 0 and the
-# matrix job go green, and §5.3's byte-comparison could not tell: artifact and committed file both derive
-# from the forged bytes. This stub does exactly that, and the run must still be recorded as failed.
+# `failures` and `steps` do not live in $PROBE_OUT, and this is what pins the separation. When they did,
+# /out was a read-write host mount beside `/src:ro` that `run.sh`'s docker branch made world-writable, and
+# the agent — or the install scripts `npm install --global` runs before the agent exists — shared that
+# directory at the same uid: truncating `failures` made `probe_finish` exit 0 and the matrix job go green,
+# and §5.3's byte-comparison could not tell, because artifact and committed file both derive from the
+# forged bytes. $PROBE_OUT is now container-internal and probe-owned too, so the stub below is no longer a
+# thing the agent could run. What the check still pins is the SEPARATION itself: nothing that writes an
+# ARTEFACT can name the RUN'S STATUS by accident — which the planted delta symlink shows is not the same
+# as being out of reach, since it aimed a $PROBE_OUT redirect straight across the gap.
 run_probe 'probe_record boom sh -c "exit 3"
 : > "$PROBE_OUT/failures"
 printf "boom 0\nafter 0\n" > "$PROBE_OUT/steps"

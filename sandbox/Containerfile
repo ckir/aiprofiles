@@ -28,8 +28,8 @@ RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
 # TWO unprivileged users, because one is not a boundary: code running at the harness's uid can rewrite
 # the harness's bookkeeping, and the repository is public so it knows where that is.
 #
-#   probe  the harness. Owns /home/probe/.probe-state at mode 700, takes the snapshots, computes the
-#          deltas, writes the step records, decides the run's exit status.
+#   probe  the harness. Owns /home/probe/.probe-out and /home/probe/.probe-state at mode 700, takes the
+#          snapshots, computes the deltas, writes the step records, decides the run's exit status.
 #   agent  everything measured — the INSTALL included, because `npm install --global <pkg>` runs the
 #          package's own install scripts, which are agent-controlled code running before the agent
 #          binary ever launches. An install as `probe` would hand an attacker the harness uid before
@@ -41,8 +41,8 @@ RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
 #
 # The two share the supplementary group `probe-share`, and /home/agent is group `probe-share` and setgid,
 # so everything the agent creates under it carries a group the harness is in and can therefore be read by
-# the snapshot that has to measure it. /home/probe/.probe-state stays 700, so the shared group does not
-# reopen the hole it exists to close.
+# the snapshot that has to measure it. The harness's own two directories stay 700, so the shared group
+# does not reopen the hole it exists to close.
 #
 # /home/probe is made traversable explicitly because Debian's useradd honours HOME_MODE from
 # /etc/login.defs (0700 in trixie) and the agent is launched with the HARNESS's cwd, /home/probe/work.

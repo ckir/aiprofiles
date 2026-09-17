@@ -1,5 +1,6 @@
 # Shared steps for probe scripts. Sourced by sandbox/probes/<agent>.sh inside the sandbox container, from a
-# copy of the checkout; results go to /out, which sandbox/run.sh copies back to target/sandbox/.
+# copy of the checkout; results are written to container-internal directories that the measured party
+# cannot reach, and sandbox/run.sh lifts them into target/sandbox/ once the container has stopped.
 #
 # A probe installs one agent, records its version and help text, and measures whether the agent's own
 # isolation mechanism actually moves its files (SP4 design §7.3). It never launches the agent through
@@ -17,35 +18,59 @@ if [ ! -f sandbox/probes/text.sh ]; then
 fi
 . sandbox/probes/text.sh
 
-# Where the probe puts the profile it points the agent at. Fixed, so a probe script never invents one.
-# `/out` in the container; overridable so the shell suite can run this file outside one.
-PROBE_OUT=${PROBE_OUT:-/out}
+# Where the harness writes every artefact a transcript is assembled from: `<step>.cmd`, `<step>.txt`,
+# `<step>.exit-code`, `version.extracted`, `strings.txt`, the snapshots, the deltas, `candidates.txt`.
+# Overridable so the shell suite can run this file outside a container.
+#
+# CONTAINER-INTERNAL AND PROBE-OWNED, and that is the whole of the defence against a defect class no
+# per-file guard reaches. Every artefact named above is written by a `>` performed by `probe` — and `>`
+# follows a symlink. The agent therefore never has to write one of those files: it only has to create the
+# PATH first, as a link. While this directory was `/out` — a read-write host mount that `run.sh`'s docker
+# branch has to make world-writable, because that daemon maps no users — the agent could pre-create
+# `delta-<label>.txt`, whose label is derived from the mechanism under test and so is public and
+# deterministic, pointing it at `$PROBE_STATE/failures`. `probe_delta`'s own redirect then truncated the
+# one file that decides the run's status, and an EMPTY delta is what an agent that changes nothing
+# produces. Measured end-to-end in a container: `failures` 0 bytes, `probe_finish` exiting 0 with a failed
+# step already recorded.
+#
+# `rm -f` before each redirect was rejected rather than overlooked: shell has no `O_NOFOLLOW`, so anything
+# the install left running — a daemon an `npm install` script started — re-plants the link between the
+# unlink and the open.
+#
+# MOVING THE DIRECTORY CLOSES THE CLASS, not the two instances of it that were found. With no harness
+# write landing anywhere the agent can create an entry, there is no path to pre-create. `run.sh` lifts it
+# into the results directory with `eng cp` after the container stops, exactly as it already does for
+# $PROBE_STATE and the profile directory, so the transcript finds every artefact where it always was.
+PROBE_OUT=${PROBE_OUT:-/home/probe/.probe-out}
 # Where the harness keeps its own bookkeeping: `failures`, which alone decides the RUN'S STATUS, and
 # `steps`, the ordered record of what ran and with what code. `steps` has never decided the status — it
 # carries a non-zero row for a refused candidate, which is a measurement rather than a failure.
 #
-# NOT under $PROBE_OUT. `/out` is a read-write host mount (`run.sh:183,188`, beside `/src:ro`), and the
-# measured party runs at the same uid inside the same container — an agent, or the install scripts an
-# `npm install --global` runs before the agent even exists. `probe_finish` derives the run's exit status
-# from `failures`, that status becomes the container's, the matrix job's, and the conclusion
-# `verify-transcripts.sh` requires before it accepts a committed transcript as evidence. Truncating
-# `failures` under /out therefore turned a failed probe green, and §5.3's byte-comparison could not see
-# it: the uploaded artifact and the committed file both derive from the forged bytes, so they match.
+# A SEPARATE DIRECTORY from $PROBE_OUT, and it stays one now that $PROBE_OUT is container-internal too,
+# because the two hold different kinds of thing: $PROBE_OUT holds what the run RECORDED, this holds what
+# decides whether the run PASSED. `probe_finish` derives the run's exit status from `failures`, that status
+# becomes the container's, the matrix job's, and the conclusion `verify-transcripts.sh` requires before it
+# accepts a committed transcript as evidence — and §5.3's byte-comparison cannot see a forged one, because
+# the uploaded artifact and the committed file both derive from the forged bytes. Keeping the two apart is
+# what stops a defect in the artefact path from reaching the status, which is exactly the reach the planted
+# delta symlink had while both lived on the same writable mount.
 #
 # This protects the BOOKKEEPING only. `help.txt`, `strings.txt` and every other recorded artefact are
 # agent-produced and always were; what is restored is that the agent cannot control WHETHER its run is
-# recorded as failed. `run.sh:198` copies this directory into the results directory after the container
-# exits, so `transcript.sh:85` still finds `steps` where it has always been.
+# recorded as failed. `run.sh`'s `eng cp` block copies this directory into the results directory after the
+# container exits, so `transcript.sh`'s `exit-codes:` block still finds `steps` where it has always been.
 PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 
 # --- THE PRIVILEGE SPLIT --------------------------------------------------------------------------
 #
 # The container carries TWO unprivileged users (`sandbox/Containerfile`), because one is not a boundary:
-# the paragraph above protects `failures` by MOVING it, and a move only stops an accident. Code running
-# at the harness's own uid can still write any path it knows, and the repository is public.
+# the two paragraphs above protect the artefacts and the bookkeeping by MOVING them, and a move only stops
+# an accident. Code running at the harness's own uid can still write any path it knows, and the repository
+# is public. What turns those moves into a boundary is that the measured party is a DIFFERENT UID, and so
+# cannot write — or create a path inside — either directory.
 #
-#   probe  the harness. Owns $PROBE_STATE at mode 700. Snapshots, deltas, step and failure bookkeeping,
-#          and the run's exit status.
+#   probe  the harness. Owns $PROBE_OUT and $PROBE_STATE, both at mode 700. Snapshots, deltas, step and
+#          failure bookkeeping, and the run's exit status.
 #   agent  everything measured. The INSTALL runs here too: `npm install --global <pkg>` executes the
 #          package's own install scripts, which are agent-controlled code running before the agent
 #          binary ever launches, so an install as `probe` would hand an attacker the harness uid before
@@ -59,13 +84,32 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 #     probe_npm_install, probe_uv_install, probe_script_install   the install and its install scripts
 #     probe_version, probe_help                                   launches of the agent binary
 #     probe_apply (all four mechanisms)                           the behaviour and candidate launches
-#     probe_prepare_target's rm/mkdir/chmod                       destroying and recreating a tree the
-#                                                                 AGENT wrote: a `rm -rf` as `probe`
-#                                                                 cannot unlink files inside a
-#                                                                 subdirectory the agent created at 755,
-#                                                                 and the harness must not need more
-#                                                                 privilege than the party that wrote it
-#     probe_restore_default's rm and `tar -x`                     same, plus G5: an extraction that runs
+#     probe_make_target's `mkdir`                                 the profile directory is the AGENT's:
+#                                                                 created at the harness's uid it would
+#                                                                 come back harness-owned and the party
+#                                                                 that has to write into it could not.
+#                                                                 Two call sites — once at start-up and
+#                                                                 once per probe_prepare_target
+#     probe_prepare_target's `rm`                                 destroying a tree the AGENT wrote: a
+#                                                                 `rm -rf` as `probe` cannot unlink files
+#                                                                 inside a subdirectory the agent created
+#                                                                 at 755, and the harness must not need
+#                                                                 more privilege than the party that
+#                                                                 wrote it. (It recreates the tree through
+#                                                                 probe_make_target, above; nothing here
+#                                                                 chmods — the mode comes from `umask` at
+#                                                                 creation, because chmod on a directory
+#                                                                 you do not own is refused)
+#     probe_prepare_target's candidate write                      the CONTENT is the harness's, but the
+#                                                                 write crosses anyway, for the `tar -x`
+#                                                                 reason below: $PROBE_TARGET must stay
+#                                                                 agent-writable, so a link planted at the
+#                                                                 candidate path is possible there in a
+#                                                                 way it no longer is under $PROBE_OUT,
+#                                                                 and a write performed at the agent's uid
+#                                                                 can only reach what the agent could
+#                                                                 already reach
+#     probe_restore_default's rm, mkdir and `tar -x`              same, plus G5: an extraction that runs
 #                                                                 as `agent` can only write where the
 #                                                                 agent could already write, so a
 #                                                                 symlink planted in the archive or on
@@ -85,6 +129,10 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 #     probe_fail, probe_finish        the run's status.
 #     probe_snapshot, probe_delta     the measurement itself, reading agent-owned locations through the
 #                                     shared group.
+#     probe_version's extraction      the harness's own statement about what it measured — the token
+#     probe_candidates' index         SP4b types into the registry, and which content each candidate
+#                                     exit code belongs to. Both land in $PROBE_OUT, which is the
+#                                     harness's at 700, so a wrapper here would now fail outright.
 #     probe_pristine's `tar -c`       writes into $PROBE_STATE, which the agent cannot reach.
 #     probe_strings' readlink/find/grep   harness work reading an agent file. A `sudo` misplaced onto
 #                                     THIS `find` would run agent-chosen paths at the harness uid and
@@ -112,11 +160,12 @@ PROBE_AGENT_USER=${PROBE_AGENT_USER:-agent}
 # instead of quietly running the agent at the harness's uid.
 PROBE_AGENT_PATH=${PROBE_AGENT_PATH:-$PROBE_AGENT_HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}
 
-# NOT under $PROBE_OUT, and for the second reason as well as the first: `agent` is a SECOND uid, and
-# `run.sh:98` maps exactly one (`--userns=keep-id:uid=1000,gid=1000`), so anything `agent` wrote to the
-# /out bind mount would land on the host as an unmapped id (G1). Keeping the profile directory
-# container-internal means no second uid ever touches the mount; `run.sh` lifts it out with `eng cp`
-# after the container stops, exactly as it already does for $PROBE_STATE.
+# NOT under $PROBE_OUT, and now for the OPPOSITE reason to the one that moved $PROBE_OUT: this directory
+# has to stay AGENT-WRITABLE, because the agent writes its own config into it, while $PROBE_OUT is
+# probe-owned at 700 precisely so that nothing the agent can create sits in it. G1 holds as well: `agent`
+# is a SECOND uid and `run.sh`'s `--userns=keep-id:uid=1000,gid=1000` maps exactly one, so anything
+# `agent` wrote to a host bind mount would land there as an unmapped id. `run.sh` lifts this directory out
+# with `eng cp` after the container stops, exactly as it does for $PROBE_STATE and $PROBE_OUT.
 PROBE_TARGET=${PROBE_TARGET:-$PROBE_AGENT_HOME/probe-target}
 # How long any one recorded command may run. A probe never waits for input; a hang is a recorded fact, not
 # a job that burns its whole budget.
@@ -154,6 +203,13 @@ if command -v sudo >/dev/null 2>&1 && id "$PROBE_AGENT_USER" >/dev/null 2>&1; th
     PROBE_PRIVSEP=1
 fi
 
+mkdir -p "$PROBE_OUT"
+# 700 for $PROBE_STATE's reason and not a weaker one: every artefact here is written by a redirect the
+# HARNESS performs, and a redirect into a directory the agent can create an entry in is a redirect the
+# agent can aim. Nothing needs the agent to read this directory either — `probe_record` hands the agent
+# open DESCRIPTORS, which is not directory access, and no path under $PROBE_OUT is ever passed to a
+# command that crosses the boundary.
+chmod 700 "$PROBE_OUT"
 mkdir -p "$PROBE_STATE"
 # The whole point, made explicit rather than left to the umask: `agent` cannot write what decides the
 # run's status. `mkdir` would give 755 under the default umask, and group-readable state is state the
@@ -163,9 +219,9 @@ chmod 700 "$PROBE_STATE"
 : > "$PROBE_STATE/steps"
 # Where `probe_pristine` keeps the pre-launch copy of each watched default location — beside `failures`
 # and `steps`, and for the same reason: the measured party must not be able to rewrite the state the
-# harness restores it to, and /out is writable by it. Cleared rather than merely created, because the
-# archives are numbered from the index and a stale `1.tar` beside a fresh index would be restored over a
-# location it was never taken from.
+# harness restores it to. Cleared rather than merely created, because the archives are numbered from the
+# index and a stale `1.tar` beside a fresh index would be restored over a location it was never taken
+# from.
 rm -rf "$PROBE_STATE/pristine"
 mkdir -p "$PROBE_STATE/pristine"
 : > "$PROBE_STATE/pristine/index"
@@ -210,7 +266,8 @@ probe_make_target() {
     probe_as_agent sh -c 'umask 0002 && mkdir -p "$1"' probe_make_target "$PROBE_TARGET"
 }
 
-# probe_record <name> <command...>: run a command under a timeout, keep its output and exit code in /out.
+# probe_record <name> <command...>: run a command under a timeout, keep its output and exit code in
+# $PROBE_OUT.
 #
 # It returns 0 even when the command failed, and accumulates the failure instead. That is deliberate: these
 # scripts run under `set -e`, so returning the command's status would abort the probe at its first failure
@@ -229,9 +286,14 @@ probe_record() {
     # harness, established by the boundary itself, not by a string the harness wrote about itself.
     printf '%s\n' "$*" > "$PROBE_OUT/$name.cmd"
     set +e
-    # Both redirections are performed by THIS shell, as `probe`, before the switch: the agent is handed
-    # descriptors, never the ability to create a file under $PROBE_OUT. `timeout` runs on the far side so
-    # that the process it signals is the agent's own, at the agent's uid.
+    # Both redirections are performed by THIS shell, as `probe`, before the switch, so what the agent is
+    # handed is two open descriptors and no path it can act on. That is only half of what makes the write
+    # the harness's, and the half that used to be missing is the DIRECTORY: a redirect into a directory
+    # the agent can create an entry in is not a write the harness controls, because `>` follows a symlink
+    # and the agent only has to get there first. $PROBE_OUT is probe-owned at 700, so it cannot — which is
+    # what the claim reduces to now, rather than the aspirational one this comment used to make while
+    # $PROBE_OUT was the world-writable /out mount. `timeout` runs on the far side so that the process it
+    # signals is the agent's own, at the agent's uid.
     if [ -n "$PROBE_AS_AGENT" ]; then
         probe_as_agent timeout --kill-after=10s "$PROBE_TIMEOUT" "$@" > "$PROBE_OUT/$name.txt" 2>&1
     else
@@ -537,15 +599,33 @@ probe_label() {
 # profile directory, and a `rm -rf` at the harness's uid cannot unlink files inside a subdirectory the
 # agent created at mode 755 — the harness would need write access to agent-owned directories it has no
 # business writing. At the agent's uid it needs no such access and can reach nothing the agent could not
-# already reach. The candidate file is the HARNESS's content, so the harness writes it; the `umask` makes
-# it group-writable so an agent that rewrites its own config in place can, rather than failing with
-# EACCES and having that recorded as the mechanism refusing the content.
+# already reach.
+#
+# THE CANDIDATE WRITE RUNS AS THE AGENT TOO, although the content is the harness's. Every other harness
+# write was taken out of reach by moving $PROBE_OUT; this one cannot move, because $PROBE_TARGET has to
+# stay agent-writable — the agent writes its own config there, which is the thing being measured. So the
+# path is one the agent can pre-create as a symlink, between `probe_make_target` and the line below, and a
+# `>` performed by `probe` would follow it: an empty candidate then truncates whatever it points at, and
+# `probe_finish` keys on `failures` being non-empty. Crossing the boundary is the structural answer, the
+# same one `probe_restore_default`'s `tar -x` gives — a write performed at the agent's uid can only reach
+# what the agent could already reach, so the link gains nothing. `rm -f` first is not an answer: shell has
+# no `O_NOFOLLOW`, so the link comes back between the unlink and the open. `set -C` was the alternative —
+# it fails loudly on a planted symlink — and was rejected for making the write non-idempotent while
+# resting on the shell's clobber check rather than on who is doing the writing.
+#
+# The `umask` still makes the file group-writable, so an agent that rewrites its own config in place can,
+# rather than failing with EACCES and having that recorded as the mechanism refusing the content.
 probe_prepare_target() {
     probe_as_agent rm -rf "$PROBE_TARGET"
     probe_make_target
     case "${1:-@none}" in
         @none) ;;
-        *) (umask 0002 && printf '%s' "$1" > "$PROBE_TARGET/$PROBE_CONFIG_NAME") ;;
+        *)
+            # shellcheck disable=SC2016 # `$1` and `$2` are the INNER shell's arguments; both the umask
+            # and the redirect have to happen on the far side of the switch.
+            probe_as_agent sh -c 'umask 0002 && printf %s "$1" > "$2"' \
+                probe_prepare_target "$1" "$PROBE_TARGET/$PROBE_CONFIG_NAME"
+            ;;
     esac
 }
 
