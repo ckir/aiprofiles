@@ -12,6 +12,12 @@
 # the twelve: the path comes from the providers documentation's resolution order rather than a sentence
 # stating the default. Step 6's delta is what settles it, and if the delta is empty the adapter is an
 # outcome-2.
+#
+# THE WATCH IS THE PARENT, `.pi`, DELIBERATELY WIDER THAN THAT DEFAULT -- and the two differing is not a
+# slip. `probe_snapshot` runs `find` with no `-maxdepth` on a directory, so watching `.pi` already carries
+# `.pi/agent` as a subtree. Since the citation is the weakest of the twelve, watching only the cited child
+# would turn "our path guess was wrong" into an empty delta, which `probe_delta` calls the launch having
+# changed nothing, unambiguously. The wider watch is what lets a wrong guess show up as evidence.
 . sandbox/probes/common.sh
 
 probe_npm_install @earendil-works/pi-coding-agent --ignore-scripts
