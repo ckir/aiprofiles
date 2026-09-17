@@ -42,3 +42,17 @@ windows-sys = { version = "0.61", features = [
 inherits = "dev"
 debug = 0
 strip = "debuginfo"
+
+# The profile the release workflow ships from. `agent-profile` is a short-lived wrapper that resolves a
+# profile and then hands off to the agent, so build time is worth trading for size and startup.
+#
+# `panic = "abort"` is safe here rather than merely smaller: nothing in `src/` catches unwinds, implements
+# `Drop` for cleanup, or holds a lock across a section -- `config.rs` writes through a temporary file and
+# an atomic rename, so an abort mid-write leaves a stray temp file and never a half-written destination.
+# Cargo ignores this setting for test and bench profiles, so `cargo test --release` still builds.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
