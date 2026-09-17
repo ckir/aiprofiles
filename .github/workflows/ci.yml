@@ -47,8 +47,8 @@ jobs:
       - run: find sandbox scripts -name '*.sh' -exec shellcheck -s sh {} +
 
   line-citations:
-    # Fails when a comment in sandbox/**/*.sh or crates/**/*.rs cites another file by line number instead
-    # of a symbol -- the check that stops the next one of these from rotting silently (see
+    # Fails when a comment in sandbox/, crates/, .github/ or scripts/ (*.sh, *.rs, *.yml) cites another
+    # file by line number instead of a symbol -- the check that stops the next one from rotting silently (see
     # scripts/check-line-citations.sh). Needs nothing beyond the checkout, so it is its own job rather than
     # a step bolted onto shellcheck.
     name: Line citations
@@ -150,8 +150,8 @@ jobs:
     # anywhere, and a convincing one — real run URL from the public Actions tab, plausible --help excerpt,
     # a column of zero exit codes — can be written by hand in minutes and passes all of them.
     #
-    # It lives here rather than in sandbox.yml because that workflow filters on `paths: sandbox/**`
-    # (.github/workflows/sandbox.yml:13-15) and would never fire on an evidence-only pull request; ci.yml
+    # It lives here rather than in sandbox.yml because that workflow's `pull_request` trigger carries a
+    # `paths:` filter listing `sandbox/**`, so it would never fire on an evidence-only pull request; ci.yml
     # has no paths filter.
     #
     # `pull_request`, NEVER `pull_request_target`. The reflex when a fork's token cannot reach the API is

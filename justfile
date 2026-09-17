@@ -44,8 +44,9 @@ deny:
 shellcheck:
     find sandbox scripts -name '*.sh' -exec shellcheck -s sh {} +
 
-# Fails if a comment in sandbox/**/*.sh or crates/**/*.rs cites another file by line number, which rots
-# the moment either file is edited. See scripts/check-line-citations.sh for the escape hatch.
+# Fails if a comment in sandbox/, crates/, .github/ or scripts/ (*.sh, *.rs, *.yml) cites another file by
+# line number, which rots the moment either file is edited. See scripts/check-line-citations.sh for the
+# escape hatch.
 line-citations:
     sh scripts/check-line-citations.sh
 

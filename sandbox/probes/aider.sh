@@ -3,7 +3,8 @@
 # A re-probe; see claude.sh for why it resolves latest rather than pinning
 # `aider.rs`'s `upstream_version` field (0.86.2).
 # Python 3.12 is pinned because newer interpreters can start long source builds of Aider's native
-# dependencies -- that is the INTERPRETER pin CONTRIBUTING.md:108-109 describes, not a package pin.
+# dependencies -- that is the INTERPRETER pin CONTRIBUTING.md's "Pin interpreter versions an agent
+# supports" guidance describes, not a package pin.
 #
 # Aider's default location is a FILE, `$HOME/.aider.conf.yml` (`aider.rs`'s `FILE_NAME` constant), not a directory.
 #

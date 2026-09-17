@@ -4,9 +4,11 @@
 # (https://cursor.com/install, documented at https://cursor.com/docs/cli/installation); there is no npm
 # package, so this probe refuses a version argument.
 #
-# The installer puts its binary in `$HOME/.local/bin`, which `sandbox/Containerfile:65` already has on
-# PATH -- so a "command not found" at step 2 means the install failed, not that the probe looked in the
-# wrong place.
+# The installer runs as the AGENT, so its binary lands in the agent's `$PROBE_AGENT_HOME/.local/bin`, and
+# it is reachable at step 2 because `common.sh`'s PROBE_AGENT_PATH names that directory. NOT because of the
+# Containerfile's `ENV PATH`: that one is the harness's and, as its own comment says, "deliberately does NOT
+# name the agent's bin directories". So a "command not found" at step 2 means the install failed, not that
+# the probe looked in the wrong place.
 #
 # Default `$HOME/.cursor` and mechanism CURSOR_CONFIG_DIR, both from
 # https://cursor.com/docs/cli/reference/configuration. The docs also describe an XDG fallback
