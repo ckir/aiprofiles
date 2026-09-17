@@ -87,8 +87,9 @@ while read -r id version; do
         continue
     fi
 
-    # Binding the BODY to the version the file name claims. `sandbox/transcript.sh:94` writes this field
-    # from the version the probe actually extracted (`unknown` when it extracted none), so a relabel —
+    # Binding the BODY to the version the file name claims. `sandbox/transcript.sh`'s
+    # `version-extracted:` line writes this field from the version the probe actually extracted
+    # (`unknown` when it extracted none), so a relabel —
     # `git mv <id>-1.2.3.md <id>-3.0.0.md` with the registry bumped to match, zero bytes changed — is
     # refused here rather than sailing through every check below as a measurement of the wrong version.
     extracted=$(field version-extracted "$file")
@@ -162,9 +163,10 @@ while read -r id version; do
     # means the probe failed") had no committable form for 3 and 4 at all: a known version against a job
     # that concluded failure was refused outright.
     #
-    # `probe-exit` is written by `sandbox/run.sh:192` from OUTSIDE the container, from the engine's own
-    # record of the container's status, so it is not a number the measured party can choose; and it sits
-    # inside the transcript, which the `cmp` below already pins byte-for-byte against the artifact.
+    # `probe-exit` is written by `sandbox/run.sh`'s write to `$out/exit-code` from OUTSIDE the container,
+    # from the engine's own record of the container's status, so it is not a number the measured party can
+    # choose; and it sits inside the transcript, which the `cmp` below already pins byte-for-byte against
+    # the artifact.
     #
     # Keying on the `exit-codes:` block instead was considered and is WRONG: an acceptance sweep's
     # refusals are recorded there and are not failures (`common.sh`'s `PROBE_SOFT`), so "any non-zero step
@@ -201,10 +203,10 @@ while read -r id version; do
     fi
 
     # Binding the artifact's NAME, not merely "whatever .md it happens to hold". `upload-artifact` with
-    # `path: transcript/` roots the file at the artifact root and `sandbox/transcript.sh:52` writes exactly
-    # `<id>-<version>.md`, so this is the name the probe itself chose — the one thing in the artifact a
-    # pull request cannot rewrite. Taking the first .md instead would let the artifact of the 1.2.3 run
-    # satisfy a file committed as 3.0.0.
+    # `path: transcript/` roots the file at the artifact root and `sandbox/transcript.sh`'s `out=`
+    # assignment writes exactly `<id>-<version>.md`, so this is the name the probe itself chose — the one
+    # thing in the artifact a pull request cannot rewrite. Taking the first .md instead would let the
+    # artifact of the 1.2.3 run satisfy a file committed as 3.0.0.
     downloaded="$dir/$id-$version.md"
     if [ ! -f "$downloaded" ]; then
         fail "$file: artifact sandbox-transcript-$id holds no $id-$version.md"

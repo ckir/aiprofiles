@@ -46,6 +46,17 @@ jobs:
       # Pre-installed on ubuntu-latest, so there is nothing to pin and nothing to download.
       - run: find sandbox scripts -name '*.sh' -exec shellcheck -s sh {} +
 
+  line-citations:
+    # Fails when a comment in sandbox/**/*.sh or crates/**/*.rs cites another file by line number instead
+    # of a symbol -- the check that stops the next one of these from rotting silently (see
+    # scripts/check-line-citations.sh). Needs nothing beyond the checkout, so it is its own job rather than
+    # a step bolted onto shellcheck.
+    name: Line citations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sh scripts/check-line-citations.sh
+
   tools-doc:
     name: Tools doc
     runs-on: ubuntu-latest

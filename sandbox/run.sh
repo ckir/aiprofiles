@@ -52,8 +52,8 @@ case "$mode" in
         # exactly like the agent word beside it. Without this, `probe claude '1.0; cmd; echo'` ran `cmd`
         # AS THE HARNESS — before the install, with every recorded artefact writable — so an entire
         # evidence transcript could be authored with no agent misbehaving at all. The charset is the one
-        # `resolve-agents.sh:93` and `transcript.sh:45` already enforce: a version that passed here but
-        # not there could not name its own evidence file downstream.
+        # `resolve-agents.sh`'s and `transcript.sh`'s own `*[!A-Za-z0-9._-]*` version-charset case arms
+        # already enforce: a version that passed here but not there could not name its own evidence file downstream.
         case "$version" in
             '') ;;
             *[!A-Za-z0-9._-]*) echo "sandbox: versions are [A-Za-z0-9._-]" >&2; exit 2 ;;

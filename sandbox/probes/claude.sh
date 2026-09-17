@@ -1,12 +1,13 @@
 # Claude Code probe: `sandbox/run.sh probe claude [version]`.
 #
 # A re-probe. SP2 measured 2.1.270 and never committed a transcript (7.4), so there is nothing to
-# reproduce and this resolves latest rather than pinning -- the fold commit updates `claude.rs:23` to
-# whatever it finds.
+# reproduce and this resolves latest rather than pinning -- the fold commit updates `claude.rs`'s
+# `upstream_version` field to whatever it finds.
 #
 # Package @anthropic-ai/claude-code, executable `claude`. The documented bypass list is longer than any
-# one page: `claude.rs:27-29` records ANTHROPIC_PROFILE and the BEDROCK/VERTEX switches as "binary strings
-# measured", so step 4 is the step that established them and this re-probe has to reproduce it.
+# one page: `claude.rs`'s evidence `notes` field records ANTHROPIC_PROFILE and the BEDROCK/VERTEX switches
+# as "binary strings measured", so step 4 is the step that established them and this re-probe has to
+# reproduce it.
 . sandbox/probes/common.sh
 
 probe_npm_install @anthropic-ai/claude-code

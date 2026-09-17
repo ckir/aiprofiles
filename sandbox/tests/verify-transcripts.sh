@@ -71,8 +71,8 @@ FAKE
 
     printf 'example 1.2.3\n' > "$work/manifest"
 
-    # The name the probe itself chose. `sandbox/transcript.sh:52` writes `<id>-<version>.md`, so this is
-    # what the artifact holds unless a test deliberately puts something else there.
+    # The name the probe itself chose. `sandbox/transcript.sh`'s `out=` assignment writes `<id>-<version>.md`,
+    # so this is what the artifact holds unless a test deliberately puts something else there.
     artifact_name=example-1.2.3.md
 
     cat > "$work/repo/docs/evidence/example-1.2.3.md" <<TRANSCRIPT

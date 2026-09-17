@@ -5,10 +5,9 @@
 #          <results-dir>  target/sandbox/probe-<id>-<stamp>/, what sandbox/run.sh leaves behind
 #          [output-dir]   docs/evidence by default
 #
-# It runs as a WORKFLOW STEP, not inside the container, and that is forced rather than chosen: the
-# container gets no `--env` (neither `eng run` invocation in `sandbox/run.sh` passes one), so GITHUB_RUN_ID
-# is not visible to a probe and the
-# custody header cannot be written where the measurements are taken.
+# It runs as a WORKFLOW STEP, not inside the container, and that is forced rather than chosen: the container
+# gets no `--env` (neither `eng run` invocation in `sandbox/run.sh` passes one), so GITHUB_RUN_ID is not
+# visible to a probe and the custody header cannot be written where the measurements are taken.
 #
 # It writes `<id>-<version>.md` whole, and the maintainer commits those bytes unaltered. §5.3's
 # verification job then compares the committed file against the artifact byte for byte, which is what
@@ -49,11 +48,11 @@ case "$version" in
         ;;
 esac
 
-# The probe's own exit status, as `sandbox/run.sh:192` recorded it from OUTSIDE the container — the one
-# number in this file that the measured party could not have written. It is what `verify-transcripts.sh`
-# compares the matrix job's conclusion against, and it is why §9's outcomes 3 and 4 (agent installed,
-# version known, a step refused) have a committable form at all: the version no longer has to stand in for
-# the run's status.
+# The probe's own exit status, as `sandbox/run.sh`'s write to `$out/exit-code` recorded it from OUTSIDE the
+# container — the one number in this file that the measured party could not have written. It is what
+# `verify-transcripts.sh` compares the matrix job's conclusion against, and it is why §9's outcomes 3 and 4
+# (agent installed, version known, a step refused) have a committable form at all: the version no longer
+# has to stand in for the run's status.
 #
 # FAILS CLOSED. A missing, empty or non-numeric file yields `unknown`, which is not `0` and not a number,
 # so the verifier refuses the transcript rather than reading the gap as a clean run. Writing `0` there

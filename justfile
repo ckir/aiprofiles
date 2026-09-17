@@ -44,6 +44,11 @@ deny:
 shellcheck:
     find sandbox scripts -name '*.sh' -exec shellcheck -s sh {} +
 
+# Fails if a comment in sandbox/**/*.sh or crates/**/*.rs cites another file by line number, which rots
+# the moment either file is edited. See scripts/check-line-citations.sh for the escape hatch.
+line-citations:
+    sh scripts/check-line-citations.sh
+
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
 probe-tests:
@@ -60,8 +65,9 @@ tools-doc:
 tools-doc-check:
     sh scripts/gen-tool-table.sh --check
 
-# The local gate: fmt + clippy + typos + shellcheck + test + the probe harness + tools-doc freshness
-check: fmt-check clippy typos shellcheck test probe-tests tools-doc-check
+# The local gate: fmt + clippy + typos + shellcheck + line-citations + test + the probe harness +
+# tools-doc freshness
+check: fmt-check clippy typos shellcheck line-citations test probe-tests tools-doc-check
 
 # Background watcher
 watch:

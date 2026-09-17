@@ -9,7 +9,7 @@
 //! are covered by `cargo clippy --all-targets` but never land in a release archive.
 //!
 //! `REAL_ADAPTERS` rather than `registry()`: the `fake` adapter exists only under debug assertions
-//! (`adapter/mod.rs:119-121`) and has no evidence to verify.
+//! (`adapter/mod.rs`'s `registry()` function, gated by `#[cfg(debug_assertions)]`) and has no evidence to verify.
 
 use agent_profile::adapter::REAL_ADAPTERS;
 

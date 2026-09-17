@@ -10,8 +10,8 @@
 #
 # The same page documents that workspace settings override user settings and managed settings override
 # both. That is a layering the flag cannot defeat, so it belongs in the adapter's basis the way Aider's
-# layering note does (`aider.rs:21`) -- the probe records `--help` and the container delta, and SP4b
-# writes the claim.
+# layering note does (`aider.rs`'s `LAYERING_NOTE` constant) -- the probe records `--help` and the container
+# delta, and SP4b writes the claim.
 . sandbox/probes/common.sh
 
 PROBE_CONFIG_NAME=settings.json

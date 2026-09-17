@@ -1,7 +1,8 @@
 # Codex CLI probe: `sandbox/run.sh probe codex [version]`.
 #
-# A re-probe; see claude.sh for why it resolves latest rather than pinning `codex.rs:27`'s 0.153.4.
-# Package @openai/codex, executable `codex`, mechanism CODEX_HOME (`codex.rs:13`).
+# A re-probe; see claude.sh for why it resolves latest rather than pinning
+# `codex.rs`'s `upstream_version` field (0.153.4).
+# Package @openai/codex, executable `codex`, mechanism CODEX_HOME (`codex.rs`'s `VAR` constant).
 . sandbox/probes/common.sh
 
 probe_npm_install @openai/codex

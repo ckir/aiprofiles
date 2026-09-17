@@ -25,8 +25,8 @@ check() {
 }
 
 # A probe script, written to a temporary directory and run exactly as the container runs one: from the
-# repository root, because that is where `sandbox/run.sh:164` leaves a probe and it is how common.sh
-# resolves its own sibling files.
+# repository root, because that is where `sandbox/run.sh`'s `copy=` assignment leaves a probe and it is
+# how common.sh resolves its own sibling files.
 run_probe() {
     out=$(mktemp -d)
     script=$(mktemp)
@@ -278,7 +278,7 @@ check "an unknown mechanism fails the probe" "$probe_status" "1"
 # --- probe_candidates -----------------------------------------------------------------------------
 
 # §8.4: the smallest content the agent accepts is part of the mechanism, and Aider proved guessing costs —
-# missing, empty and comment-only each exit 2 while `{}` is accepted (aider.rs:17-18).
+# missing, empty and comment-only each exit 2 while `{}` is accepted (aider.rs's `INITIAL_CONFIG` constant).
 stage picky 'test -s "$2" || exit 2; grep -q "{}" "$2" || exit 2'
 run_staged 'probe_candidates picky flagfile:--config @none "" "# comment" "{}"'
 check "a missing candidate file is recorded as refused" \
@@ -347,11 +347,11 @@ probe_behaviour rewriter $default_loc_4 flagdir:--data-dir @none"
 check "a second mechanism's delta is not blinded by the first mechanism's launch" \
     "$(grep -Fxc "+ f $default_loc_4/config.json" "$PROBE_OUT_DIR/delta-flagdir---data-dir.txt")" "1"
 
-# A default location is not always a directory — Aider's is the file `.aider.conf.yml` (aider.rs:15) — and
-# it is not always the agent CREATING something: this stub DELETES its own config, which is why the
-# restore is an exact unpack of the pre-launch state rather than "remove whatever appeared". A heuristic
-# that only undoes additions leaves the second launch with nothing left to delete, and the `- f` row that
-# says the agent removed its config never appears again.
+# A default location is not always a directory — Aider's is the file `.aider.conf.yml` (aider.rs's
+# `FILE_NAME` constant) — and it is not always the agent CREATING something: this stub DELETES its own
+# config, which is why the restore is an exact unpack of the pre-launch state rather than "remove whatever
+# appeared". A heuristic that only undoes additions leaves the second launch with nothing left to delete,
+# and the `- f` row that says the agent removed its config never appears again.
 default_file=$(mktemp)
 : > "$default_file"
 deleter_body='rm -f "'"$default_file"'"'

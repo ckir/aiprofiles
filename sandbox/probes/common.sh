@@ -10,8 +10,9 @@
 set -eu
 
 # Sourced by relative path, because the container runs a probe from the copied checkout's root
-# (`sandbox/run.sh:164` cds to /home/probe/work) and so does the shell suite. A missing file here would
-# otherwise surface as `probe_strip_ansi: not found` three steps later, naming a symptom instead of a cause.
+# (`sandbox/run.sh`'s `copy=` assignment cds to /home/probe/work) and so does the shell suite. A missing file
+# here would otherwise surface as `probe_strip_ansi: not found` three steps later, naming a symptom instead
+# of a cause.
 if [ ! -f sandbox/probes/text.sh ]; then
     echo "probe: run from the repository root; sandbox/probes/text.sh is not here" >&2
     exit 2
@@ -170,10 +171,10 @@ PROBE_TARGET=${PROBE_TARGET:-$PROBE_AGENT_HOME/probe-target}
 # How long any one recorded command may run. A probe never waits for input; a hang is a recorded fact, not
 # a job that burns its whole budget.
 PROBE_TIMEOUT=${PROBE_TIMEOUT:-300}
-# The version the maintainer asked for, or empty for "whatever the registry serves" (§7.4). `run.sh:174`
-# passes it as the probe script's first argument — charset-checked at `run.sh:59` and quoted there, so it
-# reaches this file as one word — and a sourced file sees its caller's positional parameters, so no probe
-# script has to thread it through.
+# The version the maintainer asked for, or empty for "whatever the registry serves" (§7.4). `run.sh`'s
+# `probe`-mode `script=` assignment passes it as the probe script's first argument — charset-checked at
+# `run.sh`'s version-charset case arm and quoted there, so it reaches this file as one word — and a sourced
+# file sees its caller's positional parameters, so no probe script has to thread it through.
 PROBE_VERSION=${PROBE_VERSION:-${1:-}}
 # The candidate file's name inside the profile directory. Some agents key on the extension — Continue
 # reads a `config.yaml` and Amp a `settings.json` — so a probe that must name it can, and one whose agent
@@ -307,9 +308,9 @@ probe_record() {
     printf '%s %s\n' "$name" "$status" >> "$PROBE_STATE/steps"
     # `steps` records EVERY step and its code; `failures` records only what constitutes a probe FAILURE,
     # and those are not the same set. An acceptance sweep's refusals are the measurement (§8.4) — Aider
-    # refuses a missing, an empty and a comment-only `.aider.conf.yml` by design (`aider.rs:17-18`) — so
-    # routing them here would make the probe exit non-zero, the matrix job conclude failure, and
-    # `verify-transcripts.sh` refuse the transcript the sweep exists to produce.
+    # refuses a missing, an empty and a comment-only `.aider.conf.yml` by design (`aider.rs`'s
+    # `INITIAL_CONFIG` constant) — so routing them here would make the probe exit non-zero, the matrix job
+    # conclude failure, and `verify-transcripts.sh` refuse the transcript the sweep exists to produce.
     if [ "$status" -ne 0 ] && [ -z "$PROBE_SOFT" ]; then
         echo "$name $status" >> "$PROBE_STATE/failures"
     fi
@@ -483,8 +484,9 @@ probe_help() {
 #
 # Two questions, one file: does each DOCUMENTED credential variable actually appear in what was installed,
 # and what UNDOCUMENTED ones appear beside them? The second is the one that pays. Claude's adapter cites
-# `CLAUDE_CODE_USE_BEDROCK` and three OAuth variables as "binary strings measured" (`claude.rs:27-29`) —
-# no page documented them, and each one is a way a user defeats the isolation the adapter promises.
+# `CLAUDE_CODE_USE_BEDROCK` and three OAuth variables as "binary strings measured" in `claude.rs`'s evidence
+# `notes` field — no page documented them, and each one is a way a user defeats the isolation the adapter
+# promises.
 #
 # There is no `strings(1)` in the image: `sandbox/Containerfile` installs no binutils. `grep -a` reads a
 # binary as text and is already a dependency, so this uses that rather than growing the image.
@@ -554,8 +556,8 @@ probe_snapshot() {
             find "$dir" -printf '%y %p\n' 2>/dev/null | LC_ALL=C sort >> "$PROBE_OUT/$name.txt"
         elif [ -e "$dir" ]; then
             # A default location is not always a directory: Aider's is the file `.aider.conf.yml`
-            # (`aider.rs:15`). Reporting an existing file as `(absent)` would read as the agent having
-            # written nothing to its default location, which is the finding the whole probe is for.
+            # (`aider.rs`'s `FILE_NAME` constant). Reporting an existing file as `(absent)` would read as the
+            # agent having written nothing to its default location, which is the finding the whole probe is for.
             find "$dir" -maxdepth 0 -printf '%y %p\n' 2>/dev/null >> "$PROBE_OUT/$name.txt"
         else
             echo "(absent)" >> "$PROBE_OUT/$name.txt"
@@ -592,8 +594,8 @@ probe_label() {
 # probe_prepare_target [candidate]: an empty profile directory, holding the candidate file if one is given.
 #
 # `@none` means "create no file", which is a content worth testing in its own right: Aider refuses a
-# MISSING `.aider.conf.yml` exactly as it refuses an empty one (`aider.rs:17-18`), and an adapter that
-# creates nothing would hit that.
+# MISSING `.aider.conf.yml` exactly as it refuses an empty one (`aider.rs`'s `INITIAL_CONFIG` constant),
+# and an adapter that creates nothing would hit that.
 #
 # The removal runs AS THE AGENT. What is being removed is whatever the agent last wrote into its own
 # profile directory, and a `rm -rf` at the harness's uid cannot unlink files inside a subdirectory the
@@ -847,7 +849,7 @@ probe_behaviour() {
 # agent accepts that sets no option? `agent-profile` has to create that file before the agent reads it, so
 # the content is part of the mechanism. Aider set both the precedent and the cost of guessing — missing,
 # empty and comment-only `.aider.conf.yml` each exit 2, and `{}` was accepted only because it was measured
-# (`aider.rs:17-18`, SP2 design D5).
+# (`aider.rs`'s `INITIAL_CONFIG` constant, SP2 design D5).
 #
 # One exit code per candidate, plus an index naming what each one held, because the transcript has to say
 # which content the exit code belongs to.
