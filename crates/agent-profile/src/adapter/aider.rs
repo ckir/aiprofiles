@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    ConflictOption, PathKind, PlanContext, PlannedLaunch, SupportLevel, config_file_arg_plan,
-    profile_dir,
+    ConflictOption, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel,
+    config_file_arg_plan, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -13,6 +13,10 @@ use crate::name::ProfileName;
 
 const FLAG: &str = "--config";
 const FILE_NAME: &str = ".aider.conf.yml";
+
+/// Every spelling of the option Aider launches with; `--config` first, so it is the one reported.
+const CONFIG_OPTION: ConflictOption =
+    ConflictOption { long: &[FLAG, "--confi", "--conf", "--con"], short: Some('c') };
 
 /// An empty YAML mapping: Aider rejects an empty or comment-only file, and `{}` sets no option (design D5).
 pub const INITIAL_CONFIG: &[u8] = b"{}\n";
@@ -24,7 +28,7 @@ pub const LAYERING_NOTE: &str =
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "aider",
     executable: "aider",
-    mechanism_summary: "argument --config <file>",
+    mechanism: Mechanism::FlagFile(CONFIG_OPTION),
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "aider-config-file-v1",
@@ -53,10 +57,9 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         },
     ],
     env: &[],
-    conflicts: &[ConflictOption {
-        long: &["--config", "--confi", "--conf", "--con"],
-        short: Some('c'),
-    }],
+    // Redundant with the mechanism's own option, which `check_conflicts` now scans too. Kept so this
+    // commit is a pure refactor; a follow-up can prune it to `&[]`.
+    conflicts: &[CONFIG_OPTION],
 };
 
 /// The Aider adapter.

@@ -32,7 +32,7 @@ pub enum Error {
         "`{option}` conflicts with how agent-profile selects the {agent} profile ({mechanism}); remove it from \
          the agent arguments"
     )]
-    ArgumentConflict { agent: String, option: String, mechanism: &'static str },
+    ArgumentConflict { agent: String, option: String, mechanism: String },
 
     #[error("{}", not_installed_message(agent, reason, unknown_configured))]
     AgentNotInstalled { agent: String, reason: NotInstalledReason, unknown_configured: Vec<String> },
@@ -201,7 +201,7 @@ mod tests {
                 Error::ArgumentConflict {
                     agent: "aider".into(),
                     option: "--conf".into(),
-                    mechanism: "argument --config <file>",
+                    mechanism: "argument --config <file>".into(),
                 },
                 2,
             ),
@@ -303,7 +303,7 @@ mod tests {
         let conflict = Error::ArgumentConflict {
             agent: "aider".into(),
             option: "--conf".into(),
-            mechanism: "argument --config <file>",
+            mechanism: "argument --config <file>".into(),
         };
         assert_eq!(
             conflict.to_string(),

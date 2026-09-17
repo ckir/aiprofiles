@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use agent_profile::adapter::gate::GateFailure;
 use agent_profile::adapter::{
     self, Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    PathKind, PlanContext, PlannedLaunch, ProfilePath, ProfilePresence, SupportLevel, gate,
+    Mechanism, PathKind, PlanContext, PlannedLaunch, ProfilePath, ProfilePresence, SupportLevel,
+    gate,
 };
 use agent_profile::config::{AppRoot, Config};
 use agent_profile::error::{Error, Result};
@@ -150,6 +151,59 @@ fn codex_new_profile_note_disappears_once_the_home_exists() {
     let planned = fixture.plan(codex, "work", &[]).unwrap();
     codex.initialize(&planned).unwrap();
     assert_eq!(fixture.plan(codex, "work", &[]).unwrap().notes, Vec::<String>::new());
+}
+
+/// The path an adapter's mechanism points at: the configuration file it owns, or, for an adapter that
+/// owns no file, its profile directory. Mirrors `config_file_arg_plan`'s own selection, so no adapter
+/// needs a row here.
+fn mechanism_target(planned: &PlannedLaunch) -> PathBuf {
+    planned
+        .paths
+        .iter()
+        .find(|entry| matches!(entry.kind, PathKind::File { .. }))
+        .map_or_else(|| planned.profile_dir.clone(), |entry| entry.path.clone())
+}
+
+/// The declared mechanism *generates* the reported one: `plan()` never formats that sentence itself.
+/// An adapter that went back to its own `format!` — the way `env_dir_plan` and `config_file_arg_plan`
+/// used to — could once again report a variable or flag it does not actually use. This is the binding
+/// the free-text `mechanism_summary` never had.
+#[test]
+fn the_planned_mechanism_is_generated_from_the_declared_one() {
+    for adapter in adapter::registry() {
+        let fixture = fixture();
+        let metadata = adapter.metadata();
+        let planned = fixture.plan(adapter, "work", &[]).unwrap();
+        assert_eq!(
+            planned.mechanism,
+            metadata.mechanism.sentence_for(&mechanism_target(&planned)),
+            "{}",
+            metadata.id
+        );
+    }
+}
+
+/// A flag adapter refuses the flag it launches with, because `check_conflicts` scans the mechanism's own
+/// option. Generic over the registry, so a ninth adapter is bound without a row.
+#[test]
+fn every_flag_mechanism_refuses_its_own_option() {
+    let mut checked = 0;
+    for adapter in adapter::registry() {
+        let metadata = adapter.metadata();
+        let Some(option) = metadata.mechanism.conflict_option() else { continue };
+        let spelling =
+            *option.long.first().expect("a flag mechanism declares at least one long spelling");
+        assert!(
+            matches!(
+                adapter::check_conflicts(metadata, &args(&[spelling])),
+                Err(Error::ArgumentConflict { .. })
+            ),
+            "{}: {spelling} must be refused",
+            metadata.id
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no flag-mechanism adapter is registered; this test would prove nothing");
 }
 
 #[test]
@@ -504,7 +558,7 @@ fn sound_metadata() -> AdapterMetadata {
     AdapterMetadata {
         id: "fixture",
         executable: "fixture",
-        mechanism_summary: "environment variable FIXTURE_HOME",
+        mechanism: Mechanism::Env("FIXTURE_HOME"),
         support: SupportLevel::Proven,
         evidence: AdapterEvidence {
             mechanism_id: "fixture-home-v1",

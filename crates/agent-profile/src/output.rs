@@ -404,14 +404,14 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use crate::adapter::{AdapterEvidence, CapabilityClaim};
+    use crate::adapter::{AdapterEvidence, CapabilityClaim, Mechanism};
 
     /// A registry-shaped fixture: one claim per capability, as `metadata_invariants` requires of a real
     /// adapter. `Fake` is not usable here — it is `#[cfg(debug_assertions)]` and this module is `cfg(test)`.
     static TEST_METADATA: AdapterMetadata = AdapterMetadata {
         id: "fake",
         executable: "fake-agent",
-        mechanism_summary: "environment variable FAKE_AGENT_HOME",
+        mechanism: Mechanism::Env("FAKE_AGENT_HOME"),
         support: SupportLevel::Proven,
         evidence: AdapterEvidence {
             mechanism_id: "fake-home-v1",

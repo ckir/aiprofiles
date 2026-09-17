@@ -2,6 +2,8 @@
 //! options and profile presence (spec §3, §8, §21, §22, §28; SP2 design §4.2).
 
 use std::ffi::OsStr;
+use std::fmt;
+use std::path::Path;
 
 /// How far an adapter is proven, separately from its capabilities (spec §3, §37).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +96,97 @@ impl ConflictOption {
     }
 }
 
+/// How an adapter points its agent at the profile: the cross product of {variable, flag} x
+/// {directory, file}. This is the complete, closed set — it is the same vocabulary the probe harness
+/// speaks (`sandbox/probes/common.sh`, `env:` / `envfile:` / `flagdir:` / `flagfile:`), so a fifth
+/// variant here would be a mechanism no probe can exercise.
+///
+/// # Three renderings, one per consumer — do not collapse them
+///
+/// 1. [`Display`] — the **path-free** sentence, for error messages. An error message cannot name a
+///    path, because `check_conflicts` refuses an argument before any plan exists and therefore before
+///    any path has been chosen. It prints the placeholder `<dir>` / `<file>` instead.
+/// 2. [`Mechanism::sentence_for`] — the **concrete** sentence that becomes
+///    [`PlannedLaunch::mechanism`](super::PlannedLaunch::mechanism), for the launch report. A report
+///    line should name the exact path it is about to create, so here the placeholder is the real path.
+/// 3. [`Mechanism::probe_token`] — the **machine** identifier the evidence pipeline consumes. The
+///    human text above may be reworded freely; this token may not.
+///
+/// That (1) and (2) differ in form for flag mechanisms is deliberate, not drift: they answer different
+/// questions at different times. For environment mechanisms they coincide, because there is no path in
+/// the sentence to differ over.
+///
+/// `plan()` never formats the sentence itself — `env_dir_plan` and `config_file_arg_plan` call
+/// `sentence_for`, so the declared mechanism *generates* the reported one and the two cannot drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mechanism {
+    /// A variable set to the profile directory.
+    Env(&'static str),
+    /// A variable set to a file inside the profile directory.
+    EnvFile(&'static str),
+    /// An option passed the profile directory.
+    FlagDir(ConflictOption),
+    /// An option passed a file inside the profile directory.
+    FlagFile(ConflictOption),
+}
+
+/// The canonical spelling of a mechanism's option. Every `ConflictOption` in a `static AdapterMetadata`
+/// has at least one long spelling — `metadata_invariants` walks them all and asserts each starts with
+/// `--`, which an empty list could not satisfy meaningfully.
+fn first_long(option: &ConflictOption) -> &'static str {
+    option.long.first().expect("a conflict option declares at least one long spelling")
+}
+
+impl Mechanism {
+    /// The option this mechanism itself occupies, if it is a flag. `check_conflicts` scans it alongside
+    /// the adapter's declared extra `conflicts`, so an adapter cannot accept a flag it uses itself.
+    pub fn conflict_option(&self) -> Option<&ConflictOption> {
+        match self {
+            Mechanism::Env(_) | Mechanism::EnvFile(_) => None,
+            Mechanism::FlagDir(option) | Mechanism::FlagFile(option) => Some(option),
+        }
+    }
+
+    /// The report sentence naming `target`, the path this mechanism points at. Environment mechanisms
+    /// name the variable and ignore `target`.
+    pub fn sentence_for(&self, target: &Path) -> String {
+        match self {
+            Mechanism::Env(name) | Mechanism::EnvFile(name) => {
+                format!("environment variable {name}")
+            }
+            Mechanism::FlagDir(option) | Mechanism::FlagFile(option) => {
+                format!("argument {} {}", first_long(option), target.display())
+            }
+        }
+    }
+
+    /// The evidence pipeline's identifier, e.g. `env:CODEX_HOME` or `flagfile:--config`.
+    pub fn probe_token(&self) -> String {
+        match self {
+            Mechanism::Env(name) => format!("env:{name}"),
+            Mechanism::EnvFile(name) => format!("envfile:{name}"),
+            Mechanism::FlagDir(option) => format!("flagdir:{}", first_long(option)),
+            Mechanism::FlagFile(option) => format!("flagfile:{}", first_long(option)),
+        }
+    }
+}
+
+impl fmt::Display for Mechanism {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Mechanism::Env(name) | Mechanism::EnvFile(name) => {
+                write!(formatter, "environment variable {name}")
+            }
+            Mechanism::FlagDir(option) => {
+                write!(formatter, "argument {} <dir>", first_long(option))
+            }
+            Mechanism::FlagFile(option) => {
+                write!(formatter, "argument {} <file>", first_long(option))
+            }
+        }
+    }
+}
+
 /// Whether a profile exists for an adapter (spec §8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfilePresence {
@@ -123,8 +216,9 @@ pub struct AdapterMetadata {
     pub id: &'static str,
     /// Executable base name, without `.exe`.
     pub executable: &'static str,
-    /// Path-free mechanism text used in messages, e.g. `argument --config <file>`.
-    pub mechanism_summary: &'static str,
+    /// How the agent is pointed at the profile. Generates both the report sentence and the path-free
+    /// text used in messages, so neither can disagree with what `plan()` does.
+    pub mechanism: Mechanism,
     pub support: SupportLevel,
     pub evidence: AdapterEvidence,
     pub capabilities: &'static [CapabilityClaim],
@@ -175,6 +269,19 @@ mod tests {
         let mut wide: Vec<u16> = prefix.encode_utf16().collect();
         wide.push(0xD800);
         OsString::from_wide(&wide)
+    }
+
+    #[test]
+    fn the_probe_token_names_the_mechanism_kind() {
+        // All four variants, none elided: the token vocabulary is a wire contract with
+        // `sandbox/probes/common.sh`, whose `case` has exactly these four arms.
+        assert_eq!(Mechanism::Env("CODEX_HOME").probe_token(), "env:CODEX_HOME");
+        assert_eq!(
+            Mechanism::EnvFile("AIDER_CONFIG_FILE").probe_token(),
+            "envfile:AIDER_CONFIG_FILE"
+        );
+        assert_eq!(Mechanism::FlagDir(AIDER_CONFIG).probe_token(), "flagdir:--config");
+        assert_eq!(Mechanism::FlagFile(AIDER_CONFIG).probe_token(), "flagfile:--config");
     }
 
     #[test]

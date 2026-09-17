@@ -31,7 +31,7 @@ pub use codex::Codex;
 pub use fake::Fake;
 pub use metadata::{
     AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState, ConflictOption,
-    EnvOverride, ProfilePresence, SupportLevel,
+    EnvOverride, Mechanism, ProfilePresence, SupportLevel,
 };
 
 /// One supported coding agent (SP2 design §4.2).
@@ -133,13 +133,18 @@ pub fn lookup(id: &str) -> Option<&'static dyn Adapter> {
 
 /// Refuses an opaque argument that selects the adapter's own mechanism (spec §21, SP2 design §6). The scan
 /// stops at the first `--`, after which arguments are positional for the agent.
+///
+/// The scanned set is `metadata.conflicts` **chained with the mechanism's own option**, so a flag adapter
+/// refuses the flag it launches with whether or not it remembered to list it: `conflicts` carries only the
+/// *additional* options proven to control the same mechanism.
 pub fn check_conflicts(metadata: &AdapterMetadata, args: &[OsString]) -> Result<()> {
     for arg in args.iter().take_while(|arg| arg.as_os_str() != "--") {
-        if metadata.conflicts.iter().any(|option| option.matches(arg)) {
+        let options = metadata.conflicts.iter().chain(metadata.mechanism.conflict_option());
+        if options.into_iter().any(|option| option.matches(arg)) {
             return Err(Error::ArgumentConflict {
                 agent: metadata.id.to_owned(),
                 option: arg.to_string_lossy().into_owned(),
-                mechanism: metadata.mechanism_summary,
+                mechanism: metadata.mechanism.to_string(),
             });
         }
     }
@@ -162,6 +167,7 @@ pub(crate) fn env_dir_plan(
     check_case_twins(ctx.root, ctx.profile)?;
     let paths = profile_paths(adapter, ctx);
     let dir = paths[0].path.clone();
+    let mechanism = metadata.mechanism.sentence_for(&dir);
     Ok(PlannedLaunch {
         plan: LaunchPlan {
             executable: found.path,
@@ -173,7 +179,7 @@ pub(crate) fn env_dir_plan(
         profile_dir: dir,
         paths,
         executable_origin: found.origin,
-        mechanism: format!("environment variable {var}"),
+        mechanism,
         sensitive_env: sensitive_env(metadata),
         notes: Vec::new(),
     })
@@ -203,7 +209,7 @@ pub(crate) fn config_file_arg_plan(
         profile_dir: paths[0].path.clone(),
         paths,
         executable_origin: found.origin,
-        mechanism: format!("argument {flag} {}", file.display()),
+        mechanism: metadata.mechanism.sentence_for(&file),
         sensitive_env: sensitive_env(metadata),
         notes: Vec::new(),
     })
@@ -494,7 +500,7 @@ mod tests {
     static SECRETIVE: AdapterMetadata = AdapterMetadata {
         id: "secretive",
         executable: "fake-agent",
-        mechanism_summary: "environment variable PROFILE_SESSION_HANDLE",
+        mechanism: Mechanism::Env("PROFILE_SESSION_HANDLE"),
         support: SupportLevel::Experimental,
         evidence: AdapterEvidence {
             mechanism_id: "secretive-v1",

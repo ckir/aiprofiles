@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    ConflictOption, EnvOverride, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan,
-    profile_dir,
+    ConflictOption, EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel,
+    env_dir_plan, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -16,7 +16,7 @@ const VAR: &str = "FAKE_AGENT_HOME";
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "fake",
     executable: "fake-agent",
-    mechanism_summary: "environment variable FAKE_AGENT_HOME",
+    mechanism: Mechanism::Env(VAR),
     support: SupportLevel::Experimental,
     evidence: AdapterEvidence {
         mechanism_id: "fake-home-v1",

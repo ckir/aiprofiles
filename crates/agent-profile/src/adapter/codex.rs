@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    EnvOverride, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan, profile_dir,
+    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan,
+    profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -19,7 +20,7 @@ pub const NEW_PROFILE_NOTE: &str =
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "codex",
     executable: "codex",
-    mechanism_summary: "environment variable CODEX_HOME",
+    mechanism: Mechanism::Env(VAR),
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "codex-home-v1",

@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    EnvOverride, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan, profile_dir,
+    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan,
+    profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -15,7 +16,7 @@ const VAR: &str = "CLAUDE_CONFIG_DIR";
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "claude",
     executable: "claude",
-    mechanism_summary: "environment variable CLAUDE_CONFIG_DIR",
+    mechanism: Mechanism::Env(VAR),
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "claude-config-dir-v1",
