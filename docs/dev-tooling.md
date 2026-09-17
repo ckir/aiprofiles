@@ -67,15 +67,22 @@ winget install RedHat.Podman     # or Docker Desktop
 ### Podman and Docker are not interchangeable here
 
 `sandbox/run.sh` picks podman when it is installed and falls back to Docker, and either runs a probe.
-But `run.sh` sets `--userns=keep-id:uid=1000,gid=1000` **only under podman**, and the sandbox workflow
-sets `AGENT_PROFILE_SANDBOX_ENGINE: podman` in both jobs. That mapping admits one id, while the
-container runs two unprivileged users — the harness and the measured agent. So anything about uid
-mapping across the `/out` bind mount behaves differently under Docker and cannot be reproduced there.
+`run.sh` sets `--userns=keep-id:uid=1000,gid=1000` **only under podman**, and the sandbox workflow sets
+`AGENT_PROFILE_SANDBOX_ENGINE: podman` in both jobs. That mapping admits one id, while the container runs
+two unprivileged users — the harness and the measured agent.
 
-Use Docker for ordinary sandbox work. For a uid-mapping question, prefer dispatching the Sandbox
-workflow, which is the environment CI actually uses; a Windows podman machine is a third environment
-again, not the Linux runner. Reach for a local podman at the point where you would otherwise be
-re-pushing to CI to iterate.
+That difference used to reach the evidence: a probe wrote its artefacts to a `/out` bind mount, so
+ownership across the mapping mattered, and under Docker that directory had to be made world-writable —
+which let the measured agent pre-create a path the harness then wrote through. **`probe` and `test` no
+longer mount a results directory at all**: everything a probe produces is written container-internally
+and lifted out with `eng cp` once the container has stopped. Only `shell` still mounts `/out`, and it
+runs no agent.
+
+So for ordinary sandbox work the engines now differ only in the image store and the mapping itself, and
+Docker is fine. Podman remains what CI runs, so it is still the engine to reach for when a question is
+specifically about the uid mapping — and for that, prefer dispatching the Sandbox workflow, which is the
+environment CI actually uses; a Windows podman machine is a third environment again, not the Linux
+runner. Install podman locally at the point where you would otherwise iterate by re-pushing to CI.
 
 ## Gate commands (the contract)
 
