@@ -11,14 +11,15 @@
 # and diff.txt (the files the run added, changed or deleted inside the container). A probe's artefacts, its
 # `failures` and `steps`, and `target/` — the profile directory the agent was pointed at — arrive there too,
 # and NONE of them is written to a host mount: they live inside the container on directories the measured
-# party cannot reach, and are copied out after it stops (see the `eng cp` block). Only `shell`, which has no
-# agent in it, still mounts the results directory at /out.
+# party cannot reach, and are copied out after it stops (see the `eng cp` block inside `cleanup`). Only
+# `shell`, which has no agent in it, still mounts the results directory at /out.
 #
-# Cleanup on a normal exit, Ctrl-C, TERM or HUP: the container and its image are removed. With local Podman every
-# run also uses its own temporary image store under ${TMPDIR:-/var/tmp}, deleted at the end, so no image, layer or
-# cache survives. A SIGKILL skips cleanup: remove a leftover store with `podman unshare rm -rf <store>`. Docker and
-# remote Podman (Podman Desktop on macOS) keep the base image and build cache in their own store; see
-# CONTRIBUTING.md.
+# Cleanup on a normal exit, Ctrl-C, TERM or HUP: the artefacts are lifted out and then the container and its image
+# are removed — in that order, so an install interrupted after ten minutes still leaves its evidence behind. With
+# local Podman every run also uses its own temporary image store under ${TMPDIR:-/var/tmp}, deleted at the end, so
+# no image, layer or cache survives. A SIGKILL skips cleanup: remove a leftover store with
+# `podman unshare rm -rf <store>`. Docker and remote Podman (Podman Desktop on macOS) keep the base image and build
+# cache in their own store; see CONTRIBUTING.md.
 
 set -eu
 
@@ -125,6 +126,50 @@ cleanup() {
     status=$?
     trap '' INT TERM HUP
     trap - EXIT
+    # EVERYTHING A PROBE PRODUCED LIVES INSIDE THE CONTAINER, and is lifted into the results directory here
+    # — IN THE TRAP, ahead of the `eng rm` below, because the trap is the only place that runs on BOTH exits.
+    # On the main path it once did, and a Ctrl-C during a multi-minute agent install then reached `exit 130`,
+    # `cleanup`, and `eng rm -f` with the copies still pending: the container went away with every artefact
+    # in it. Measured on the host against a stub engine, before this moved: an interrupted run logged
+    # `build, run, rm, rmi` and no `cp` at all, and its results directory held only build.log and an empty
+    # output.log. It fails closed rather than wrong — `$out/exit-code` is not written either, so
+    # `transcript.sh` reads `probe_exit=unknown` instead of a truncated transcript — but the evidence a long
+    # run bought is gone. Nothing here is a second copy: the main path no longer copies at all, and `cleanup`
+    # runs once (`trap - EXIT` above).
+    #
+    # The engine end of it was measured too, against Docker rather than reasoned about: `cp <id>:<dir>/.` reads
+    # a RUNNING container as happily as a stopped one — which is what an interrupt can leave, since the copy
+    # may start before the workload has finished stopping — overwrites the files it carries, adds the ones it
+    # does not, and leaves anything else in the destination alone, so running it twice changes nothing. Against
+    # a REMOVED container it fails with "No such container", which is precisely the old order.
+    #
+    # Three directories, three reasons — and the first two are why `probe` and `test` no longer mount /out at
+    # all. A writable host directory inside a container the measured party shares is not just somewhere it can
+    # drop files; it is somewhere it can PRE-CREATE A PATH, and `transcript.sh` reads this directory
+    # afterwards. The copy-back overwrites what it carries but cannot unwrite what it does not.
+    #
+    #   /home/probe/.probe-out     the artefacts a transcript is assembled from. Probe-owned at 700, because
+    #                              every one of them is written by a `>` the HARNESS performs, and `>` follows
+    #                              a symlink: under /out the agent could aim `delta-<label>.txt` at the
+    #                              bookkeeping and an empty delta truncated it (`sandbox/probes/common.sh`, at
+    #                              PROBE_OUT — measured in a container).
+    #   /home/probe/.probe-state   `failures` and `steps`: the run's status, which the measured party must not
+    #                              be able to forge. Copied last, so the bookkeeping is the last word.
+    #   /home/agent/probe-target   the profile directory the agent was pointed at. `agent` is a SECOND uid and
+    #                              the userns mapping above admits one, so anything IT wrote to a host mount
+    #                              would land there as an unmapped id. `probe` only: it is the only mode that
+    #                              has an agent.
+    #
+    # Failure is expected and ignored: `shell` never sources the harness, a container that died before it ran
+    # has no such directory, and a build that never produced a container has no container. `eng diff` is NOT
+    # here — it needs the container alive, and it still runs on the main path, which is the only path that
+    # reaches a stopped container rather than an interrupted one.
+    eng cp "$id:/home/probe/.probe-out/." "$out/" >/dev/null 2>&1 || true
+    eng cp "$id:/home/probe/.probe-state/." "$out/" >/dev/null 2>&1 || true
+    if [ "$mode" = probe ]; then
+        mkdir -p "$out/target"
+        eng cp "$id:/home/agent/probe-target/." "$out/target/" >/dev/null 2>&1 || true
+    fi
     eng rm -f "$id" >/dev/null 2>&1 || true
     eng rmi -f "$id" >/dev/null 2>&1 || true
     if [ -n "$store" ]; then
@@ -154,14 +199,21 @@ if ! eng build --tag "$id" --build-arg "NEXTEST_PLATFORM=$nextest_platform" \
     exit 125
 fi
 
-# The checkout is mounted read-only and copied without `target/`, so a run never writes to your tree.
+# The checkout is mounted read-only and copied without `target/`, `.clavity` or `.git`, so a run never
+# writes to your tree.
+#
+# `.git` is excluded as hygiene, not as speed — it is a couple of megabytes. Nothing in the container reads
+# it: `cargo nextest run --workspace` needs no history, and `crates/agent-profile/tests/resolution.rs` says
+# in its module comment that its repositories are "synthetic `.git` layouts in guarded temp directories, so
+# no test needs `git` and none discovers this checkout". What the exclusion removes is a copy of every
+# commit, branch and remote in the working directory an agent is launched in.
 #
 # The copy is the harness's, and the agent is launched with it as the working directory — `sudo` does not
 # change directory. So it is given the group `probe` and `agent` share, and made group-writable: an agent
 # that writes beside its config (aider's `.aider.chat.history.md` lands in the working directory) would
 # otherwise fail for lack of a writable cwd, and that failure would be recorded as the agent's behaviour
 # rather than as the harness's setup.
-copy='mkdir -p /home/probe/work && chgrp probe-share /home/probe/work && chmod 2775 /home/probe/work && tar -C /src --exclude=./target --exclude=./.clavity -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
+copy='mkdir -p /home/probe/work && chgrp probe-share /home/probe/work && chmod 2775 /home/probe/work && tar -C /src --exclude=./target --exclude=./.clavity --exclude=./.git -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
 case "$mode" in
     test) script="$copy && cargo nextest run --workspace --no-tests=pass" ;;
     probe)
@@ -190,32 +242,9 @@ fi
 code=$(eng inspect --format '{{.State.ExitCode}}' "$id" 2>/dev/null || echo 125)
 set -e
 echo "$code" > "$out/exit-code"
-# EVERYTHING A PROBE PRODUCED LIVES INSIDE THE CONTAINER, and is lifted into the results directory now
-# that it has stopped. Three directories, three reasons — and the first two are why `probe` and `test` no
-# longer mount /out at all. A writable host directory inside a container the measured party shares is not
-# just somewhere it can drop files; it is somewhere it can PRE-CREATE A PATH, and `transcript.sh` reads
-# this directory afterwards. The copy-back overwrites what it carries but cannot unwrite what it does not.
-#
-#   /home/probe/.probe-out     the artefacts a transcript is assembled from. Probe-owned at 700, because
-#                              every one of them is written by a `>` the HARNESS performs, and `>` follows
-#                              a symlink: under /out the agent could aim `delta-<label>.txt` at the
-#                              bookkeeping and an empty delta truncated it (`sandbox/probes/common.sh`, at
-#                              PROBE_OUT — measured in a container).
-#   /home/probe/.probe-state   `failures` and `steps`: the run's status, which the measured party must not
-#                              be able to forge. Copied last, so the bookkeeping is the last word.
-#   /home/agent/probe-target   the profile directory the agent was pointed at. `agent` is a SECOND uid and
-#                              the userns mapping above admits one, so anything IT wrote to a host mount
-#                              would land there as an unmapped id. `probe` only: it is the only mode that
-#                              has an agent.
-#
-# Failure is expected and ignored: `shell` never sources the harness, and a container that died before it
-# ran has no such directory. The container itself is removed by the EXIT trap, after this.
-eng cp "$id:/home/probe/.probe-out/." "$out/" >/dev/null 2>&1 || true
-eng cp "$id:/home/probe/.probe-state/." "$out/" >/dev/null 2>&1 || true
-if [ "$mode" = probe ]; then
-    mkdir -p "$out/target"
-    eng cp "$id:/home/agent/probe-target/." "$out/target/" >/dev/null 2>&1 || true
-fi
+# The container is still alive here and `eng diff` needs it to be; the artefacts are lifted out by the EXIT
+# trap afterwards (see the `eng cp` block in `cleanup`). `output.log` is written by THIS shell's redirect of
+# `eng run`, not by the copy-back, so tailing it before the copies shows exactly what it always showed.
 eng diff "$id" > "$out/diff.txt" 2>&1 || true
 [ "$mode" = shell ] || tail -n 20 "$out/output.log"
 echo "sandbox: exit code $code" >&2

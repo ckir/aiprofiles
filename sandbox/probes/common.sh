@@ -81,6 +81,14 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 # away, and nothing downstream would notice. It is stated per helper because "the agent runs as agent" is
 # not a rule a reader can apply to `probe_strings`, which runs `grep` OVER an agent file.
 #
+# HAND-MAINTAINED PROSE ASSERTING A MECHANICAL PROPERTY, which is a shape that rots: three separate reviews
+# have now found a false sentence in this block. Half of it is mechanical from here on —
+# `sandbox/tests/probe-harness.sh`'s "every function that crosses the privilege boundary is named in the
+# enumeration" check reads this file, collects every function whose body calls `probe_as_agent` or
+# `probe_record_agent`, and fails if any of them is missing below, so a new crossing cannot be added in
+# silence. The other half is not and cannot be: a membership check cannot tell whether the REASON given
+# beside a name is true, and a false reason is precisely what all three reviews found.
+#
 #   as `agent`, through probe_record_agent / probe_as_agent:
 #     probe_npm_install, probe_uv_install, probe_script_install   the install and its install scripts
 #     probe_version, probe_help                                   launches of the agent binary
@@ -132,8 +140,20 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 #                                     shared group.
 #     probe_version's extraction      the harness's own statement about what it measured — the token
 #     probe_candidates' index         SP4b types into the registry, and which content each candidate
-#                                     exit code belongs to. Both land in $PROBE_OUT, which is the
-#                                     harness's at 700, so a wrapper here would now fail outright.
+#                                     exit code belongs to. NOTHING MECHANICAL STOPS A WRAPPER HERE, and
+#                                     the claim that used to stand in this slot — that one "would fail
+#                                     outright" because both land in $PROBE_OUT at 700 — was false. `>`
+#                                     binds to the CALLING shell: `probe_as_agent printf … >
+#                                     "$PROBE_OUT/version.extracted"` has the harness open the file as
+#                                     `probe`, succeed, and hand the agent a descriptor. That is not an
+#                                     accident of these two lines, it is exactly how probe_record
+#                                     captures agent output. A wrapper here would therefore write the
+#                                     file, at 700, with the AGENT choosing the bytes — the harness's
+#                                     statement about what it measured, authored by the measured party.
+#                                     What keeps these two on this side is this enumeration and review,
+#                                     and probe-harness.sh's "every function that crosses the privilege
+#                                     boundary is named in the enumeration" check backs only the
+#                                     membership half of that.
 #     probe_pristine's `tar -c`       writes into $PROBE_STATE, which the agent cannot reach.
 #     probe_strings' readlink/find/grep   harness work reading an agent file. A `sudo` misplaced onto
 #                                     THIS `find` would run agent-chosen paths at the harness uid and
@@ -402,7 +422,8 @@ probe_npm_install() {
 }
 
 # probe_uv_install <package> <python-version>: install one Python tool, at the requested version if given.
-# The interpreter is pinned by the caller; CONTRIBUTING.md:108-109's pinning guidance covers exactly this.
+# The interpreter is pinned by the caller; CONTRIBUTING.md's "Pin interpreter versions an agent supports"
+# guidance covers exactly this.
 probe_uv_install() {
     probe_record_agent install uv tool install --python "$2" "$1${PROBE_VERSION:+==$PROBE_VERSION}"
 }

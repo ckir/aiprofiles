@@ -24,6 +24,11 @@ check() {
     fi
 }
 
+# Shell code spliced into the next run BEFORE common.sh is sourced, and cleared again after it. `stage`
+# below runs after the source and is enough for anything a STEP needs; this exists for the settings
+# common.sh reads AT SOURCE TIME — PROBE_PRIVSEP is decided there, once, from what is on the PATH.
+preamble=
+
 # A probe script, written to a temporary directory and run exactly as the container runs one: from the
 # repository root, because that is where `sandbox/run.sh`'s `copy=` assignment leaves a probe and it is
 # how common.sh resolves its own sibling files.
@@ -37,9 +42,12 @@ PROBE_STATE=$out/state
 PROBE_TARGET=$out/target
 PROBE_TIMEOUT=5
 PATH=$out/bin:\$PATH
+mkdir -p "\$PROBE_OUT/bin"
+$preamble
 . sandbox/probes/common.sh
 $1
 SCRIPT
+    preamble=
     mkdir -p "$out/bin"
     set +e
     sh "$script" > "$out/stdout" 2>&1
@@ -92,8 +100,98 @@ $1"
 probe_out_default=$(sed -n 's/^PROBE_OUT=${PROBE_OUT:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
 check "the harness's output directory is not the /out bind mount" \
     "$probe_out_default" "/home/probe/.probe-out"
+
+# --- run.sh's copy-back, RUN rather than grepped ----------------------------------------------------
+#
+# THE DEFECT CLASS: a source-text assertion wearing a behavioural name. This used to be
+# `grep -c '^eng cp "$id:/home/probe/.probe-out/." "$out/"' run.sh` equal to 1, called "run.sh lifts the
+# harness's output directory out of the stopped container" — and a mutant that wrapped that line in
+# `if [ "$mode" = shell ]; then ... fi`, keeping it at column 0, left it GREEN while no probe run got any
+# artefact out at all: `transcript.sh` emitted `(not recorded)` for install, version, help, strings and
+# every delta. A `grep` is indifferent to control flow, so the check could not fail for the reason its
+# name gave. It now RUNS `sandbox/run.sh` against a stub engine, which needs no Docker and no network, and
+# asserts what the name says: the artefacts arrive in the results directory, and they arrive before the
+# container is removed.
+#
+# fake_engine_run <interrupt>: run `sandbox/run.sh probe claude` with a stub `docker` first on the PATH.
+# A non-empty argument makes the stub's `run` send SIGINT to `run.sh` itself, which is what Ctrl-C during a
+# multi-minute agent install does. Sets $eng_status, $eng_order (the cp/rm/rmi calls in order) and
+# $eng_lifted (the marker files the stub's `cp` left behind, which stand in for the copied directories).
+fake_engine_run() {
+    eng_dir=$(mktemp -d)
+    cat > "$eng_dir/docker" <<'ENGINE'
+#!/bin/sh
+# Records every subcommand, and for `cp` drops one recognisable file where the real engine would have put
+# the container directory named in "$2" (`<id>:/path/to/dir/.`).
+printf '%s\n' "$1" >> "$FAKE_ENG_LOG"
+case $1 in
+    run)
+        if [ -n "${FAKE_ENG_INTERRUPT:-}" ]; then
+            kill -INT "$PPID"
+            sleep 5
+        fi
+        ;;
+    inspect) echo 0 ;;
+    cp)
+        mkdir -p "$3"
+        echo copied > "$3/from-$(basename "$(dirname "${2#*:}")")"
+        ;;
+    diff) echo "stub diff" ;;
+esac
+exit 0
+ENGINE
+    chmod +x "$eng_dir/docker"
+    : > "$eng_dir/calls"
+    # The results directory is found by listing, not by reading the "results in ..." line `cleanup` prints:
+    # measured on this host, an interrupted `sh` writes NOTHING more to its inherited stderr even though the
+    # trap runs to the end (an `echo` marker spliced into `cleanup` past that line fired on both paths while
+    # both streams came back zero bytes). A test that read the message would pass only where that quirk is
+    # absent, which is the opposite of what it is for.
+    mkdir -p "$root/target/sandbox"
+    : > "$eng_dir/before"
+    for d in "$root"/target/sandbox/*/; do
+        if [ -d "$d" ]; then printf '%s\n' "$d" >> "$eng_dir/before"; fi
+    done
+    set +e
+    FAKE_ENG_LOG="$eng_dir/calls" FAKE_ENG_INTERRUPT="$1" AGENT_PROFILE_SANDBOX_ENGINE=docker \
+        PATH="$eng_dir:$PATH" sh "$root/sandbox/run.sh" probe claude > "$eng_dir/stdout" 2>&1
+    eng_status=$?
+    set -e
+    eng_new=
+    for d in "$root"/target/sandbox/*/; do
+        if [ -d "$d" ] && ! grep -qxF "$d" "$eng_dir/before"; then eng_new=$d; fi
+    done
+    eng_order=$(grep -xE 'cp|rm|rmi' "$eng_dir/calls" | tr '\n' ',')
+    # Never let an empty name through to the `cd` and the `rm -rf` below. Say so as a failed check rather
+    # than as a green one: a run that produced no results directory at all is exactly the outcome these
+    # checks exist to notice.
+    if [ -z "$eng_new" ]; then
+        eng_lifted='(the stub engine run left no results directory)'
+        rm -rf "$eng_dir"
+        return 0
+    fi
+    eng_out=${eng_new%/}
+    eng_lifted=$( (cd "$eng_out" && find . -name 'from-*' | sort | tr '\n' ',') || true)
+    rm -rf "$eng_dir" "$eng_out"
+}
+
+fake_engine_run ''
 check "run.sh lifts the harness's output directory out of the stopped container" \
-    "$(grep -c "^eng cp \"\$id:/home/probe/\.probe-out/\.\" \"\$out/\"" "$root/sandbox/run.sh")" "1"
+    "$eng_lifted" "./from-.probe-out,./from-.probe-state,./target/from-probe-target,"
+check "and lifts it before the container is removed" "$eng_order" "cp,cp,cp,rm,rmi,"
+
+# A SIGINT during a multi-minute install used to destroy every artefact the run had bought: the copies were
+# on the main path, `exit 130` went straight to the EXIT trap, and `eng rm -f` took the container away with
+# all of it inside. Measured here against the stub before the copies moved into `cleanup`: the call log read
+# `build, run, rm, rmi` with no `cp` at all, and the results directory held build.log and an empty
+# output.log. It failed CLOSED — `$out/exit-code` is not written on that path either, so `transcript.sh`
+# reads `probe_exit=unknown` rather than assembling a transcript from half a run — so this is evidence
+# durability, not correctness. The evidence is still what the run was for.
+fake_engine_run interrupt
+check "an interrupted run exits 130" "$eng_status" "130"
+check "and still lifts its artefacts out before the container is removed" \
+    "$eng_lifted" "./from-.probe-out,./from-.probe-state,./target/from-probe-target,"
+check "and the removal still happens, after the copies" "$eng_order" "cp,cp,cp,rm,rmi,"
 
 # --- probe_record ---------------------------------------------------------------------------------
 
@@ -152,25 +250,113 @@ check "a hanging step fails the probe" "$probe_status" "1"
 #
 # READ THIS BEFORE TRUSTING THE GREEN. The container runs the harness as `probe` and everything measured
 # as `agent`, and that split is the only thing that makes the bookkeeping above tamper-proof rather than
-# merely moved. THIS SUITE DOES NOT EXERCISE IT. It runs on the maintainer's host, where there is no
-# `agent` user and no `sudo`, so `common.sh` detects their absence and every crossing degrades to a
-# direct call — deliberately, because otherwise the suite could not run this file at all. What follows
-# therefore tests the DEGRADATION and the contract around it, never the boundary: that a step still runs
-# and is still recorded with the switch compiled out, that the privilege plumbing stays out of the
-# evidence, and that the flag which selects the uid cannot leak into the next step. The boundary itself
-# is verified only by a real container run. A guarantee no test covers must not read as though one does.
+# merely moved. THIS SUITE DOES NOT EXERCISE THE UID SEPARATION. It runs on the maintainer's host, where
+# there is no `agent` user and no `sudo`, so `common.sh` detects their absence and every crossing degrades
+# to a direct call — deliberately, because otherwise the suite could not run this file at all. Nothing
+# below asserts that `agent` cannot write `failures`; only a real container run does, and a guarantee no
+# test covers must not read as though one does.
+#
+# EXACTLY WHAT IS COVERED, because the previous version of this paragraph over-promised and one of the
+# checks under it was measured vacuous. Two different things are tested here:
+#
+#   with the switch COMPILED OUT (no stub, the host's own state)   that a crossing step still runs and is
+#   still recorded, and that the flag selecting the uid cannot leak into the next step.
+#
+#   with the switch TAKEN (a stub `sudo` staged before common.sh is sourced, below)   that the plumbing
+#   `probe_as_agent` puts in front of a command does not reach the recorded command. This one used to be
+#   asserted with the switch compiled out, where `probe_as_agent` prepends nothing at all: a seat mutated
+#   `probe_record` to record what actually ran — `sudo -n -u agent -- env HOME=... sh -c exit 3` into the
+#   `.cmd` text — and all eight privilege checks here stayed GREEN. There was nothing to leak, so the
+#   check could not fail for the reason its name gave, while in a container the same mutant writes harness
+#   internals into a COMMITTED transcript as though they were evidence about the agent.
+#
+# The stub is a `sudo` that strips `-n -u <user> --` and execs the rest, with PROBE_AGENT_USER pointed at
+# the user running the suite and PROBE_AGENT_PATH at the suite's own PATH. That is not the boundary — one
+# uid runs everything, as before — but it is the real `probe_as_agent` branch, with the real argument
+# vector in front of the real command, which is the whole of what the check is about.
 
 run_probe 'probe_record_agent direct true'
 check "a step that would cross the boundary still runs when it is compiled out" "$probe_status" "0"
 check "and is recorded exactly as a harness step is" \
     "$(cat "$PROBE_OUT_DIR/direct.exit-code")" "0"
 
+# Spliced in before `. sandbox/probes/common.sh`, because PROBE_PRIVSEP is decided once at source time
+# from `command -v sudo` and `id "$PROBE_AGENT_USER"`.
+privsep_preamble=$(cat <<'PREAMBLE'
+cat > "$PROBE_OUT/bin/sudo" <<'STUB'
+#!/bin/sh
+# Enough of sudo for probe_as_agent: drop the flags it passes, run what follows at the SAME uid.
+while [ $# -gt 0 ]; do
+    case $1 in
+        -n) shift ;;
+        -u) shift 2 ;;
+        --) shift; break ;;
+        *) break ;;
+    esac
+done
+exec "$@"
+STUB
+chmod +x "$PROBE_OUT/bin/sudo"
+PROBE_AGENT_USER=$(id -un)
+PROBE_AGENT_HOME=$PROBE_OUT/agent-home
+PROBE_AGENT_PATH=$PATH
+PREAMBLE
+)
+
 # The transcript states what the VENDOR documents. `sudo -n -u agent -- env HOME=... npm install ...`
 # states that plus a fact about this harness, and only the first is evidence about the agent.
-run_probe 'probe_record_agent boom sh -c "exit 3"'
+preamble=$privsep_preamble
+run_probe 'probe_record_agent boom sh -c "exit 3"
+probe_record_agent crossed sh -c "printf %s \"\$HOME\""
+printf %s "$PROBE_PRIVSEP" > "$PROBE_OUT/privsep"'
+# THE CONTROL. Without these two, the check below is the vacuous one again and nothing would say so: a
+# stub that failed to be found, or a PROBE_AGENT_USER that does not resolve, puts PROBE_PRIVSEP back to
+# empty and every crossing back to a direct call, silently.
+check "the switch really is taken for the check below" "$(cat "$PROBE_OUT_DIR/privsep")" "1"
+check "and the command really is run through it" \
+    "$(cat "$PROBE_OUT_DIR/crossed.txt")" "$PROBE_OUT_DIR/agent-home"
 check "the privilege switch is not written into the recorded command" \
     "$(cat "$PROBE_OUT_DIR/boom.cmd")" "sh -c exit 3"
 check "a failed agent-side step still fails the probe" "$probe_status" "1"
+
+# --- the privilege enumeration is complete -----------------------------------------------------------
+#
+# common.sh's THE PRIVILEGE SPLIT block lists, per helper, which side of the boundary it runs on. That
+# enumeration IS the boundary — a `probe_as_agent` added to a helper nobody listed, or dropped from one
+# that needs it, changes which uid runs the code and nothing downstream notices — and it is hand-written
+# prose asserting a mechanical property, which is the shape that rots. Three separate reviews have now
+# found a false sentence in it; the third found the sentence claiming a wrapper on `probe_version`'s
+# extraction "would fail outright", which was wrong because `>` binds to the CALLING shell.
+#
+# THE MEMBERSHIP HALF IS MECHANICAL FROM HERE. Every function in common.sh whose body calls
+# `probe_as_agent` or `probe_record_agent` must be NAMED in the block, so a new crossing cannot be added
+# in silence. WHAT THIS CANNOT CATCH, stated because a green check that reads as more than it is caused
+# the defect above: it cannot tell whether the REASON written beside a name is true, and a false reason is
+# exactly what all three reviews found. It also cannot see a crossing added to a probe script rather than
+# to common.sh, and it matches a name anywhere in the block, so a name that appears only inside someone
+# else's rationale would satisfy it. It is a completeness check, not a correctness one.
+#
+# It lives here rather than in scripts/ because this suite already runs in `just check` and in CI and
+# already makes assertions against common.sh's source; a new script would need the justfile and the CI
+# workflow changed to be anything but dead code.
+split_block=$(awk '/^# WHICH HELPER RUNS AS WHICH USER/, /^# THE ENVIRONMENT ACROSS THE SWITCH/' \
+    "$root/sandbox/probes/common.sh")
+crossing_fns=$(awk '
+    /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{$/ { fn = $1; sub(/\(\).*/, "", fn); next }
+    /^}$/ { fn = ""; next }
+    /^[[:space:]]*#/ { next }
+    /probe_as_agent|probe_record_agent/ { if (fn != "") print fn }
+' "$root/sandbox/probes/common.sh" | sort -u)
+unlisted=
+for fn in $crossing_fns; do
+    printf '%s\n' "$split_block" | grep -qE "$fn([^A-Za-z0-9_]|\$)" || unlisted="$unlisted $fn"
+done
+check "every function that crosses the privilege boundary is named in the enumeration" "$unlisted" ""
+# The control: a collector that found nothing would pass the check above without a word. The eleven are
+# probe_make_target, probe_record, probe_npm_install, probe_uv_install, probe_script_install,
+# probe_version, probe_help, probe_strings, probe_prepare_target, probe_restore_default, probe_apply.
+check "and the enumeration is checked against a non-empty list of them" \
+    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "11"
 
 # The flag decides WHICH UID a command runs at, so a value left set after a call would silently put the
 # next step — a snapshot, a restore, anything the harness does for itself — on the wrong side.
