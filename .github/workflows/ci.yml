@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Pre-installed on ubuntu-latest, so there is nothing to pin and nothing to download.
-      - run: find sandbox -name '*.sh' -exec shellcheck -s sh {} +
+      - run: find sandbox scripts -name '*.sh' -exec shellcheck -s sh {} +
 
   tools-doc:
     name: Tools doc
@@ -56,6 +56,30 @@ jobs:
       # already drifted once by hand, losing the `just` and `Sandboxie-Plus` rows. jq is pre-installed on
       # ubuntu-latest, and the script needs nothing else.
       - run: sh scripts/gen-tool-table.sh --check
+
+  probe-tests:
+    # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution and the
+    # privilege-split checks (81 checks total, per `just probe-tests` in the justfile). No container and
+    # no agent needed. Before this job these four suites ran only via `just probe-tests`, which no CI
+    # workflow invoked -- `grep -rn 'sandbox/tests|probe-tests|probe-harness' .github/workflows/*.yml`
+    # found one comment and no `run:` line, so the evidence pipeline they guard was unchecked in CI.
+    #
+    # A separate job rather than a step bolted onto another: the suite takes over two minutes, which
+    # would make it the long pole in whichever job it joined.
+    #
+    # No existing CI job uses `just` (grepped across .github/workflows/*.yml), so this invokes the four
+    # suites directly with `sh` rather than installing just for one job.
+    #
+    # These suites have so far only run on Windows Git Bash; green on ubuntu-latest is unverified until
+    # this job actually runs in CI.
+    name: Probe harness tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sh sandbox/tests/probe-harness.sh
+      - run: sh sandbox/tests/transcript.sh
+      - run: sh sandbox/tests/resolve-agents.sh
+      - run: sh sandbox/tests/verify-transcripts.sh
 
   clippy:
     name: Clippy

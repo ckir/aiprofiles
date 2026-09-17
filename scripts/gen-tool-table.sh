@@ -45,14 +45,25 @@ escape_pipe() {
 }
 
 table_file=$(mktemp)
-trap 'rm -f "$table_file" "${new_doc:-}"' EXIT
+entries=$(mktemp)
+trap 'rm -f "$table_file" "$entries" "${new_doc:-}"' EXIT
+
+# jq is pulled out of the pipeline and into its own statement so `set -e` can see its exit status —
+# as the right-hand side of a pipe, a stream-level jq failure (e.g. truncated JSON) was silently
+# discarded and the while loop below just ran zero times, producing a header-only table that
+# --check would then compare clean against an equally-empty regeneration.
+jq -c '.[]' "$json" > "$entries"
+[ -s "$entries" ] || {
+  echo "gen-tool-table.sh: $json yielded no entries" >&2
+  exit 1
+}
 
 {
   printf '%s\n' "$begin_marker"
   # shellcheck disable=SC2016 # literal backticks in the markdown header, not command substitution
   printf '| Tool | Config | `just` recipe | Gates |\n'
   printf '|---|---|---|---|\n'
-  jq -c '.[]' "$json" | while IFS= read -r entry; do
+  while IFS= read -r entry; do
     name=$(printf '%s' "$entry" | jq -r '.name // empty')
     config=$(printf '%s' "$entry" | jq -r '.config // "—"')
     just_recipe=$(printf '%s' "$entry" | jq -r '.just // "—"')
@@ -65,7 +76,7 @@ trap 'rm -f "$table_file" "${new_doc:-}"' EXIT
 
     # shellcheck disable=SC2016 # literal backtick around $name is markdown code-span syntax, not expansion
     printf '| `%s` | %s | %s | %s |\n' "$name" "$config" "$just_recipe" "$gates"
-  done
+  done < "$entries"
   printf '%s\n' "$end_marker"
 } > "$table_file"
 

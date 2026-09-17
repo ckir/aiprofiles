@@ -42,7 +42,7 @@ deny:
 # container's /bin/sh, not bash, and `find` rather than a glob because an unmatched glob passes through
 # literally and would hand shellcheck a filename that does not exist.
 shellcheck:
-    find sandbox -name '*.sh' -exec shellcheck -s sh {} +
+    find sandbox scripts -name '*.sh' -exec shellcheck -s sh {} +
 
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
