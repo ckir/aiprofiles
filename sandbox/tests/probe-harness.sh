@@ -15,6 +15,11 @@ set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 failures=0
 
+# The repository's one answer to "a scan that produces nothing is read as clean" — the class this file
+# was the third measured instance of. See scripts/lib/scan-guard.sh for the three instances and for why
+# it lives under scripts/lib/ rather than in sandbox/probes/text.sh.
+. "$root/scripts/lib/scan-guard.sh"
+
 check() {
     if [ "$2" = "$3" ]; then
         echo "ok   - $1"
@@ -100,6 +105,20 @@ $1"
 probe_out_default=$(sed -n 's/^PROBE_OUT=${PROBE_OUT:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
 check "the harness's output directory is not the /out bind mount" \
     "$probe_out_default" "/home/probe/.probe-out"
+
+# THE TWIN, and unpinned until now for no reason but that nobody wrote it. $PROBE_STATE is overridden by
+# `run_probe` exactly as $PROBE_OUT is, so its default is equally invisible to every check in this file:
+# MEASURED, changing common.sh's PROBE_STATE default leaves this suite byte-identical and green.
+#
+# What it costs in a container is worse than the artefacts, because this directory holds the run's STATUS.
+# `run.sh`'s `eng cp` block lifts `/home/probe/.probe-state` by that literal path, so a default pointing
+# anywhere else strands `failures` and `steps` inside the container: `transcript.sh` finds no `steps` and
+# prints `exit-codes: (not recorded)`, while `probe-exit:` — written from OUTSIDE the container and so
+# unaffected — still reads `0`. `verify-transcripts.sh` checks the exit code and the bytes, neither of
+# which notices, and accepts a transcript that records no step at all as a clean run.
+probe_state_default=$(sed -n 's/^PROBE_STATE=${PROBE_STATE:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
+check "the harness's bookkeeping directory is where run.sh lifts it from" \
+    "$probe_state_default" "/home/probe/.probe-state"
 
 # --- run.sh's copy-back, RUN rather than grepped ----------------------------------------------------
 #
@@ -661,6 +680,76 @@ check "an installer that cannot pin refuses a version" "$probe_status" "2"
 check "the refusal is recorded as a failed install" \
     "$(cat "$PROBE_OUT_DIR/install.exit-code")" "2"
 
+# --- the scan guard itself -------------------------------------------------------------------------
+#
+# scripts/lib/scan-guard.sh is the repository's one answer to "a scan that produces nothing is read as
+# clean", and it is the thing every check below now rests on, so its REJECTING half is tested here and not
+# only its accepting half. A guard that cannot refuse is the exact failure it exists to stop.
+#
+# It is tested HERE for the reason written beside the privilege-enumeration check above: this suite already
+# runs in `just check` and in CI and already asserts against source files outside itself, while a new test
+# script would need the justfile and the CI workflow changed to be anything but dead code.
+scan_dir=$(mktemp -d)
+: > "$scan_dir/one.sh"
+: > "$scan_dir/two.sh"
+scan_list=$(mktemp)
+
+scan_expand "$scan_list" must-find 'the fixture' "$scan_dir"/*.sh
+check "an expansion that matched keeps every path that exists" \
+    "$(tr '\n' ',' < "$scan_list")" "$scan_dir/one.sh,$scan_dir/two.sh,"
+
+# THE CLASS, as small as it goes: the directory the glob names is not there, so POSIX sh hands the loop
+# the pattern's own text. The literal word must not become an input, and the empty list must not be a pass.
+if scan_expand "$scan_list" must-find 'the fixture' "$scan_dir"/nowhere/*.sh 2>/dev/null; then
+    scan_verdict=accepted
+else
+    scan_verdict=refused
+fi
+check "an expansion that matched nothing is refused under must-find" "$scan_verdict" "refused"
+check "and the unmatched pattern itself is not left in the list as a path" \
+    "$(wc -l < "$scan_list" | tr -d ' ')" "0"
+
+if scan_expand "$scan_list" may-be-empty 'the fixture' "$scan_dir"/nowhere/*.sh; then
+    scan_verdict=accepted
+else
+    scan_verdict=refused
+fi
+check "the same empty expansion is accepted when the caller has said it may be" "$scan_verdict" "accepted"
+
+# A misspelt policy must not read as the permissive one, which is the only way the permissive answer can
+# be given by accident.
+if scan_expand "$scan_list" maybe-empty 'the fixture' "$scan_dir"/nowhere/*.sh 2>/dev/null; then
+    scan_verdict=accepted
+else
+    scan_verdict=refused
+fi
+check "an unknown empty-policy is refused rather than treated as permissive" "$scan_verdict" "refused"
+
+# The far end of the filter: the list was read, and everything in it was skipped.
+if scan_require_count 0 'the fixture' 2>/dev/null; then
+    scan_verdict=accepted
+else
+    scan_verdict=refused
+fi
+check "a scan that read a full list and inspected none of it is refused" "$scan_verdict" "refused"
+
+printf 'has HOME in it\n' > "$scan_dir/one.sh"
+check "scan_grep passes a match through" \
+    "$(scan_grep -c HOME "$scan_dir/one.sh")" "1"
+check "and reports no match as an empty result, not as an error" \
+    "$(scan_grep -c HOME "$scan_dir/two.sh" || echo ERROR)" "0"
+# grep exits 2 here, and `|| true` — the idiom this replaces — turns that into the same empty string the
+# line above produces. The two must not be the same answer.
+if scan_grep -c HOME "$scan_dir/not-a-file.sh" >/dev/null 2>&1; then
+    scan_verdict=accepted
+else
+    scan_verdict=refused
+fi
+check "but a path that does not exist is refused rather than reported as no match" \
+    "$scan_verdict" "refused"
+rm -rf "$scan_dir"
+rm -f "$scan_list"
+
 # --- no probe script names the HARNESS's home ------------------------------------------------------
 #
 # THE DEFECT, named. The container runs two unprivileged users, so `$HOME` inside a probe script is the
@@ -695,8 +784,14 @@ check "the refusal is recorded as a failed install" \
 #
 # A FUNCTION, so the REJECTING half can be tested. A collector that fired for nothing would print `ok`
 # twelve times and mean nothing — the failure mode two checks in this repository were measured to have.
+#
+# `scan_grep`, not `grep ... || true`. THIS IS WHERE THE THIRD INSTANCE OF THE CLASS LIVED. `|| true` is
+# needed for grep's "no match" — which is the PASS here — but it also swallowed grep's status 2, and the
+# loop below used to hand this function an unmatched glob's literal text, which names no file. A path that
+# does not exist and a file with no `$HOME` in it produced the same empty string, and the empty string is
+# what this function calls clean. scan_grep returns the hard error instead; the caller reports it.
 harness_home() {
-    grep -nE '\$\{?HOME([^A-Za-z0-9_]|$)' "$1" || true
+    scan_grep -nE '\$\{?HOME([^A-Za-z0-9_]|$)' "$1"
 }
 
 # THE MUTANT IS THE DEFECT, not merely something that reddens the check: the literal line `cline.sh`
@@ -711,16 +806,42 @@ check "and passes once the same line names the agent's home" "$(harness_home "$m
 # And the false positive that would make it unusable: four probe scripts name variables ENDING in HOME.
 printf '%s\n' 'probe_strings cursor-agent CURSOR_CONFIG_DIR $XDG_CONFIG_HOME $PROBE_AGENT_HOME' > "$mutant"
 check "and does not fire on a variable that merely ends in HOME" "$(harness_home "$mutant")" ""
+# And the mutant that models the CLASS rather than the defect: the file this scan is pointed at is not
+# there, while the thing being scanned for is still in the tree. `grep ... || true` returned the empty
+# string here — indistinguishable from the passing line above it — and the loop below printed `ok`.
 rm -f "$mutant"
+if harness_home "$mutant" >/dev/null 2>&1; then
+    scan_of_nothing=accepted
+else
+    scan_of_nothing=refused
+fi
+check "scanning a file that is not there is refused, not read as a clean file" \
+    "$scan_of_nothing" "refused"
 
-for script in "$root"/sandbox/probes/*.sh; do
+# The twelve probe scripts, collected ONCE, through the guard. Two loops scan this list; both used to
+# iterate `"$root"/sandbox/probes/*.sh` directly, and POSIX sh has no `nullglob`.
+probe_scripts=$(mktemp)
+if scan_expand "$probe_scripts" must-find 'sandbox/probes/*.sh' "$root"/sandbox/probes/*.sh; then
+    echo "ok   - the probe-script scan found files to read"
+else
+    echo "FAIL - the probe-script scan found no files under sandbox/probes/"
+    failures=$((failures + 1))
+fi
+
+home_scanned=0
+while IFS= read -r script; do
     name=$(basename "$script" .sh)
     case "$name" in
         # common.sh DEFINES the contract and quotes `$HOME` in explaining it; text.sh names no location.
         common | text) continue ;;
     esac
+    home_scanned=$((home_scanned + 1))
 
-    named=$(harness_home "$script")
+    if ! named=$(harness_home "$script"); then
+        echo "FAIL - $name.sh could not be scanned for the harness's home"
+        failures=$((failures + 1))
+        continue
+    fi
     if [ -n "$named" ]; then
         echo "FAIL - $name.sh names the harness's home, not the agent's:"
         printf '%s\n' "$named" | sed 's/^/       /'
@@ -728,7 +849,17 @@ for script in "$root"/sandbox/probes/*.sh; do
         continue
     fi
     echo "ok   - $name.sh names the agent's home, not the harness's"
-done
+done < "$probe_scripts"
+
+# A NON-EMPTY LIST IS NOT THE SAME QUESTION. The glob matches common.sh and text.sh, which the loop skips
+# by name, so moving the twelve agent scripts aside leaves scan_expand satisfied and this loop reporting
+# nothing at all — zero `ok` lines, zero failures, exit 0. The count is what was actually read.
+if scan_require_count "$home_scanned" 'probe scripts scanned for the harness home'; then
+    echo "ok   - the harness's-home scan read at least one probe script"
+else
+    echo "FAIL - the harness's-home scan read no probe script"
+    failures=$((failures + 1))
+fi
 
 # --- the step order, over every probe script -------------------------------------------------------
 
@@ -771,13 +902,21 @@ check "the order check rejects a sweep before the behaviour step" \
 check "the order check accepts the behaviour step before the sweep" \
     "$(order_fault "uv version help strings behaviour candidates ")" ""
 
-for script in "$root"/sandbox/probes/*.sh; do
+order_scanned=0
+while IFS= read -r script; do
     name=$(basename "$script" .sh)
     case "$name" in
         common | text) continue ;;
     esac
+    order_scanned=$((order_scanned + 1))
 
     # The step each call appears at, so the ORDER can be asserted rather than mere presence.
+    #
+    # grep is the LEFT-HAND SIDE of this pipe, so its status is discarded and cannot be recovered — POSIX
+    # sh has no `pipefail`. That is safe HERE and nowhere near generally: an unreadable script yields an
+    # empty order string, and the empty string matches none of order_fault's accepting arms, so it comes
+    # back "does not follow the six-step order" and reddens. This loop fails CLOSED on the same input the
+    # harness-home loop above used to pass on, which is why the two sat side by side disagreeing.
     order=$(grep -n '^probe_\(npm_install\|uv_install\|script_install\|version\|help\|strings\|behaviour\|candidates\)' \
         "$script" | sed 's/:.*probe_/ /' | sed 's/_install//' | awk '{print $2}' | tr '\n' ' ')
 
@@ -788,7 +927,15 @@ for script in "$root"/sandbox/probes/*.sh; do
         continue
     fi
     echo "ok   - $name.sh follows the six-step order"
-done
+done < "$probe_scripts"
+
+if scan_require_count "$order_scanned" 'probe scripts scanned for the six-step order'; then
+    echo "ok   - the step-order scan read at least one probe script"
+else
+    echo "FAIL - the step-order scan read no probe script"
+    failures=$((failures + 1))
+fi
+rm -f "$probe_scripts"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"

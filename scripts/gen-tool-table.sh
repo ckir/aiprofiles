@@ -10,6 +10,9 @@
 set -eu
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+# The repository's one answer to "a scan that produces nothing is read as clean" -- the class this
+# generator was the FIRST measured instance of. The refusal below used to be spelled out by hand here.
+. "$repo_root/scripts/lib/scan-guard.sh"
 json="$repo_root/.claude/recommended-tools.json"
 doc="$repo_root/docs/dev-tooling.md"
 begin_marker='<!-- tools:begin — generated from .claude/recommended-tools.json by scripts/gen-tool-table.sh; do not edit by hand -->'
@@ -52,11 +55,11 @@ trap 'rm -f "$table_file" "$entries" "${new_doc:-}"' EXIT
 # as the right-hand side of a pipe, a stream-level jq failure (e.g. truncated JSON) was silently
 # discarded and the while loop below just ran zero times, producing a header-only table that
 # --check would then compare clean against an equally-empty regeneration.
+# A filter that legitimately selects nothing is the other half of the same class: the JSON parses, jq
+# exits 0, and the table is silently wiped in write mode and compared clean against nothing in --check.
+# Refusing an empty entry list is the shared `must-find` policy, spelled the same way in every gate.
 jq -c '.[]' "$json" > "$entries"
-[ -s "$entries" ] || {
-  echo "gen-tool-table.sh: $json yielded no entries" >&2
-  exit 1
-}
+scan_require "$entries" "entries in $json" || exit 1
 
 {
   printf '%s\n' "$begin_marker"
