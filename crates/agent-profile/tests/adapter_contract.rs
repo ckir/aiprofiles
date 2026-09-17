@@ -319,7 +319,13 @@ fn metadata_invariants() {
         for field in [evidence.mechanism_id, evidence.upstream_version, evidence.source_url] {
             assert!(!field.is_empty(), "{id}");
         }
-        for option in metadata.conflicts {
+        // The mechanism's OWN option is included, not just the declared extras: a flag mechanism renders
+        // through `first_long` in `Display`, `sentence_for` and `probe_token`, each of which `expect`s a
+        // spelling. And `!is_empty` is asserted separately because `.all()` over an empty slice is
+        // vacuously true — the spelling check alone would let an empty list through to those three panics.
+        let mechanism_option = metadata.mechanism.conflict_option();
+        for option in metadata.conflicts.iter().chain(mechanism_option.iter().copied()) {
+            assert!(!option.long.is_empty(), "{id}: a conflict option declares no long spelling");
             assert!(option.long.iter().all(|spelling| spelling.starts_with("--")), "{id}");
         }
     }
