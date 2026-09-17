@@ -21,7 +21,7 @@ This table is generated from `.claude/recommended-tools.json` by `scripts/gen-to
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
 | `actionlint` | — | — | workflow linting before pushing `.github/` changes |
-| `shellcheck` | — | — | workflow linting before pushing `.github/` changes |
+| `shellcheck` | — | `shellcheck` | `just check`, CI Shellcheck; also lets actionlint lint the shell inside workflow `run:` steps |
 | `Sandboxie-Plus` | — | — | manual — CONTRIBUTING.md "Measuring agent behaviour" (Windows adapter-evidence refresh) |
 | `podman` | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner with **podman** (probes by hand; `test` on PRs that change the harness) |
 | `rustup / rustc / cargo` | `rust-toolchain.toml` (`stable`, with rustfmt + clippy) | `build` | everything |
@@ -38,7 +38,7 @@ hand-written.
 | Tool | Config | Gates |
 |---|---|---|
 | `release-plz` (GitHub Action) | `release-plz.toml` (`git_only`, release PR, `v{{ version }}` tags, pre-releases until SP5) | merging the release PR releases |
-| GitHub Actions | `.github/workflows/ci.yml` | Format, Typos, Clippy, Cargo deny, Docs build, Test ×3 OS — all required checks on `main` |
+| GitHub Actions | `.github/workflows/ci.yml` | Format, Typos, Shellcheck, Tools doc, Clippy, Cargo deny, Docs build, Test ×3 OS, Evidence (pull requests only). Which of these are *required* is branch protection on `main`, configured in repository settings rather than here — the two sets are not the same, and a job existing does not make it required |
 | GitHub Actions | `.github/workflows/docs.yml` | publishes rustdoc to Pages after merge |
 | GitHub Actions | `.github/workflows/release-plz.yml`, `.github/workflows/release.yml` | release PR on push to `main`; on its merge, tag, GitHub release and cross-platform `agent-profile` binaries |
 | GitHub Actions | `.github/workflows/pr-title.yml` | Conventional PR title (required check; PRs are squash-merged) |
@@ -80,7 +80,7 @@ re-pushing to CI to iterate.
 ## Gate commands (the contract)
 
 ```
-just check          # fmt-check + clippy + typos + test — the local gate
+just check          # fmt-check + clippy + typos + shellcheck + test + probe-tests + tools-doc-check
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 typos

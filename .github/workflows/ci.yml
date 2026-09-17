@@ -46,6 +46,17 @@ jobs:
       # Pre-installed on ubuntu-latest, so there is nothing to pin and nothing to download.
       - run: find sandbox -name '*.sh' -exec shellcheck -s sh {} +
 
+  tools-doc:
+    name: Tools doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # docs/dev-tooling.md's tool table is generated from .claude/recommended-tools.json. Without this
+      # job the freshness check lives only in `just check`, which CI does not run -- and the two lists had
+      # already drifted once by hand, losing the `just` and `Sandboxie-Plus` rows. jq is pre-installed on
+      # ubuntu-latest, and the script needs nothing else.
+      - run: sh scripts/gen-tool-table.sh --check
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

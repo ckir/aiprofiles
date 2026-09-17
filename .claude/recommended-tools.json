@@ -77,8 +77,8 @@
     "install": "winget install koalaman.shellcheck",
     "in_path": "shellcheck",
     "config": "—",
-    "just": "—",
-    "gates": "workflow linting before pushing `.github/` changes"
+    "just": "`shellcheck`",
+    "gates": "`just check`, CI Shellcheck; also lets actionlint lint the shell inside workflow `run:` steps"
   },
   {
     "name": "Sandboxie-Plus",
