@@ -21,7 +21,7 @@ The same list is machine-readable in `.claude/recommended-tools.json`.
 | `cargo-deny` | `deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples) | `deny` | CI Cargo deny |
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
-| Podman or Docker | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner (probes by hand; `test` on PRs that change the harness) |
+| Podman or Docker | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner with **podman** (probes by hand; `test` on PRs that change the harness) |
 | `actionlint` + `shellcheck` | — | — | workflow linting before pushing `.github/` changes |
 | `cargo-binstall` | — | — | installs the cargo tools above |
 | GitHub Actions | `.github/workflows/ci.yml` | — | Format, Typos, Clippy, Cargo deny, Docs build, Test ×3 OS — all required checks on `main` |
@@ -42,6 +42,26 @@ lefthook install
 On Windows, winget installs `actionlint` and `shellcheck` under
 `%LOCALAPPDATA%\Microsoft\WinGet\Packages\`. If Git Bash cannot find them, add those package
 directories to `PATH`.
+
+A container engine is not in that list because nothing in `just check` needs one — only the sandbox
+does. Install one when you touch `sandbox/`:
+
+```bash
+winget install RedHat.Podman     # or Docker Desktop
+```
+
+### Podman and Docker are not interchangeable here
+
+`sandbox/run.sh` picks podman when it is installed and falls back to Docker, and either runs a probe.
+But `run.sh` sets `--userns=keep-id:uid=1000,gid=1000` **only under podman**, and the sandbox workflow
+sets `AGENT_PROFILE_SANDBOX_ENGINE: podman` in both jobs. That mapping admits one id, while the
+container runs two unprivileged users — the harness and the measured agent. So anything about uid
+mapping across the `/out` bind mount behaves differently under Docker and cannot be reproduced there.
+
+Use Docker for ordinary sandbox work. For a uid-mapping question, prefer dispatching the Sandbox
+workflow, which is the environment CI actually uses; a Windows podman machine is a third environment
+again, not the Linux runner. Reach for a local podman at the point where you would otherwise be
+re-pushing to CI to iterate.
 
 ## Gate commands (the contract)
 
