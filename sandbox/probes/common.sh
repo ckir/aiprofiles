@@ -681,23 +681,23 @@ probe_pristine() {
     for probe_loc in "$@"; do
         [ -n "$probe_loc" ] || continue
         [ -z "$(probe_pristine_id "$probe_loc")" ] || continue
-        probe_pn=$(($(wc -l < "$PROBE_STATE/pristine/index") + 1))
-        printf '%s %s\n' "$probe_pn" "$probe_loc" >> "$PROBE_STATE/pristine/index"
+        probe_slot=$(($(wc -l < "$PROBE_STATE/pristine/index") + 1))
+        printf '%s %s\n' "$probe_slot" "$probe_loc" >> "$PROBE_STATE/pristine/index"
         if [ ! -e "$probe_loc" ]; then
             # A location the agent has not created yet. Its ABSENCE is the state to restore, and a marker
             # records it: "registered and absent" and "never registered" must not look the same to
             # `probe_restore_default`, or a failed archive would read as absence and delete a real one.
-            : > "$PROBE_STATE/pristine/$probe_pn.absent"
+            : > "$PROBE_STATE/pristine/$probe_slot.absent"
         # The archive is taken AS THE HARNESS and lands in $PROBE_STATE, which the agent cannot read or
         # write: it is the state probe_restore_default restores TO, so the measured party must not be
         # able to choose it. It reads the agent's files through the shared group, which is why the
         # Containerfile gives /home/agent one; a location the agent has chmodded to 700 is unreadable
         # and lands here as a recorded `pristine-N` failure rather than as a silently empty archive.
-        elif ! tar -cf "$PROBE_STATE/pristine/$probe_pn.tar" \
+        elif ! tar -cf "$PROBE_STATE/pristine/$probe_slot.tar" \
             -C "$(dirname "$probe_loc")" "$(basename "$probe_loc")" 2>/dev/null; then
-            rm -f "$PROBE_STATE/pristine/$probe_pn.tar"
+            rm -f "$PROBE_STATE/pristine/$probe_slot.tar"
             echo "probe: could not archive $probe_loc before the first launch" >&2
-            probe_fail "pristine-$probe_pn" 1
+            probe_fail "pristine-$probe_slot" 1
         fi
     done
 }
