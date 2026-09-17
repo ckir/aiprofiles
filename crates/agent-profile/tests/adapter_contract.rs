@@ -315,6 +315,15 @@ fn paths_contract() {
         );
         assert_eq!(planned.profile_dir, declared[0].0, "{}", adapter.metadata().id);
         assert_eq!(declared[0].1, PathKind::Dir, "{}", adapter.metadata().id);
+        for (path, _) in &declared {
+            assert!(
+                path.starts_with(&planned.profile_dir),
+                "{}: {} declares a path outside its profile dir {}",
+                adapter.metadata().id,
+                path.display(),
+                planned.profile_dir.display()
+            );
+        }
     }
 }
 
@@ -655,6 +664,41 @@ fn gate_c_rejects_an_unknown_version_that_did_not_degrade_to_experimental() {
     assert_eq!(gate::gate_c(&metadata), Ok(()));
 }
 
+/// The existing three-arm test above never isolates the support-level clause: with `unknowns > 1` its
+/// third arm returns `Ok` for a different reason before that clause is reached, so a version reading the
+/// support-level check away entirely still leaves all three arms agreeing with the weakened predicate.
+/// This fixture holds `support == Proven` and exactly one `Unknown` claim (`ConfigIsolation`), so the
+/// support-level clause is the sole thing standing between it and `Ok`.
+///
+/// TRAP: a second `Unknown` claim here would make `gate_c` fail on `unknowns > 1`
+/// (`ProvenWithTooManyUnknowns`) before ever reaching the support-level clause, pinning the wrong rule.
+#[test]
+fn gate_c_rejects_a_proven_adapter_whose_probe_failed_even_with_an_unknown_config_claim() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "unknown";
+    metadata.capabilities = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: requires an authenticated session",
+        },
+        CapabilityClaim {
+            capability: Capability::StateIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: sessions stay in the default location",
+        },
+    ];
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" })
+    );
+}
+
 #[test]
 fn gate_a_rejects_a_version_outside_the_permitted_charset() {
     // Gate A builds `docs/evidence/<id>-<version>.md` from this field, so it must name one file.
@@ -663,6 +707,18 @@ fn gate_a_rejects_a_version_outside_the_permitted_charset() {
     assert_eq!(
         gate::gate_a_shape(&metadata),
         Err(GateFailure::VersionCharset { id: "fixture", version: "1.0.0 (build 7)" })
+    );
+}
+
+/// `"".bytes().all(...)` is vacuously true, so the charset clause alone never rejects an empty version;
+/// only the `is_empty()` disjunct does.
+#[test]
+fn gate_a_rejects_an_empty_upstream_version() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "";
+    assert_eq!(
+        gate::gate_a_shape(&metadata),
+        Err(GateFailure::VersionCharset { id: "fixture", version: "" })
     );
 }
 

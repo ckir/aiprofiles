@@ -1046,4 +1046,118 @@ mod tests {
             "a capability with no claim has no basis line: {lines:?}"
         );
     }
+
+    /// Pins `state_label`'s five literal spellings. Nothing else in the suite exercises the strings
+    /// `"not supported"` or `"conditional"` directly: collapsing either arm onto another word left all
+    /// other tests green, because `support_hedge` (the only caller) never distinguishes the wording, only
+    /// whether the string is present.
+    #[test]
+    fn every_capability_state_has_a_distinct_report_spelling() {
+        let pairs = [
+            (CapabilityState::Supported, "supported"),
+            (CapabilityState::NotSupported, "not supported"),
+            (CapabilityState::NotGuaranteed, "not guaranteed"),
+            (CapabilityState::Conditional, "conditional"),
+            (CapabilityState::Unknown, "unknown"),
+        ];
+        let mut spellings = Vec::with_capacity(pairs.len());
+        for (state, expected) in pairs {
+            let actual = state_label(state);
+            assert_eq!(actual, expected, "{state:?}");
+            spellings.push(actual);
+        }
+        let mut distinct = spellings.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            spellings.len(),
+            "spellings must be pairwise distinct: {spellings:?}"
+        );
+    }
+
+    /// A `NotSupported` claim must hedge as "not supported", not as anything more reassuring. The expected
+    /// capability word comes from `capability_label` (so a label rename doesn't break this), but "not
+    /// supported" is hard-coded: routing it through `state_label` here would make the assertion mutate in
+    /// lockstep with the function under test and never go red.
+    #[test]
+    fn the_hedge_spells_a_not_supported_claim_as_not_supported() {
+        const CLAIMS: [CapabilityClaim; 3] = [
+            CapabilityClaim {
+                capability: Capability::ConfigIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: the fixture writes only under the profile directory",
+            },
+            CapabilityClaim {
+                capability: Capability::CredentialIsolation,
+                state: CapabilityState::NotSupported,
+                basis: "measured: credentials stay in the default location",
+            },
+            CapabilityClaim {
+                capability: Capability::StateIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: the fixture keeps no state",
+            },
+        ];
+        let leaked: &'static [CapabilityClaim] = Box::leak(Box::new(CLAIMS));
+        let metadata = AdapterMetadata {
+            support: SupportLevel::Experimental,
+            capabilities: leaked,
+            ..TEST_METADATA
+        };
+        let hedge = support_hedge(&metadata).expect("a non-proven adapter hedges");
+        assert!(
+            hedge.contains(&format!(
+                "{} not supported",
+                capability_label(Capability::CredentialIsolation)
+            )),
+            "{hedge}"
+        );
+    }
+
+    /// The `(would be created)` marker names only the env value that equals a missing `Dir` entry — not a
+    /// value that merely matches no entry, and not one that equals a missing `File` entry (the predicate
+    /// requires `Dir`). Every shipped fixture happened to have exactly one env entry whose value was the
+    /// one missing path, so `true` in place of the predicate was indistinguishable from it.
+    #[test]
+    fn the_would_be_created_marker_names_only_the_path_that_will_be_created() {
+        let dir = PathBuf::from("/root/profiles/work/fake");
+        let file = PathBuf::from("/root/profiles/work/fake/.fake.conf");
+        let elsewhere = PathBuf::from("/somewhere/else");
+        let launch = PlannedLaunch {
+            plan: LaunchPlan {
+                executable: PathBuf::from("/bin/fake-agent"),
+                args: vec!["--foo".into()],
+                env: vec![
+                    ("DIR_VAR".into(), dir.clone().into_os_string()),
+                    ("ELSEWHERE_VAR".into(), elsewhere.into_os_string()),
+                    ("FILE_VAR".into(), file.clone().into_os_string()),
+                ],
+                cwd: None,
+            },
+            profile: ProfileName::parse("work", Platform::Unix).unwrap(),
+            profile_dir: dir.clone(),
+            paths: vec![
+                ProfilePath { path: dir, kind: PathKind::Dir, existed: false },
+                ProfilePath {
+                    path: file,
+                    kind: PathKind::File { contents: b"{}\n" },
+                    existed: false,
+                },
+            ],
+            executable_origin: Origin::Configured,
+            mechanism: "environment variable FAKE_AGENT_HOME".to_owned(),
+            sensitive_env: Vec::new(),
+            notes: Vec::new(),
+        };
+        let lines = report_lines(&launch, &resolution(), ReportMode::DryRun, &TEST_METADATA);
+        let dir_line = lines.iter().find(|line| line.contains("DIR_VAR=")).expect("DIR_VAR line");
+        assert!(dir_line.contains("(would be created)"), "{dir_line}");
+        let elsewhere_line =
+            lines.iter().find(|line| line.contains("ELSEWHERE_VAR=")).expect("ELSEWHERE_VAR line");
+        assert!(!elsewhere_line.contains("(would be created)"), "{elsewhere_line}");
+        let file_line =
+            lines.iter().find(|line| line.contains("FILE_VAR=")).expect("FILE_VAR line");
+        assert!(!file_line.contains("(would be created)"), "{file_line}");
+    }
 }
