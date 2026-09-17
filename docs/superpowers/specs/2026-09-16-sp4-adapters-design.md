@@ -207,6 +207,22 @@ Without §5.4, an SP4b adapter could call `env_dir_plan(self, ctx, "GEMINI_HOME"
 passed. Gate A would have bound a free-text field to a file rather than binding the mechanism to the
 measurement.
 
+> **CORRECTION (2026-09-17, `e3d13ca`).** That hazard is now UNREPRESENTABLE, and the API this document
+> names throughout no longer exists. `mechanism_summary: &'static str` became a closed
+> `Mechanism { Env | EnvFile | FlagDir | FlagFile }` enum (`09d524b`), and the two free helpers
+> `env_dir_plan` and `config_file_arg_plan` were collapsed into one `Mechanism::plan(&self, adapter, ctx)`
+> that derives the variable or flag from the enum's OWN payload (`e3d13ca`). An adapter can no longer
+> declare one name and plan with another, because there is only one name.
+>
+> **An SP4b author should read every later reference to those two helpers as historical**, including
+> §9's analysis of which helper can express Cline's three mechanisms — that question is now answered by
+> which `Mechanism` variant you choose. The 2026-09-15 SP2 design is left untouched: it records what SP2
+> actually built and is history, not instruction.
+>
+> §5.4's requirement stands; only the mechanism by which it is met has changed. The binding is now
+> checked against `metadata.env`, which is written separately from the mechanism and is therefore the
+> independent second source the earlier same-value comparison lacked.
+
 ### 5.1 The manual surface
 
 These rules cannot be asserted, and are named here together so no one mistakes them for gates:

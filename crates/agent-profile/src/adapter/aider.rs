@@ -56,9 +56,11 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         },
     ],
     env: &[],
-    // Redundant with the mechanism's own option, which `check_conflicts` now scans too. Kept so this
-    // commit is a pure refactor; a follow-up can prune it to `&[]`.
-    conflicts: &[CONFIG_OPTION],
+    // Empty on purpose. `--config` is the mechanism's own option, and `check_conflicts` scans that
+    // alongside this list, so naming it here again refused nothing extra — it MASKED the chain: with the
+    // duplicate present, deleting `.chain(metadata.mechanism.conflict_option())` left the whole suite
+    // green. Measured both ways. `conflicts` is for options an adapter refuses BESIDES its mechanism's.
+    conflicts: &[],
 };
 
 /// The Aider adapter.
