@@ -21,7 +21,7 @@ GH=${GH:-gh}
 REPO=${GITHUB_REPOSITORY:-}
 
 usage() {
-    sed -n '3,7p' "$0" | sed 's/^# \{0,1\}//' >&2
+    sed -n '/^# Usage:/,/^#$/p' "$0" | sed '/^#$/d; s/^# \{0,1\}//' >&2
     exit 2
 }
 
