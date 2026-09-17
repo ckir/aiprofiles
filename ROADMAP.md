@@ -24,4 +24,13 @@ removing it would make the first such adapter a change to a public enum, and unt
 would have to report a profile the agent itself lists as `Absent`. The variant is documented at its
 declaration and stays unconstructed.
 
+## Tracked debt
+
+**Two contradictory action-pinning idioms.** `ci.yml` and `docs.yml` pin `actions/checkout` with the
+floating tag `@v7`, while `release-plz.yml`, `release.yml` and `sandbox.yml` pin the same action by commit
+SHA with a version comment. Whichever is right, the repository should not hold both — a reviewer cannot
+tell which is the intended convention, and the newer Evidence job inherited the floating form by copying a
+neighbour. Not urgent: every job that runs untrusted code already holds `contents: read` and no secret, and
+the repository is public. Settle it before SP5 adds more workflows.
+
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
