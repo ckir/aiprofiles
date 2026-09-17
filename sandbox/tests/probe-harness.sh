@@ -365,10 +365,28 @@ printf "[%s]\n" "$PROBE_AS_AGENT" > "$PROBE_OUT/flag"'
 check "the agent flag does not leak past the call that set it" \
     "$(cat "$PROBE_OUT_DIR/flag")" "[]"
 
-# The twelve probe scripts name the agent's default locations through this, because under two users
-# `$HOME` is the HARNESS's home and not where the agent writes.
+# --- the agent's home, in both worlds ----------------------------------------------------------------
+#
+# The twelve probe scripts name the agent's default locations through PROBE_AGENT_HOME, because under two
+# users `$HOME` is the HARNESS's home and not where the agent writes.
+#
+# THE DEGRADED CASE IS THE ONE THAT BITES. With the boundary compiled out there is no `agent` user and no
+# `/home/agent`, and `probe_as_agent` passes no `HOME=` — the measured command runs at the harness's uid
+# with the harness's home. A PROBE_AGENT_HOME fixed at `/home/agent` would then point every probe at a
+# directory that cannot exist, and an empty delta is what `probe_delta` calls "changed nothing,
+# unambiguously". So the default has to track PROBE_PRIVSEP, and both branches are asserted here: the
+# suite itself runs in the degraded one.
 run_probe 'printf "%s\n" "$PROBE_AGENT_HOME" > "$PROBE_OUT/agent-home"'
-check "PROBE_AGENT_HOME names the agent's home, not the harness's" \
+check "with the boundary compiled out the agent's home is the home the agent will actually have" \
+    "$(cat "$PROBE_OUT_DIR/agent-home")" "$HOME"
+# The same run with the switch really taken, and WITHOUT the preamble's explicit override — stripped from
+# the shared preamble rather than written out again, so the two cannot drift apart. Without that strip the
+# check below would only re-read a value the test itself had set.
+preamble=$(printf '%s\n' "$privsep_preamble" | grep -v '^PROBE_AGENT_HOME=')
+run_probe 'printf "%s\n" "$PROBE_AGENT_HOME" > "$PROBE_OUT/agent-home"
+printf %s "$PROBE_PRIVSEP" > "$PROBE_OUT/privsep"'
+check "the switch really is taken for the check below" "$(cat "$PROBE_OUT_DIR/privsep")" "1"
+check "with the boundary in place the agent's home is the second user's, not the harness's" \
     "$(cat "$PROBE_OUT_DIR/agent-home")" "/home/agent"
 
 # --- probe_behaviour ------------------------------------------------------------------------------
@@ -642,6 +660,75 @@ probe_script_install https://example.invalid/install.sh'
 check "an installer that cannot pin refuses a version" "$probe_status" "2"
 check "the refusal is recorded as a failed install" \
     "$(cat "$PROBE_OUT_DIR/install.exit-code")" "2"
+
+# --- no probe script names the HARNESS's home ------------------------------------------------------
+#
+# THE DEFECT, named. The container runs two unprivileged users, so `$HOME` inside a probe script is the
+# HARNESS's home, /home/probe. The agent is launched with `HOME=$PROBE_AGENT_HOME`. A location argument
+# written `"$HOME/.cline"` therefore watches a directory the agent never writes: the baseline is empty,
+# the after-snapshot is empty, the delta is empty — and an empty delta is what this harness documents as
+# the launch having changed nothing, unambiguously. The transcript then reads as clean isolation for an
+# agent that may be leaking, which is the one outcome the whole harness exists to detect. All twelve
+# scripts were written that way and nothing noticed, because `common.sh` states the contract in prose.
+#
+# THE WHOLE FILE IS SCANNED, not the call lines, and that is the point: four of the twelve (aider, amp,
+# continue, opencode) compute the location into `default=` first and pass `"$default"`. A check that read
+# only the arguments of probe_behaviour / probe_pristine would have been blind to the exact shape the
+# repository already uses. probe_candidates takes no location argument at all today; a `$HOME` in a
+# candidate's CONTENT would be the same mistake, and is covered by scanning everything.
+#
+# WHAT THIS CANNOT CATCH, written down because a green check that reads as more than it is caused the
+# defect above, and because the enumeration check earlier in this file had to say the same:
+#   * an indirect expansion — `v=HOME; eval "d=\$$v"`, or a location arriving through a variable set
+#     somewhere this file never reads. The text `$HOME` never appears, so a grep cannot see it.
+#   * a tilde. `~/.cline` expands to the HARNESS's home exactly as `$HOME/.cline` does, and is NOT
+#     matched, deliberately: two probe scripts quote `~/...` paths out of VENDOR documentation, where the
+#     tilde is the reader's home and correct. A check that flagged those would have to be argued away
+#     twelve times, which is how a check stops being read.
+#   * a hard-coded `/home/probe/...`, or any absolute path. Nothing here knows which paths are whose.
+#   * a WRONG `$PROBE_AGENT_HOME` path. This checks the VARIABLE, not the location:
+#     `$PROBE_AGENT_HOME/.clyne` passes, and only a container run would say otherwise.
+#   * anything outside `sandbox/probes/*.sh` — a location named by `run.sh`, or passed in through the
+#     environment.
+
+# harness_home <file>: the lines on which a probe script names the harness's home. Empty is the pass.
+#
+# A FUNCTION, so the REJECTING half can be tested. A collector that fired for nothing would print `ok`
+# twelve times and mean nothing — the failure mode two checks in this repository were measured to have.
+harness_home() {
+    grep -nE '\$\{?HOME([^A-Za-z0-9_]|$)' "$1" || true
+}
+
+# THE MUTANT IS THE DEFECT, not merely something that reddens the check: the literal line `cline.sh`
+# carried, at the argument position that decides what gets watched.
+mutant=$(mktemp)
+printf '%s\n' 'probe_behaviour cline "$HOME/.cline" env:CLINE_DATA_DIR @none' > "$mutant"
+check "the check catches the defect it is named for" \
+    "$(harness_home "$mutant")" '1:probe_behaviour cline "$HOME/.cline" env:CLINE_DATA_DIR @none'
+# The other half of the same line, which must pass — otherwise the check is satisfied by any edit at all.
+printf '%s\n' 'probe_behaviour cline "$PROBE_AGENT_HOME/.cline" env:CLINE_DATA_DIR @none' > "$mutant"
+check "and passes once the same line names the agent's home" "$(harness_home "$mutant")" ""
+# And the false positive that would make it unusable: four probe scripts name variables ENDING in HOME.
+printf '%s\n' 'probe_strings cursor-agent CURSOR_CONFIG_DIR $XDG_CONFIG_HOME $PROBE_AGENT_HOME' > "$mutant"
+check "and does not fire on a variable that merely ends in HOME" "$(harness_home "$mutant")" ""
+rm -f "$mutant"
+
+for script in "$root"/sandbox/probes/*.sh; do
+    name=$(basename "$script" .sh)
+    case "$name" in
+        # common.sh DEFINES the contract and quotes `$HOME` in explaining it; text.sh names no location.
+        common | text) continue ;;
+    esac
+
+    named=$(harness_home "$script")
+    if [ -n "$named" ]; then
+        echo "FAIL - $name.sh names the harness's home, not the agent's:"
+        printf '%s\n' "$named" | sed 's/^/       /'
+        failures=$((failures + 1))
+        continue
+    fi
+    echo "ok   - $name.sh names the agent's home, not the harness's"
+done
 
 # --- the step order, over every probe script -------------------------------------------------------
 

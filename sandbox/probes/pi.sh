@@ -8,13 +8,14 @@
 # rather than dropped -- an install run differently from the way the vendor documents it measures
 # something the vendor does not ship.
 #
-# Default `$HOME/.pi/agent` and mechanism PI_CODING_AGENT_DIR are the LEAST well cited of the twelve: the
-# path comes from the providers documentation's resolution order rather than a sentence stating the
-# default. Step 6's delta is what settles it, and if the delta is empty the adapter is an outcome-2.
+# Default `$PROBE_AGENT_HOME/.pi/agent` and mechanism PI_CODING_AGENT_DIR are the LEAST well cited of
+# the twelve: the path comes from the providers documentation's resolution order rather than a sentence
+# stating the default. Step 6's delta is what settles it, and if the delta is empty the adapter is an
+# outcome-2.
 . sandbox/probes/common.sh
 
 probe_npm_install @earendil-works/pi-coding-agent --ignore-scripts
 probe_version pi
 probe_help pi
 probe_strings pi ANTHROPIC_API_KEY OPENAI_API_KEY PI_CODING_AGENT_DIR
-probe_behaviour pi "$HOME/.pi" env:PI_CODING_AGENT_DIR @none
+probe_behaviour pi "$PROBE_AGENT_HOME/.pi" env:PI_CODING_AGENT_DIR @none

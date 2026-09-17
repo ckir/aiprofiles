@@ -10,7 +10,7 @@
 # name the agent's bin directories". So a "command not found" at step 2 means the install failed, not that
 # the probe looked in the wrong place.
 #
-# Default `$HOME/.cursor` and mechanism CURSOR_CONFIG_DIR, both from
+# Default `$PROBE_AGENT_HOME/.cursor` and mechanism CURSOR_CONFIG_DIR, both from
 # https://cursor.com/docs/cli/reference/configuration. The docs also describe an XDG fallback
 # (`$XDG_CONFIG_HOME/cursor`), so the container delta is the record of which of the two it actually used.
 . sandbox/probes/common.sh
@@ -19,4 +19,4 @@ probe_script_install https://cursor.com/install bash
 probe_version cursor-agent
 probe_help cursor-agent
 probe_strings cursor-agent CURSOR_API_KEY CURSOR_CONFIG_DIR XDG_CONFIG_HOME
-probe_behaviour cursor-agent "$HOME/.cursor" env:CURSOR_CONFIG_DIR @none
+probe_behaviour cursor-agent "$PROBE_AGENT_HOME/.cursor" env:CURSOR_CONFIG_DIR @none

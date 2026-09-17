@@ -2,7 +2,7 @@
 #
 # Package @continuedev/cli (registry-verified 2026-09-16; `bin` is `cn`, which is why the executable and
 # the id differ). The vendor documents a shell script first and npm second; npm is used because it can
-# honour a pinned version. Default `$HOME/.continue`, holding `config.yaml`.
+# honour a pinned version. Default `$PROBE_AGENT_HOME/.continue`, holding `config.yaml`.
 #
 # THE FLAG NAME IS NOT ESTABLISHED. 8's table claims `--config <file>`, and a documentation pass on
 # 2026-09-16 could not find a first-party page showing that flag for `cn`. Step 3's `--help` capture is
@@ -15,7 +15,7 @@
 . sandbox/probes/common.sh
 
 PROBE_CONFIG_NAME=config.yaml
-default="$HOME/.continue"
+default="$PROBE_AGENT_HOME/.continue"
 
 probe_npm_install @continuedev/cli
 probe_version cn

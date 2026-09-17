@@ -169,13 +169,47 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 # scripts can write, INSIDE the privilege switch — agent-controlled code choosing the environment the
 # harness measures under. Explicit values also mean the harness decides what the agent runs with rather
 # than exporting whatever its own environment happens to hold.
+
+PROBE_AGENT_USER=${PROBE_AGENT_USER:-agent}
+# Whether the boundary is available at all. It is NOT available when this file is sourced outside the
+# container — `sandbox/tests/probe-harness.sh` runs on the maintainer's host, where neither `sudo` nor
+# the `agent` user exists — and there the indirection degrades to a direct call. Say the consequence
+# plainly rather than let the green suite imply otherwise: WITH THE BOUNDARY COMPILED OUT, NO TEST IN
+# THIS REPOSITORY EXERCISES IT. The suite measures the harness; only a real container run measures the
+# boundary. A guarantee no test covers must not read as though one does.
 #
+# Decided HERE, above the agent's home, because that home's default depends on it — see below.
+PROBE_PRIVSEP=
+if command -v sudo >/dev/null 2>&1 && id "$PROBE_AGENT_USER" >/dev/null 2>&1; then
+    PROBE_PRIVSEP=1
+fi
+
 # The agent's home. Under two users `$HOME` is ambiguous — it is the HARNESS's home in every probe
 # script, which is not where the agent writes — so the twelve probe scripts name the agent's default
 # locations through this. Exported because the agent's own launch inherits the environment.
-PROBE_AGENT_HOME=${PROBE_AGENT_HOME:-/home/agent}
+#
+# THE DEFAULT TRACKS THE BOUNDARY, and it has to. With the boundary compiled out there is no second user
+# and no `/home/agent`: `probe_as_agent` degrades to a direct call, which passes no `HOME=`, so the
+# measured command runs at the harness's uid with the harness's home. A fixed `/home/agent` there would
+# point every probe at a directory that cannot exist — an empty baseline, an empty after-snapshot, an
+# empty delta — and `probe_delta` documents an empty delta as the launch having changed nothing,
+# unambiguously. That reads as clean isolation for an agent that may be leaking, which is the exact
+# failure this variable exists to prevent; it must not come back whenever the boundary is absent.
+#
+# An explicit value still wins, in both cases: `sandbox/tests/probe-harness.sh` points it at a scratch
+# directory so a check can assert against a path no host actually has.
+if [ -n "${PROBE_AGENT_HOME:-}" ]; then
+    :
+elif [ -n "$PROBE_PRIVSEP" ]; then
+    PROBE_AGENT_HOME=/home/agent
+elif [ -n "${HOME:-}" ]; then
+    PROBE_AGENT_HOME=$HOME
+else
+    echo "probe: the privilege boundary is compiled out and HOME is unset, so there is no agent home" >&2
+    echo "probe: to watch; set PROBE_AGENT_HOME explicitly rather than measure a directory at random" >&2
+    exit 2
+fi
 export PROBE_AGENT_HOME
-PROBE_AGENT_USER=${PROBE_AGENT_USER:-agent}
 # The PATH the agent runs under: its own bin directories first, then the system ones. The harness's PATH
 # does NOT contain these (`Containerfile`), so a launch that forgot to cross the boundary fails with 127
 # instead of quietly running the agent at the harness's uid.
@@ -213,16 +247,8 @@ PROBE_SOFT=
 # NOT read from the environment, for PROBE_SOFT's reason and one more: this one decides WHICH UID a
 # command runs at, so a value an install script could preset would be the boundary itself.
 PROBE_AS_AGENT=
-# Whether the boundary is available at all. It is NOT available when this file is sourced outside the
-# container — `sandbox/tests/probe-harness.sh` runs on the maintainer's host, where neither `sudo` nor
-# the `agent` user exists — and there the indirection degrades to a direct call. Say the consequence
-# plainly rather than let the green suite imply otherwise: WITH THE BOUNDARY COMPILED OUT, NO TEST IN
-# THIS REPOSITORY EXERCISES IT. The suite measures the harness; only a real container run measures the
-# boundary. A guarantee no test covers must not read as though one does.
-PROBE_PRIVSEP=
-if command -v sudo >/dev/null 2>&1 && id "$PROBE_AGENT_USER" >/dev/null 2>&1; then
-    PROBE_PRIVSEP=1
-fi
+# PROBE_PRIVSEP — whether the boundary is available at all — used to be decided here. It is decided
+# above PROBE_AGENT_HOME instead, because that home's default now depends on it.
 
 mkdir -p "$PROBE_OUT"
 # 700 for $PROBE_STATE's reason and not a weaker one: every artefact here is written by a redirect the

@@ -9,4 +9,4 @@ probe_npm_install @openai/codex
 probe_version codex
 probe_help codex
 probe_strings codex OPENAI_API_KEY OPENAI_BASE_URL CODEX_API_KEY
-probe_behaviour codex "$HOME/.codex" env:CODEX_HOME @none
+probe_behaviour codex "$PROBE_AGENT_HOME/.codex" env:CODEX_HOME @none

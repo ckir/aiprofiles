@@ -6,7 +6,8 @@
 # dependencies -- that is the INTERPRETER pin CONTRIBUTING.md's "Pin interpreter versions an agent
 # supports" guidance describes, not a package pin.
 #
-# Aider's default location is a FILE, `$HOME/.aider.conf.yml` (`aider.rs`'s `FILE_NAME` constant), not a directory.
+# Aider's default location is a FILE, `$PROBE_AGENT_HOME/.aider.conf.yml` (`aider.rs`'s `FILE_NAME`
+# constant), not a directory.
 #
 # The candidate sweep re-establishes SP2 design D5's finding -- missing, empty and comment-only each exit
 # 2 while `{}` is accepted (`aider.rs`'s `INITIAL_CONFIG` constant). It was measured once and never
@@ -15,7 +16,7 @@
 . sandbox/probes/common.sh
 
 PROBE_CONFIG_NAME=.aider.conf.yml
-default="$HOME/.aider.conf.yml"
+default="$PROBE_AGENT_HOME/.aider.conf.yml"
 
 probe_uv_install aider-chat 3.12
 probe_version aider

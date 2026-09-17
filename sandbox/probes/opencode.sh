@@ -4,8 +4,9 @@
 # script first and npm second (https://opencode.ai/docs); npm is used here because it is the one that can
 # honour a pinned version, which 7.4 needs to repeat a measurement.
 #
-# TWO default locations, and that is 8.2's whole point: config lives at `$HOME/.config/opencode` while
-# `auth.json` lives at `$HOME/.local/share/opencode` (https://opencode.ai/docs/providers/), which
+# TWO default locations, and that is 8.2's whole point: config lives at
+# `$PROBE_AGENT_HOME/.config/opencode` while `auth.json` lives at
+# `$PROBE_AGENT_HOME/.local/share/opencode` (https://opencode.ai/docs/providers/), which
 # OPENCODE_CONFIG_DIR does not move. Watching only the first would record "credentials did not appear in
 # the target" -- an absence of evidence -- where watching both records WHERE they went, which 6 says is
 # enough to claim NotSupported honestly rather than Unknown.
@@ -14,7 +15,7 @@
 # a directory and OPENCODE_CONFIG names a single file (https://opencode.ai/docs/cli/).
 . sandbox/probes/common.sh
 
-default="$HOME/.config/opencode $HOME/.local/share/opencode"
+default="$PROBE_AGENT_HOME/.config/opencode $PROBE_AGENT_HOME/.local/share/opencode"
 
 probe_npm_install opencode-ai
 probe_version opencode

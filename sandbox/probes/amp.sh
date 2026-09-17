@@ -5,7 +5,7 @@
 # registry description reads "Renamed to @ampcode/cli" (registry-verified 2026-09-16). Installing the stub
 # would work and would record the wrong package as the thing measured.
 #
-# Default `$HOME/.config/amp/settings.json` and mechanism `--settings-file <path>`, both from
+# Default `$PROBE_AGENT_HOME/.config/amp/settings.json` and mechanism `--settings-file <path>`, both from
 # https://ampcode.com/docs/cli/settings
 #
 # The same page documents that workspace settings override user settings and managed settings override
@@ -15,7 +15,7 @@
 . sandbox/probes/common.sh
 
 PROBE_CONFIG_NAME=settings.json
-default="$HOME/.config/amp"
+default="$PROBE_AGENT_HOME/.config/amp"
 
 probe_npm_install @ampcode/cli
 probe_version amp

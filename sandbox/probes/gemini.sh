@@ -1,7 +1,8 @@
 # Gemini CLI probe: `sandbox/run.sh probe gemini [version]`.
 #
-# Package @google/gemini-cli (registry-verified 2026-09-16; `bin` is `gemini`), default `$HOME/.gemini`
-# (https://geminicli.com/docs/reference/configuration/), mechanism GEMINI_CLI_HOME
+# Package @google/gemini-cli (registry-verified 2026-09-16; `bin` is `gemini`), default
+# `$PROBE_AGENT_HOME/.gemini` (https://geminicli.com/docs/reference/configuration/), mechanism
+# GEMINI_CLI_HOME
 # (https://geminicli.com/docs/cli/enterprise/).
 #
 # 8.1 is the question this probe settles: GEMINI_CLI_HOME is documented as naming a directory CONTAINING
@@ -14,4 +15,4 @@ probe_npm_install @google/gemini-cli
 probe_version gemini
 probe_help gemini
 probe_strings gemini GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_APPLICATION_CREDENTIALS GEMINI_CLI_HOME
-probe_behaviour gemini "$HOME/.gemini" env:GEMINI_CLI_HOME @none
+probe_behaviour gemini "$PROBE_AGENT_HOME/.gemini" env:GEMINI_CLI_HOME @none

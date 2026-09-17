@@ -10,12 +10,13 @@
 #
 # 8.5 is what this probe tests: KIRO_HOME is documented, but an open upstream report describes
 # subsystems ignoring it and using ~/.kiro regardless, failing silently. That shape shows up as a delta at
-# BOTH locations -- files under the target AND new files under $HOME/.kiro -- which is exactly what
-# `NotGuaranteed` exists to describe. A probe that watched only the target would have called it isolated.
+# BOTH locations -- files under the target AND new files under $PROBE_AGENT_HOME/.kiro -- which is
+# exactly what `NotGuaranteed` exists to describe. A probe that watched only the target would have
+# called it isolated.
 . sandbox/probes/common.sh
 
 probe_script_install https://cli.kiro.dev/install bash
 probe_version kiro-cli
 probe_help kiro-cli
 probe_strings kiro-cli KIRO_API_KEY KIRO_HOME AWS_ACCESS_KEY_ID AWS_PROFILE
-probe_behaviour kiro-cli "$HOME/.kiro" env:KIRO_HOME @none
+probe_behaviour kiro-cli "$PROBE_AGENT_HOME/.kiro" env:KIRO_HOME @none
