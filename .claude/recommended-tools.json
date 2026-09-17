@@ -58,5 +58,11 @@
     "why": "The Windows sandbox for measuring real coding agents (CONTRIBUTING.md \"Measuring agent behaviour\"): adapter evidence is refreshed only inside a disposable box, never by installing agents on the host. Windows only; Linux and macOS contributors use the Podman/Bubblewrap or Tart/OrbStack recipes in CONTRIBUTING.md, and this check has no platform guard, so it lists Sandboxie-Plus as missing there.",
     "install": "winget install Sandboxie.Plus",
     "file_exists": "C:/Program Files/Sandboxie-Plus/Start.exe"
+  },
+  {
+    "name": "podman",
+    "why": "The container engine `sandbox/run.sh` runs the probe harness in, and the one CI uses (`AGENT_PROFILE_SANDBOX_ENGINE: podman` in both sandbox.yml jobs). Docker is an accepted fallback and run.sh selects it automatically when podman is absent, but the two are NOT equivalent for this repo: run.sh:85-87 sets `--userns=keep-id:uid=1000,gid=1000` ONLY under podman, so anything about uid mapping across the /out bind mount is unreproducible under Docker. That matters for the two-user privilege boundary, where a second uid writing the mount is the specific hazard. On Windows podman needs its own VM (`podman machine`), which is still not the Linux runner CI uses \u2014 so prefer dispatching the Actions Sandbox workflow for uid-mapping questions, and install podman locally when you would otherwise be iterating by re-pushing to CI.",
+    "install": "winget install RedHat.Podman",
+    "in_path": "podman"
   }
 ]
