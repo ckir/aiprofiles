@@ -21,9 +21,15 @@
 #
 # `$XDG_CONFIG_HOME` is RESOLVED here rather than named. Nothing in this repository sets it, and
 # `probe_as_agent` passes the agent exactly HOME, PATH and NPM_CONFIG_PREFIX through `env` -- `sudo`'s
-# `env_reset` drops the rest -- so it is unset for the measured party and the XDG default `$HOME/.config`
-# applies. Writing `$XDG_CONFIG_HOME/cursor` literally would expand to `/cursor` and watch a path that
-# cannot exist, which is the empty-delta failure above wearing the costume of a fix.
+# `env_reset` drops the rest -- so it is unset for the measured party and the XDG spec's own default, a
+# `.config` directory under the agent's home, applies. Writing `$XDG_CONFIG_HOME/cursor` literally would
+# expand to `/cursor` and watch a path that cannot exist, which is the empty-delta failure above wearing
+# the costume of a fix.
+#
+# That default is spelled out in words rather than as the shell variable it comes from, because the
+# harness-home check scans these files WHOLE -- comments included -- and an unqualified reference to the
+# HOME variable anywhere in a probe script is exactly what it exists to refuse. It caught the first draft
+# of this comment, and then the sentence that was explaining why.
 . sandbox/probes/common.sh
 
 # AFTER the source, never before: `$PROBE_AGENT_HOME` is defined in `common.sh`. Set above it this line

@@ -356,8 +356,14 @@ check "deleting an unknown transcript when the real one arrives verifies" "$stat
 check "and says the unknown one was removed" \
     "$(printf '%s' "$out" | grep -c 'docs/evidence/example-unknown.md was removed')" "1"
 
-# The other deletion shape, which takes the `:73-76` branch instead: the registry STILL names the file the
-# pull request deleted. There is nothing to compare, so §7.4's retention rule allows it.
+# The other deletion shape, which takes `verify-transcripts.sh`'s "a deletion is legitimate" branch -- the
+# `[ ! -f "$file" ]` test that prints "was removed" and continues -- instead: the registry STILL names the
+# file the pull request deleted. There is nothing to compare, so §7.4's retention rule allows it.
+#
+# Named by its test rather than by line numbers, which is what stood here. The gate in
+# `check-line-citations.sh` could not catch that one because its pattern needs a filename before the
+# colon and this had none, so it was both unenforceable AND unresolvable -- and by the time it was read
+# it was stale as well, pointing one line past the branch it meant.
 fixture
 rm "$work/repo/docs/evidence/example-1.2.3.md"
 verify

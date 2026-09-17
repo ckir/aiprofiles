@@ -70,8 +70,14 @@ jobs:
 
   probe-tests:
     # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution and the
-    # privilege-split checks (81 checks total, per `just probe-tests` in the justfile). No container and
-    # no agent needed. Before this job these four suites ran only via `just probe-tests`, which no CI
+    # privilege-split checks, the same four suites `just probe-tests` runs. No container and no agent
+    # needed.
+    #
+    # NO COUNT IS STATED HERE ON PURPOSE. This comment used to carry one, and it rotted through every
+    # value the suite passed through on this branch -- 81, then 83, then 108, then 122 -- without once
+    # being updated, because nothing reads a number in a comment. A figure that only a human can refresh
+    # is a claim the repository cannot keep, and this file already learned that lesson once: the tool
+    # table above it is generated precisely because two hand-kept lists drifted. Before this job these four suites ran only via `just probe-tests`, which no CI
     # workflow invoked -- `grep -rn 'sandbox/tests|probe-tests|probe-harness' .github/workflows/*.yml`
     # found one comment and no `run:` line, so the evidence pipeline they guard was unchecked in CI.
     #

@@ -16,17 +16,22 @@
 # escape hatch below would be the wrong use of an escape hatch. docs/ is a historical record of the code as
 # it stood and is deliberately NOT scanned -- rewriting its citations would falsify that record.
 #
-# Escape hatch, for the rare citation that genuinely cannot be expressed any other way:
-#   - inline:   add the literal marker `line-cite-ok` anywhere on the same line as the citation
-#   - allowlist: list the citing `path:line` (repo-relative, one per line; blank lines and `#` comments
-#                are ignored) in scripts/line-citation-allowlist.txt
+# Escape hatch, for the rare citation that genuinely cannot be expressed any other way: add the literal
+# marker `line-cite-ok` anywhere on the same line as the citation. It is anchored to the text, so it moves
+# with the line it exempts.
+#
+# THERE USED TO BE A SECOND HATCH and it was removed rather than repaired: an allowlist file holding
+# repo-relative `path:line` entries. It exempted a line-pinned citation by means of a line-pinned
+# reference, so it could not survive the rot it existed to forgive. Add one blank line above an
+# allowlisted citation and the entry no longer matches -- the exemption silently lapses and this gate goes
+# red for a line nobody touched. It also never existed in practice: the file it read was absent from the
+# tree, nothing outside this script mentioned it, and no test exercised it.
 set -eu
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 # The repository's one answer to "a scan that produces nothing is read as clean" -- the class this gate
 # was the second measured instance of. The refusal below used to be spelled out by hand here.
 . "$repo_root/scripts/lib/scan-guard.sh"
-allowlist="$repo_root/scripts/line-citation-allowlist.txt"
 marker='line-cite-ok'
 
 # A comment line (`#`, `//` or `///`) that names a file and then a line number. The extension list is
@@ -101,10 +106,6 @@ while IFS= read -r line; do
     esac
 
     rel=${file#"$repo_root"/}
-    if [ -f "$allowlist" ] && grep -qxF "$rel:$lineno" "$allowlist"; then
-        continue
-    fi
-
     echo "check-line-citations: $rel:$lineno cites another file by line number:" >&2
     echo "  $content" >&2
     failures=$((failures + 1))

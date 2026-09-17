@@ -45,6 +45,16 @@ fi
 list=$(printf '%s\n' "$raw" | grep -v '^$' | awk '!seen[$0]++' || true)
 count=$(printf '%s\n' "$list" | grep -c . || true)
 
+# THIS REFUSAL IS DOING TWO JOBS, and the second one is not in its name. It exists for "you asked for no
+# agents", but it is also the only thing standing between this script and the empty-scan class: the `grep
+# -l` above is the left-hand side of a pipe, so POSIX sh discards its status, and `sandbox/probes/*.sh` is
+# an unguarded glob that passes through literally if the directory is ever renamed. Either failure empties
+# `raw`, and without the check below an empty agent list would read as a clean resolution of zero agents.
+#
+# It fails closed today, so it is deliberately NOT converted to `scripts/lib/scan-guard.sh`: sourcing the
+# gates' helper from inside `sandbox/` would point the dependency the wrong way round, since everything
+# under `sandbox/probes/` ships into the container. If the cap logic is ever relaxed to tolerate an empty
+# list, that change must bring its own scan guard with it -- the protection here is incidental, not designed.
 if [ "$count" -eq 0 ]; then
     echo "resolve-agents: no agents named" >&2
     exit 1
