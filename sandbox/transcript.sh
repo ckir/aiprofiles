@@ -6,7 +6,8 @@
 #          [output-dir]   docs/evidence by default
 #
 # It runs as a WORKFLOW STEP, not inside the container, and that is forced rather than chosen: the
-# container gets no `--env` (`sandbox/run.sh:150`), so GITHUB_RUN_ID is not visible to a probe and the
+# container gets no `--env` (neither `eng run` invocation in `sandbox/run.sh` passes one), so GITHUB_RUN_ID
+# is not visible to a probe and the
 # custody header cannot be written where the measurements are taken.
 #
 # It writes `<id>-<version>.md` whole, and the maintainer commits those bytes unaltered. §5.3's
@@ -48,7 +49,7 @@ case "$version" in
         ;;
 esac
 
-# The probe's own exit status, as `sandbox/run.sh:176` recorded it from OUTSIDE the container — the one
+# The probe's own exit status, as `sandbox/run.sh:192` recorded it from OUTSIDE the container — the one
 # number in this file that the measured party could not have written. It is what `verify-transcripts.sh`
 # compares the matrix job's conclusion against, and it is why §9's outcomes 3 and 4 (agent installed,
 # version known, a step refused) have a committable form at all: the version no longer has to stand in for
@@ -135,7 +136,7 @@ section() {
     # the agent exposes a DIFFERENT mechanism from the claimed one — is ever detected. The `delta:`
     # sections above see only the locations chosen in advance.
     #
-    # /home/probe/work is dropped because it is OUR copy of the checkout (`sandbox/run.sh:135`), some
+    # /home/probe/work is dropped because it is OUR copy of the checkout (`sandbox/run.sh`'s `copy=`), some
     # thousands of paths the probe put there itself. Leaving it in would bound the summary away to
     # nothing and bury the handful of lines that matter.
     printf 'container-delta:\n'

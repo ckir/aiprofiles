@@ -161,7 +161,7 @@ fi
 # that writes beside its config (aider's `.aider.chat.history.md` lands in the working directory) would
 # otherwise fail for lack of a writable cwd, and that failure would be recorded as the agent's behaviour
 # rather than as the harness's setup.
-copy='mkdir -p /home/probe/work && chgrp probe-share /home/probe/work && chmod 2775 /home/probe/work && tar -C /src --exclude=./target -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
+copy='mkdir -p /home/probe/work && chgrp probe-share /home/probe/work && chmod 2775 /home/probe/work && tar -C /src --exclude=./target --exclude=./.clavity -cf - . | tar -C /home/probe/work -xf - && cd /home/probe/work'
 case "$mode" in
     test) script="$copy && cargo nextest run --workspace --no-tests=pass" ;;
     probe)

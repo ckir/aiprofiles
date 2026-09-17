@@ -4,7 +4,7 @@
 # (https://cursor.com/install, documented at https://cursor.com/docs/cli/installation); there is no npm
 # package, so this probe refuses a version argument.
 #
-# The installer puts its binary in `$HOME/.local/bin`, which `sandbox/Containerfile:23` already has on
+# The installer puts its binary in `$HOME/.local/bin`, which `sandbox/Containerfile:65` already has on
 # PATH -- so a "command not found" at step 2 means the install failed, not that the probe looked in the
 # wrong place.
 #

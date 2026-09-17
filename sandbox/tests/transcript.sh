@@ -31,7 +31,7 @@ fixture() {
     printf '# /target\n# /home/probe/.example\n' > "$results/baseline-env-EXAMPLE_HOME.txt"
     printf '# /target\nd .example\n' > "$results/delta-env-EXAMPLE_HOME.txt"
     printf 'A /home/probe/.example\nA /home/probe/work/src\nC /home/probe/.npm\n' > "$results/diff.txt"
-    # Written by `sandbox/run.sh:176` from OUTSIDE the container, which is what makes it the one status in
+    # Written by `sandbox/run.sh:192` from OUTSIDE the container, which is what makes it the one status in
     # the transcript the measured party could not have chosen.
     printf '0\n' > "$results/exit-code"
 }

@@ -162,7 +162,7 @@ while read -r id version; do
     # means the probe failed") had no committable form for 3 and 4 at all: a known version against a job
     # that concluded failure was refused outright.
     #
-    # `probe-exit` is written by `sandbox/run.sh:176` from OUTSIDE the container, from the engine's own
+    # `probe-exit` is written by `sandbox/run.sh:192` from OUTSIDE the container, from the engine's own
     # record of the container's status, so it is not a number the measured party can choose; and it sits
     # inside the transcript, which the `cmp` below already pins byte-for-byte against the artifact.
     #
