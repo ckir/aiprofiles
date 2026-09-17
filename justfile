@@ -52,8 +52,16 @@ probe-tests:
     sh sandbox/tests/resolve-agents.sh
     sh sandbox/tests/verify-transcripts.sh
 
-# The local gate: fmt + clippy + typos + shellcheck + test + the probe harness
-check: fmt-check clippy typos shellcheck test probe-tests
+# Regenerate the `## Tools` table in docs/dev-tooling.md from .claude/recommended-tools.json
+tools-doc:
+    sh scripts/gen-tool-table.sh
+
+# Fails if docs/dev-tooling.md's `## Tools` table has drifted from .claude/recommended-tools.json
+tools-doc-check:
+    sh scripts/gen-tool-table.sh --check
+
+# The local gate: fmt + clippy + typos + shellcheck + test + the probe harness + tools-doc freshness
+check: fmt-check clippy typos shellcheck test probe-tests tools-doc-check
 
 # Background watcher
 watch:

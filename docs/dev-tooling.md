@@ -5,30 +5,44 @@ needs. Agent Profile is an offline cross-platform CLI wrapper, so flux's TLA+ mo
 benchmarking tooling is dropped (see "Deliberately not carried over").
 
 Every tool runs through a `just` recipe, so the local gate, the git hook and CI cannot drift apart.
-The same list is machine-readable in `.claude/recommended-tools.json`.
+This table is generated from `.claude/recommended-tools.json` by `scripts/gen-tool-table.sh`
+(`just tools-doc`); edit the JSON, not the table.
 
 ## Tools
 
+<!-- tools:begin — generated from .claude/recommended-tools.json by scripts/gen-tool-table.sh; do not edit by hand -->
 | Tool | Config | `just` recipe | Gates |
 |---|---|---|---|
-| `rustup` / `rustc` / `cargo` | `rust-toolchain.toml` (`stable`, with rustfmt + clippy) | `build` | everything |
 | `cargo-nextest` | — | `test`, `test-verbose` (`cargo nextest run --workspace --no-tests=pass` + `cargo test --doc --workspace`) | `just check`; CI Test job on ubuntu, macos, windows |
+| `just` | `justfile` | — | everything — local gate, pre-push hook and CI all route through the recipes it defines |
 | `lefthook` | `lefthook.yml` (pre-push: fmt-check, clippy, typos in parallel; no pre-commit) | `hooks` | local pre-push |
-| `release-plz` (GitHub Action) | `release-plz.toml` (`git_only`, release PR, `v{{ version }}` tags, pre-releases until SP5) | — | merging the release PR releases |
-| `rustfmt` | `rustfmt.toml` (edition 2024, width 100) | `fmt`, `fmt-check` | `just check`, pre-push, CI Format |
-| `clippy` | `clippy.toml` (msrv 1.98) | `clippy` (`--workspace --all-targets -- -D warnings`) | `just check`, pre-push, CI Clippy |
-| `typos` (typos-cli) | `_typos.toml` (excludes the V3 spec) | `typos` | `just check`, pre-push, CI Typos |
 | `cargo-deny` | `deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples) | `deny` | CI Cargo deny |
+| `typos` | `_typos.toml` (excludes the V3 spec) | `typos` | `just check`, pre-push, CI Typos |
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
-| Podman or Docker | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner with **podman** (probes by hand; `test` on PRs that change the harness) |
-| `actionlint` + `shellcheck` | — | — | workflow linting before pushing `.github/` changes |
+| `actionlint` | — | — | workflow linting before pushing `.github/` changes |
+| `shellcheck` | — | — | workflow linting before pushing `.github/` changes |
+| `Sandboxie-Plus` | — | — | manual — CONTRIBUTING.md "Measuring agent behaviour" (Windows adapter-evidence refresh) |
+| `podman` | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner with **podman** (probes by hand; `test` on PRs that change the harness) |
+| `rustup / rustc / cargo` | `rust-toolchain.toml` (`stable`, with rustfmt + clippy) | `build` | everything |
+| `rustfmt` | `rustfmt.toml` (edition 2024, width 100) | `fmt`, `fmt-check` | `just check`, pre-push, CI Format |
+| `clippy` | `clippy.toml` (msrv 1.98) | `clippy` (`--workspace --all-targets -- -D warnings`) | `just check`, pre-push, CI Clippy |
 | `cargo-binstall` | — | — | installs the cargo tools above |
-| GitHub Actions | `.github/workflows/ci.yml` | — | Format, Typos, Clippy, Cargo deny, Docs build, Test ×3 OS — all required checks on `main` |
-| GitHub Actions | `.github/workflows/docs.yml` | — | publishes rustdoc to Pages after merge |
-| GitHub Actions | `.github/workflows/release-plz.yml`, `.github/workflows/release.yml` | — | release PR on push to `main`; on its merge, tag, GitHub release and cross-platform `agent-profile` binaries |
-| GitHub Actions | `.github/workflows/pr-title.yml` | — | Conventional PR title (required check; PRs are squash-merged) |
-| Dependabot | `.github/dependabot.yml`, `.github/workflows/dependabot-automerge.yml` | — | weekly grouped minor/patch PRs, auto-merged once required checks pass |
+<!-- tools:end -->
+
+## CI and automation
+
+Not installable tools, so they stay out of `.claude/recommended-tools.json` and this table is
+hand-written.
+
+| Tool | Config | Gates |
+|---|---|---|
+| `release-plz` (GitHub Action) | `release-plz.toml` (`git_only`, release PR, `v{{ version }}` tags, pre-releases until SP5) | merging the release PR releases |
+| GitHub Actions | `.github/workflows/ci.yml` | Format, Typos, Clippy, Cargo deny, Docs build, Test ×3 OS — all required checks on `main` |
+| GitHub Actions | `.github/workflows/docs.yml` | publishes rustdoc to Pages after merge |
+| GitHub Actions | `.github/workflows/release-plz.yml`, `.github/workflows/release.yml` | release PR on push to `main`; on its merge, tag, GitHub release and cross-platform `agent-profile` binaries |
+| GitHub Actions | `.github/workflows/pr-title.yml` | Conventional PR title (required check; PRs are squash-merged) |
+| Dependabot | `.github/dependabot.yml`, `.github/workflows/dependabot-automerge.yml` | weekly grouped minor/patch PRs, auto-merged once required checks pass |
 
 ## Install
 
