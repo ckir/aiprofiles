@@ -156,63 +156,82 @@ pub(crate) fn profile_dir(root: &AppRoot, profile: &ProfileName, id: &str) -> Pa
     root.profiles_dir().join(profile.as_str()).join(id)
 }
 
-/// Plans an adapter whose mechanism is one environment variable naming its profile directory.
-pub(crate) fn env_dir_plan(
-    adapter: &dyn Adapter,
-    ctx: &PlanContext<'_>,
-    var: &str,
-) -> Result<PlannedLaunch> {
-    let metadata = adapter.metadata();
-    let found = discover(metadata, ctx)?;
-    check_case_twins(ctx.root, ctx.profile)?;
-    let paths = profile_paths(adapter, ctx);
-    let dir = paths[0].path.clone();
-    let mechanism = metadata.mechanism.sentence_for(&dir);
-    Ok(PlannedLaunch {
-        plan: LaunchPlan {
-            executable: found.path,
-            args: ctx.args.to_vec(),
-            env: vec![(var.into(), dir.clone().into_os_string())],
-            cwd: None,
-        },
-        profile: ctx.profile.clone(),
-        profile_dir: dir,
-        paths,
-        executable_origin: found.origin,
-        mechanism,
-        sensitive_env: sensitive_env(metadata),
-        notes: Vec::new(),
-    })
-}
-
-/// Plans an adapter whose mechanism is an argument naming its profile's configuration file.
-pub(crate) fn config_file_arg_plan(
-    adapter: &dyn Adapter,
-    ctx: &PlanContext<'_>,
-    flag: &str,
-) -> Result<PlannedLaunch> {
-    let metadata = adapter.metadata();
-    let found = discover(metadata, ctx)?;
-    check_case_twins(ctx.root, ctx.profile)?;
-    let paths = profile_paths(adapter, ctx);
-    let file = paths
+/// The one configuration file an adapter owns, for the mechanisms that name a file.
+fn config_file(paths: &[ProfilePath]) -> PathBuf {
+    paths
         .iter()
         .find(|entry| matches!(entry.kind, PathKind::File { .. }))
         .expect("a configuration-file adapter owns a file")
         .path
-        .clone();
-    let mut args: Vec<OsString> = vec![flag.into(), file.clone().into_os_string()];
-    args.extend(ctx.args.iter().cloned());
-    Ok(PlannedLaunch {
-        plan: LaunchPlan { executable: found.path, args, env: Vec::new(), cwd: None },
-        profile: ctx.profile.clone(),
-        profile_dir: paths[0].path.clone(),
-        paths,
-        executable_origin: found.origin,
-        mechanism: metadata.mechanism.sentence_for(&file),
-        sensitive_env: sensitive_env(metadata),
-        notes: Vec::new(),
-    })
+        .clone()
+}
+
+impl Mechanism {
+    /// Plans a launch that points the agent at its profile *through this mechanism*.
+    ///
+    /// The variable name and the flag spelling are read out of the mechanism's own payload, and the
+    /// report sentence comes from [`Mechanism::sentence_for`] on the very same value. There is no
+    /// parameter through which an adapter could pass a second name, so declaring `Env("A")` and
+    /// launching with `"B"` is not expressible — the two used to be separate arguments and agreed only
+    /// because every adapter happened to pass the same constant twice.
+    ///
+    /// It lives here rather than in [`metadata`] because planning needs this module's private
+    /// machinery — executable discovery, the case-twin check and path materialization state.
+    ///
+    /// Adapter-specific extras stay in the adapter: `plan()` returns no notes, and an adapter that has
+    /// one (Codex's logged-out note, Aider's layering note) pushes it onto the result.
+    pub(crate) fn plan(
+        &self,
+        adapter: &dyn Adapter,
+        ctx: &PlanContext<'_>,
+    ) -> Result<PlannedLaunch> {
+        let metadata = adapter.metadata();
+        let found = discover(metadata, ctx)?;
+        check_case_twins(ctx.root, ctx.profile)?;
+        let paths = profile_paths(adapter, ctx);
+        let dir = paths[0].path.clone();
+
+        // `target` is the path the mechanism points at, and the one the report sentence names.
+        let (args, env, target) = match self {
+            Mechanism::Env(name) => (
+                ctx.args.to_vec(),
+                vec![(OsString::from(*name), dir.clone().into_os_string())],
+                dir.clone(),
+            ),
+            Mechanism::EnvFile(name) => {
+                let file = config_file(&paths);
+                (
+                    ctx.args.to_vec(),
+                    vec![(OsString::from(*name), file.clone().into_os_string())],
+                    file,
+                )
+            }
+            Mechanism::FlagDir(option) => {
+                let mut args: Vec<OsString> =
+                    vec![option.spelling().into(), dir.clone().into_os_string()];
+                args.extend(ctx.args.iter().cloned());
+                (args, Vec::new(), dir.clone())
+            }
+            Mechanism::FlagFile(option) => {
+                let file = config_file(&paths);
+                let mut args: Vec<OsString> =
+                    vec![option.spelling().into(), file.clone().into_os_string()];
+                args.extend(ctx.args.iter().cloned());
+                (args, Vec::new(), file)
+            }
+        };
+
+        Ok(PlannedLaunch {
+            plan: LaunchPlan { executable: found.path, args, env, cwd: None },
+            profile: ctx.profile.clone(),
+            profile_dir: dir,
+            paths,
+            executable_origin: found.origin,
+            mechanism: self.sentence_for(&target),
+            sensitive_env: sensitive_env(metadata),
+            notes: Vec::new(),
+        })
+    }
 }
 
 fn discover(metadata: &AdapterMetadata, ctx: &PlanContext<'_>) -> Result<exe::Found> {
@@ -524,7 +543,7 @@ mod tests {
         }
 
         fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-            env_dir_plan(self, ctx, "PROFILE_SESSION_HANDLE")
+            SECRETIVE.mechanism.plan(self, ctx)
         }
     }
 

@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    ConflictOption, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel,
-    config_file_arg_plan, profile_dir,
+    ConflictOption, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -78,7 +77,7 @@ impl Adapter for Aider {
     }
 
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-        let mut planned = config_file_arg_plan(self, ctx, FLAG)?;
+        let mut planned = METADATA.mechanism.plan(self, ctx)?;
         planned.notes.push(LAYERING_NOTE.to_owned());
         Ok(planned)
     }

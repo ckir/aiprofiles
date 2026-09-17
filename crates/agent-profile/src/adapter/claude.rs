@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan,
-    profile_dir,
+    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -64,6 +63,6 @@ impl Adapter for Claude {
     }
 
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-        env_dir_plan(self, ctx, VAR)
+        METADATA.mechanism.plan(self, ctx)
     }
 }

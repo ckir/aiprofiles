@@ -76,6 +76,16 @@ pub struct ConflictOption {
 }
 
 impl ConflictOption {
+    /// The canonical spelling: the first long form. Every `ConflictOption` in a `static AdapterMetadata`
+    /// has at least one — `metadata_invariants` walks them all and asserts each starts with `--`, which an
+    /// empty list could not satisfy meaningfully.
+    ///
+    /// This is the *only* place a flag mechanism's spelling comes from, so the option a plan passes, the
+    /// sentence the report prints and the token the evidence pipeline reads are one string, not three.
+    pub fn spelling(&self) -> &'static str {
+        self.long.first().expect("a conflict option declares at least one long spelling")
+    }
+
     /// Whether `arg` selects this option. Works on encoded bytes, so non-UTF-8 arguments are scanned too;
     /// every spelling is ASCII, which makes the byte comparison exact on every platform.
     pub fn matches(&self, arg: &OsStr) -> bool {
@@ -116,8 +126,10 @@ impl ConflictOption {
 /// questions at different times. For environment mechanisms they coincide, because there is no path in
 /// the sentence to differ over.
 ///
-/// `plan()` never formats the sentence itself — `env_dir_plan` and `config_file_arg_plan` call
-/// `sentence_for`, so the declared mechanism *generates* the reported one and the two cannot drift.
+/// All three are generated from this one value, and so is the launch itself:
+/// [`Mechanism::plan`](super::Mechanism::plan) dispatches on the variant and takes the variable name or
+/// flag spelling out of the variant's own payload. An adapter passes no name and no flag, so there is no
+/// second string for the first to drift from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mechanism {
     /// A variable set to the profile directory.
@@ -128,13 +140,6 @@ pub enum Mechanism {
     FlagDir(ConflictOption),
     /// An option passed a file inside the profile directory.
     FlagFile(ConflictOption),
-}
-
-/// The canonical spelling of a mechanism's option. Every `ConflictOption` in a `static AdapterMetadata`
-/// has at least one long spelling — `metadata_invariants` walks them all and asserts each starts with
-/// `--`, which an empty list could not satisfy meaningfully.
-fn first_long(option: &ConflictOption) -> &'static str {
-    option.long.first().expect("a conflict option declares at least one long spelling")
 }
 
 impl Mechanism {
@@ -155,7 +160,7 @@ impl Mechanism {
                 format!("environment variable {name}")
             }
             Mechanism::FlagDir(option) | Mechanism::FlagFile(option) => {
-                format!("argument {} {}", first_long(option), target.display())
+                format!("argument {} {}", option.spelling(), target.display())
             }
         }
     }
@@ -165,8 +170,8 @@ impl Mechanism {
         match self {
             Mechanism::Env(name) => format!("env:{name}"),
             Mechanism::EnvFile(name) => format!("envfile:{name}"),
-            Mechanism::FlagDir(option) => format!("flagdir:{}", first_long(option)),
-            Mechanism::FlagFile(option) => format!("flagfile:{}", first_long(option)),
+            Mechanism::FlagDir(option) => format!("flagdir:{}", option.spelling()),
+            Mechanism::FlagFile(option) => format!("flagfile:{}", option.spelling()),
         }
     }
 }
@@ -178,10 +183,10 @@ impl fmt::Display for Mechanism {
                 write!(formatter, "environment variable {name}")
             }
             Mechanism::FlagDir(option) => {
-                write!(formatter, "argument {} <dir>", first_long(option))
+                write!(formatter, "argument {} <dir>", option.spelling())
             }
             Mechanism::FlagFile(option) => {
-                write!(formatter, "argument {} <file>", first_long(option))
+                write!(formatter, "argument {} <file>", option.spelling())
             }
         }
     }

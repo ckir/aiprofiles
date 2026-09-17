@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use agent_profile::adapter::gate::GateFailure;
 use agent_profile::adapter::{
@@ -153,33 +153,87 @@ fn codex_new_profile_note_disappears_once_the_home_exists() {
     assert_eq!(fixture.plan(codex, "work", &[]).unwrap().notes, Vec::<String>::new());
 }
 
-/// The path an adapter's mechanism points at: the configuration file it owns, or, for an adapter that
-/// owns no file, its profile directory. Mirrors `config_file_arg_plan`'s own selection, so no adapter
-/// needs a row here.
-fn mechanism_target(planned: &PlannedLaunch) -> PathBuf {
+/// The one configuration file an adapter owns, for the mechanisms that name a file.
+fn config_file(planned: &PlannedLaunch) -> PathBuf {
     planned
         .paths
         .iter()
         .find(|entry| matches!(entry.kind, PathKind::File { .. }))
-        .map_or_else(|| planned.profile_dir.clone(), |entry| entry.path.clone())
+        .expect("a file mechanism owns a file")
+        .path
+        .clone()
 }
 
-/// The declared mechanism *generates* the reported one: `plan()` never formats that sentence itself.
-/// An adapter that went back to its own `format!` — the way `env_dir_plan` and `config_file_arg_plan`
-/// used to — could once again report a variable or flag it does not actually use. This is the binding
-/// the free-text `mechanism_summary` never had.
+/// The variable an environment mechanism names must also appear in `metadata.env`. That list is written
+/// separately from the mechanism, which makes it the independent second source this check needs: a
+/// mechanism payload edited on its own no longer agrees with it.
+fn assert_declared(metadata: &AdapterMetadata, name: &str) {
+    assert!(
+        metadata.env.iter().any(|declared| declared.name == name),
+        "{}: the mechanism names {name}, which `env` does not declare",
+        metadata.id
+    );
+}
+
+/// The plan sets exactly `name` to `target`, adds no argument, and reports the variable.
+fn assert_env_mechanism(planned: &PlannedLaunch, id: &str, name: &str, target: &Path) {
+    assert_eq!(
+        planned.plan.env,
+        vec![(OsString::from(name), target.to_path_buf().into_os_string())],
+        "{id}: the plan must set exactly {name}"
+    );
+    assert!(planned.plan.args.is_empty(), "{id}: an environment mechanism adds no argument");
+    assert_eq!(planned.mechanism, format!("environment variable {name}"), "{id}");
+}
+
+/// The plan passes exactly `spelling target` ahead of the opaque arguments, sets no variable, and reports
+/// that argument.
+fn assert_flag_mechanism(planned: &PlannedLaunch, id: &str, spelling: &str, target: &Path) {
+    assert_eq!(
+        planned.plan.args,
+        vec![OsString::from(spelling), target.to_path_buf().into_os_string()],
+        "{id}: the plan must pass exactly `{spelling} <target>`"
+    );
+    assert!(planned.plan.env.is_empty(), "{id}: a flag mechanism sets no variable");
+    assert_eq!(planned.mechanism, format!("argument {spelling} {}", target.display()), "{id}");
+}
+
+/// The declared mechanism is the one the plan *executes* and the one the report names.
+///
+/// Deliberately not `assert_eq!(planned.mechanism, metadata.mechanism.sentence_for(target))`: that is the
+/// same call on the same value, so for an environment mechanism — whose `sentence_for` ignores the path
+/// entirely — it can never fail. It was tautological, and a seat proved it by mutating a declared
+/// `Mechanism::Env` payload and watching it stay green.
+///
+/// Instead this reads the executed plan and reconstructs the sentence from *that*, and — the part the
+/// mutant needed — checks an environment mechanism's variable against `metadata.env`, the independently
+/// written declaration of what the adapter may set. Changing the payload of `Mechanism::Env` alone now
+/// reddens this test, not just the hand-written row in `plan_contract`.
+///
+/// The `match` carries no wildcard arm, so a fifth `Mechanism` variant stops this suite compiling.
 #[test]
-fn the_planned_mechanism_is_generated_from_the_declared_one() {
+fn the_planned_mechanism_is_the_declared_one() {
     for adapter in adapter::registry() {
         let fixture = fixture();
         let metadata = adapter.metadata();
+        let id = metadata.id;
         let planned = fixture.plan(adapter, "work", &[]).unwrap();
-        assert_eq!(
-            planned.mechanism,
-            metadata.mechanism.sentence_for(&mechanism_target(&planned)),
-            "{}",
-            metadata.id
-        );
+        match metadata.mechanism {
+            Mechanism::Env(name) => {
+                assert_env_mechanism(&planned, id, name, &planned.profile_dir);
+                assert_declared(metadata, name);
+            }
+            Mechanism::EnvFile(name) => {
+                assert_env_mechanism(&planned, id, name, &config_file(&planned));
+                assert_declared(metadata, name);
+            }
+            Mechanism::FlagDir(option) => {
+                assert_flag_mechanism(&planned, id, option.spelling(), &planned.profile_dir);
+            }
+            Mechanism::FlagFile(option) => {
+                assert_flag_mechanism(&planned, id, option.spelling(), &config_file(&planned));
+            }
+        }
     }
 }
 
@@ -320,9 +374,10 @@ fn metadata_invariants() {
             assert!(!field.is_empty(), "{id}");
         }
         // The mechanism's OWN option is included, not just the declared extras: a flag mechanism renders
-        // through `first_long` in `Display`, `sentence_for` and `probe_token`, each of which `expect`s a
-        // spelling. And `!is_empty` is asserted separately because `.all()` over an empty slice is
-        // vacuously true — the spelling check alone would let an empty list through to those three panics.
+        // through `ConflictOption::spelling` in `Display`, `sentence_for`, `probe_token` and `plan`, each
+        // of which `expect`s a spelling. And `!is_empty` is asserted separately because `.all()` over an
+        // empty slice is vacuously true — the spelling check alone would let an empty list through to
+        // those four panics.
         let mechanism_option = metadata.mechanism.conflict_option();
         for option in metadata.conflicts.iter().chain(mechanism_option.iter().copied()) {
             assert!(!option.long.is_empty(), "{id}: a conflict option declares no long spelling");

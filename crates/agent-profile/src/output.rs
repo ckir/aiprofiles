@@ -1047,12 +1047,22 @@ mod tests {
         );
     }
 
+    /// Every `CapabilityState`, in report order. Kept next to the two tests below so both walk the same
+    /// list.
+    const EVERY_STATE: [CapabilityState; 5] = [
+        CapabilityState::Supported,
+        CapabilityState::NotSupported,
+        CapabilityState::NotGuaranteed,
+        CapabilityState::Conditional,
+        CapabilityState::Unknown,
+    ];
+
     /// Pins `state_label`'s five literal spellings. Nothing else in the suite exercises the strings
     /// `"not supported"` or `"conditional"` directly: collapsing either arm onto another word left all
     /// other tests green, because `support_hedge` (the only caller) never distinguishes the wording, only
     /// whether the string is present.
     #[test]
-    fn every_capability_state_has_a_distinct_report_spelling() {
+    fn every_capability_state_has_its_pinned_report_spelling() {
         let pairs = [
             (CapabilityState::Supported, "supported"),
             (CapabilityState::NotSupported, "not supported"),
@@ -1060,12 +1070,40 @@ mod tests {
             (CapabilityState::Conditional, "conditional"),
             (CapabilityState::Unknown, "unknown"),
         ];
-        let mut spellings = Vec::with_capacity(pairs.len());
         for (state, expected) in pairs {
-            let actual = state_label(state);
-            assert_eq!(actual, expected, "{state:?}");
-            spellings.push(actual);
+            assert_eq!(state_label(state), expected, "{state:?}");
         }
+        assert_eq!(pairs.len(), EVERY_STATE.len());
+    }
+
+    /// No two states share a spelling — checked on `state_label`'s own output, with nothing compared to a
+    /// literal first.
+    ///
+    /// That ordering is the whole point. This used to be the tail of the test above, running over a list
+    /// appended to only *after* each entry had been asserted equal to one of five pairwise-distinct
+    /// literals; the distinctness assertion therefore held unconditionally and no mutant could redden it.
+    /// Split out, collapsing two `state_label` arms onto one word fails here on its own.
+    #[test]
+    fn every_capability_state_has_a_distinct_report_spelling() {
+        // Exhaustiveness anchor: a wildcard-free `match`, so adding a sixth `CapabilityState` stops this
+        // test compiling. The arm must then name a position in `EVERY_STATE`; one past the end panics on
+        // the index and one already taken fails the assertion, so the variant has to be added to the list
+        // rather than quietly left out of the distinctness check below.
+        fn position(state: CapabilityState) -> usize {
+            match state {
+                CapabilityState::Supported => 0,
+                CapabilityState::NotSupported => 1,
+                CapabilityState::NotGuaranteed => 2,
+                CapabilityState::Conditional => 3,
+                CapabilityState::Unknown => 4,
+            }
+        }
+        for (index, state) in EVERY_STATE.into_iter().enumerate() {
+            assert_eq!(EVERY_STATE[position(state)], state, "{state:?}");
+            assert_eq!(position(state), index, "{state:?} is out of place in EVERY_STATE");
+        }
+
+        let spellings: Vec<&str> = EVERY_STATE.into_iter().map(state_label).collect();
         let mut distinct = spellings.clone();
         distinct.sort_unstable();
         distinct.dedup();

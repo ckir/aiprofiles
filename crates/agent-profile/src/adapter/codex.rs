@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan,
-    profile_dir,
+    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -68,7 +67,7 @@ impl Adapter for Codex {
     }
 
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-        let mut planned = env_dir_plan(self, ctx, VAR)?;
+        let mut planned = METADATA.mechanism.plan(self, ctx)?;
         if !planned.paths[0].existed {
             planned.notes.push(NEW_PROFILE_NOTE.to_owned());
         }
