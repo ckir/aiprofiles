@@ -360,6 +360,33 @@ check "and nothing crossed before that refusal either" \
 # runner), so removing it means hiding the directories the rest of common.sh needs. It is one `command -v`
 # test in front of the same refusal the two cases above reach.
 
+# --- the exit-97 guard's REJECTING half -------------------------------------------------------------
+#
+# `privsep_preamble`'s own `if [ "$(command -v sudo)" != "$PROBE_OUT/bin/sudo" ]; then ... exit 97; fi` is
+# what stands between this suite and calling the host's REAL `sudo` — Windows 11's `sudo.exe`, which
+# elevates through UAC — should the stub above it ever fail to land where `sudo` resolves. Every check in
+# this file exercises its ACCEPTING half: the stub always does resolve, so the guard never fires. Deleting
+# the `exit 97` line entirely would leave this suite exactly as green as it is now, because nothing runs
+# the guard with the stub actually absent from PATH.
+#
+# Derived from `privsep_preamble`, as the two refusal checks above derive theirs, rather than a second copy
+# of the stub — and safely, by construction rather than luck:
+#   (a) the stub is written to `$PROBE_OUT/sudo-unused` — outside `$PROBE_OUT/bin`, the only directory
+#       `run_probe`'s script puts on PATH — so `command -v sudo` cannot resolve to it. That is "the stub is
+#       absent from PATH" for the guard's purposes, without touching the host's real PATH or its sudo.
+#   (b) `PROBE_AGENT_USER` names a user that does not exist. This is what makes a mutant that deletes the
+#       guard's `exit 97` safe to run: if the guard were ever broken, execution would fall through into
+#       common.sh's own pre-flight, which checks `command -v sudo`, then `id "$PROBE_AGENT_USER"` — and
+#       refuses at the `id` step, status 1, BEFORE it ever reaches `sudo -n -u "$PROBE_AGENT_USER" true`. So
+#       even a broken guard, combined with (b), can never execute a `sudo` invocation that could elevate —
+#       real or stub.
+preamble_misplaced_stub=$(printf '%s\n' "$privsep_preamble" \
+    | sed -e 's|$PROBE_OUT/bin/sudo|$PROBE_OUT/sudo-unused|g' \
+          -e 's/^PROBE_AGENT_USER=.*/PROBE_AGENT_USER=probe-suite-no-such-user/')
+preamble=$preamble_misplaced_stub
+run_probe ''
+check "the guard refuses a run whose stub does not resolve as sudo" "$probe_status" "97"
+
 # The transcript states what the VENDOR documents. `sudo -n -u agent -- env HOME=... npm install ...`
 # states that plus a fact about this harness, and only the first is evidence about the agent.
 run_probe 'probe_record_agent boom sh -c "exit 3"
