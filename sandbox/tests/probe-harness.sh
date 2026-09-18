@@ -396,7 +396,7 @@ crossing_fns=$(awk '
     /^}$/ { fn = ""; next }
     /^[[:space:]]*#/ { next }
     /probe_as_agent|probe_record_agent/ { if (fn != "") print fn }
-' "$root/sandbox/probes/common.sh" | sort -u)
+' "$root/sandbox/probes/common.sh" | LC_ALL=C sort -u)
 unlisted=
 for fn in $crossing_fns; do
     printf '%s\n' "$split_block" | grep -qE "$fn([^A-Za-z0-9_]|\$)" || unlisted="$unlisted $fn"
@@ -427,7 +427,7 @@ crossing_counts=$(awk '
     /^}$/ { if (fn != "" && count > 0) print fn, count; fn = ""; next }
     /^[[:space:]]*#/ { next }
     /probe_as_agent|probe_record_agent/ { if (fn != "") count++ }
-' "$root/sandbox/probes/common.sh" | sort)
+' "$root/sandbox/probes/common.sh" | LC_ALL=C sort)
 crossing_counts_expected=$(cat <<'TABLE'
 probe_apply 4
 probe_help 1
