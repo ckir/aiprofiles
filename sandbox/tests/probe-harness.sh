@@ -289,10 +289,13 @@ check "a hanging step fails the probe" "$probe_status" "1"
 #   check could not fail for the reason its name gave, while in a container the same mutant writes harness
 #   internals into a COMMITTED transcript as though they were evidence about the agent.
 #
-# The stub is a `sudo` that strips `-n -u <user> --` and execs the rest, with PROBE_AGENT_USER pointed at
-# the user running the suite and PROBE_AGENT_PATH at the suite's own PATH. That is not the boundary — one
-# uid runs everything, as before — but it is the real `probe_as_agent` branch, with the real argument
-# vector in front of the real command, which is the whole of what the check is about.
+# The stub is a `sudo` that strips `-n -u <user> --`, then runs the rest under an EMPTY environment plus a
+# fixed secure PATH — modelling `env_reset` (G4, see THE ENVIRONMENT ACROSS THE SWITCH in common.sh) so a
+# variable `probe_as_agent`'s own `env ...` line forgets to pass does not come back through inheritance —
+# with PROBE_AGENT_USER pointed at the user running the suite and PROBE_AGENT_PATH at a value the suite's
+# own PATH cannot already contain. That is not the boundary — one uid runs everything, as before — but it
+# is the real `probe_as_agent` branch, with the real argument vector AND the real environment discipline in
+# front of the real command, which is the whole of what the check is about.
 
 run_probe 'probe_record_agent direct true'
 check "a step that would cross the boundary still runs when it is compiled out" "$probe_status" "0"
@@ -304,7 +307,9 @@ check "and is recorded exactly as a harness step is" \
 privsep_preamble=$(cat <<'PREAMBLE'
 cat > "$PROBE_OUT/bin/sudo" <<'STUB'
 #!/bin/sh
-# Enough of sudo for probe_as_agent: drop the flags it passes, run what follows at the SAME uid.
+# Enough of sudo for probe_as_agent: drop the flags it passes, then run what follows at the SAME uid but
+# under an EMPTY environment plus a fixed secure PATH — modelling `env_reset` + `secure_path`, so anything
+# not passed explicitly through the `env ...` that follows does not come back by inheritance.
 while [ $# -gt 0 ]; do
     case $1 in
         -n) shift ;;
@@ -313,12 +318,15 @@ while [ $# -gt 0 ]; do
         *) break ;;
     esac
 done
-exec "$@"
+exec env -i PATH=/usr/bin:/bin "$@"
 STUB
 chmod +x "$PROBE_OUT/bin/sudo"
 PROBE_AGENT_USER=$(id -un)
 PROBE_AGENT_HOME=$PROBE_OUT/agent-home
-PROBE_AGENT_PATH=$PATH
+# A marker segment the inherited PATH cannot already contain (a directory under this run's own $PROBE_OUT),
+# so a `PATH=...` dropped from probe_as_agent's `env` line is observable rather than silently identical to
+# the harness's own PATH.
+PROBE_AGENT_PATH=$PROBE_OUT/agent-path-marker:$PATH
 PREAMBLE
 )
 
@@ -337,6 +345,29 @@ check "and the command really is run through it" \
 check "the privilege switch is not written into the recorded command" \
     "$(cat "$PROBE_OUT_DIR/boom.cmd")" "sh -c exit 3"
 check "a failed agent-side step still fails the probe" "$probe_status" "1"
+
+# --- G4: the environment survives the switch only because probe_as_agent passes it explicitly ---------
+#
+# THE ARGUMENT VECTOR ALONE IS NOT THE CONTRACT. common.sh's "THE ENVIRONMENT ACROSS THE SWITCH (G4)"
+# states that `sudo` resets the environment, so HOME, PATH and NPM_CONFIG_PREFIX survive only because
+# `probe_as_agent` passes them explicitly through `env`. A stub that only stripped `sudo`'s flags and exec'd
+# the rest at the same uid would still show HOME/PATH/NPM_CONFIG_PREFIX correctly even if one of those three
+# were dropped from `probe_as_agent` — the SAME uid's own inherited copy would silently stand in. The stub
+# above now resets the environment first (an empty environment plus a fixed secure PATH), and
+# PROBE_AGENT_PATH is a value the inherited PATH cannot already contain, so a dropped assignment is
+# observable rather than indistinguishable from the harness's own environment.
+preamble=$privsep_preamble
+run_probe 'probe_record_agent g4home sh -c "printf %s \"\$HOME\""
+probe_record_agent g4path sh -c "printf %s \"\$PATH\""
+probe_record_agent g4npm sh -c "printf %s \"\$NPM_CONFIG_PREFIX\""
+printf %s "$PROBE_PRIVSEP" > "$PROBE_OUT/privsep"'
+check "the switch really is taken for the check below" "$(cat "$PROBE_OUT_DIR/privsep")" "1"
+check "HOME crosses the switch because probe_as_agent passes it explicitly" \
+    "$(cat "$PROBE_OUT_DIR/g4home.txt")" "$PROBE_OUT_DIR/agent-home"
+check "PATH crosses the switch because probe_as_agent passes it explicitly" \
+    "$(cat "$PROBE_OUT_DIR/g4path.txt")" "$PROBE_OUT_DIR/agent-path-marker:$PROBE_OUT_DIR/bin:$PATH"
+check "NPM_CONFIG_PREFIX crosses the switch because probe_as_agent passes it explicitly" \
+    "$(cat "$PROBE_OUT_DIR/g4npm.txt")" "$PROBE_OUT_DIR/agent-home/.local"
 
 # --- the privilege enumeration is complete -----------------------------------------------------------
 #
@@ -376,6 +407,43 @@ check "every function that crosses the privilege boundary is named in the enumer
 # probe_version, probe_help, probe_strings, probe_prepare_target, probe_restore_default, probe_apply.
 check "and the enumeration is checked against a non-empty list of them" \
     "$(printf '%s\n' "$crossing_fns" | grep -c .)" "11"
+
+# R6-1: NAME-membership is blind to a crossing added INSIDE a function that already crosses. Wrapping
+# `probe_as_agent` onto probe_strings' `find` — which common.sh calls "the single most attractive mistake
+# in this file", because it would run agent-chosen paths at the harness uid — leaves the collected NAME
+# unchanged, the membership check above satisfied, and the count-of-11 control untouched: everything above
+# stays green. So pin the number of crossing LINES per function, not just whether it crosses at all.
+#
+# Mirrors the same function-boundary and comment-skipping rules as the crossing_fns collector above (kept
+# as a second pass rather than folded into it, because this needs a running COUNT per function rather than
+# the set of functions with a nonzero one) — if those three patterns ever change, change them in both
+# places. Table measured at HEAD by counting non-comment lines matching `probe_as_agent|probe_record_agent`
+# inside each function body of common.sh.
+#
+# A LEGITIMATE change to a crossing must update this table deliberately, and that update IS the point: the
+# count forces a reviewer to look at the added or removed line, which name-membership cannot.
+crossing_counts=$(awk '
+    /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{$/ { fn = $1; sub(/\(\).*/, "", fn); count = 0; next }
+    /^}$/ { if (fn != "" && count > 0) print fn, count; fn = ""; next }
+    /^[[:space:]]*#/ { next }
+    /probe_as_agent|probe_record_agent/ { if (fn != "") count++ }
+' "$root/sandbox/probes/common.sh" | sort)
+crossing_counts_expected=$(cat <<'TABLE'
+probe_apply 4
+probe_help 1
+probe_make_target 1
+probe_npm_install 1
+probe_prepare_target 2
+probe_record 1
+probe_restore_default 4
+probe_script_install 1
+probe_strings 1
+probe_uv_install 1
+probe_version 1
+TABLE
+)
+check "each crossing function's line count is pinned against the table measured at HEAD, not just its name" \
+    "$crossing_counts" "$crossing_counts_expected"
 
 # The flag decides WHICH UID a command runs at, so a value left set after a call would silently put the
 # next step — a snapshot, a restore, anything the harness does for itself — on the wrong side.
