@@ -29,10 +29,54 @@ check() {
     fi
 }
 
-# Shell code spliced into the next run BEFORE common.sh is sourced, and cleared again after it. `stage`
-# below runs after the source and is enough for anything a STEP needs; this exists for the settings
-# common.sh reads AT SOURCE TIME — PROBE_PRIVSEP is decided there, once, from what is on the PATH.
-preamble=
+# Shell code spliced into the next run BEFORE common.sh is sourced, and reset to the stub below after it.
+# `stage` runs after the source and is enough for anything a STEP needs; this exists for what common.sh
+# reads AT SOURCE TIME — the agent's user, home and PATH, and the `sudo` its pre-flight calls.
+#
+# EVERY RUN GETS THE STUB, because common.sh has no degraded mode: a run whose `sudo` cannot reach the
+# agent user is refused at the pre-flight. The stub is a `sudo` that strips `-n -u <user> --`, then runs
+# the rest under an EMPTY environment plus a fixed secure PATH — modelling `env_reset` (G4, see THE
+# ENVIRONMENT ACROSS THE SWITCH in common.sh) so a variable `probe_as_agent`'s own `env ...` line forgets
+# to pass does not come back through inheritance — with PROBE_AGENT_USER pointed at the user running the
+# suite and PROBE_AGENT_PATH at a value the suite's own PATH cannot already contain. That is not the
+# boundary — one uid runs everything — but it is the real `probe_as_agent` argument vector AND the real
+# environment discipline in front of the real command.
+#
+# THE STUB MUST BE THE `sudo` THAT RUNS, and the preamble refuses to source common.sh otherwise. Windows 11
+# ships a real `sudo.exe` in System32, on a Git Bash PATH, with different flags and a UAC elevation; and
+# PROBE_AGENT_USER below names a user that DOES resolve. So if writing the stub ever failed, common.sh's
+# pre-flight would call that program for real. `command -v` only looks the name up; it runs nothing, so
+# the check itself cannot reach it. Exit 97 is this refusal's own status, distinct from every probe's.
+privsep_preamble=$(cat <<'PREAMBLE'
+cat > "$PROBE_OUT/bin/sudo" <<'STUB'
+#!/bin/sh
+# Enough of sudo for probe_as_agent: drop the flags it passes, then run what follows at the SAME uid but
+# under an EMPTY environment plus a fixed secure PATH — modelling `env_reset` + `secure_path`, so anything
+# not passed explicitly through the `env ...` that follows does not come back by inheritance.
+while [ $# -gt 0 ]; do
+    case $1 in
+        -n) shift ;;
+        -u) shift 2 ;;
+        --) shift; break ;;
+        *) break ;;
+    esac
+done
+exec env -i PATH=/usr/bin:/bin "$@"
+STUB
+chmod +x "$PROBE_OUT/bin/sudo"
+if [ "$(command -v sudo)" != "$PROBE_OUT/bin/sudo" ]; then
+    echo "suite: 'sudo' resolves to '$(command -v sudo)', not the stub; refusing to source common.sh" >&2
+    exit 97
+fi
+PROBE_AGENT_USER=$(id -un)
+PROBE_AGENT_HOME=$PROBE_OUT/agent-home
+# A marker segment the inherited PATH cannot already contain (a directory under this run's own $PROBE_OUT),
+# so a `PATH=...` dropped from probe_as_agent's `env` line is observable rather than silently identical to
+# the harness's own PATH.
+PROBE_AGENT_PATH=$PROBE_OUT/agent-path-marker:$PATH
+PREAMBLE
+)
+preamble=$privsep_preamble
 
 # A probe script, written to a temporary directory and run exactly as the container runs one: from the
 # repository root, because that is where `sandbox/run.sh`'s `copy=` assignment leaves a probe and it is
@@ -52,7 +96,7 @@ $preamble
 . sandbox/probes/common.sh
 $1
 SCRIPT
-    preamble=
+    preamble=$privsep_preamble
     mkdir -p "$out/bin"
     set +e
     sh "$script" > "$out/stdout" 2>&1
@@ -265,81 +309,66 @@ run_probe 'probe_record slow sleep 30'
 check "a hanging step is killed and recorded" "$(cat "$PROBE_OUT_DIR/slow.exit-code")" "124"
 check "a hanging step fails the probe" "$probe_status" "1"
 
-# --- the privilege boundary, COMPILED OUT ----------------------------------------------------------
+# --- the privilege boundary: refused when absent, and the switch's argument vector ------------------
 #
 # READ THIS BEFORE TRUSTING THE GREEN. The container runs the harness as `probe` and everything measured
 # as `agent`, and that split is the only thing that makes the bookkeeping above tamper-proof rather than
 # merely moved. THIS SUITE DOES NOT EXERCISE THE UID SEPARATION. It runs on the maintainer's host, where
-# there is no `agent` user and no `sudo`, so `common.sh` detects their absence and every crossing degrades
-# to a direct call — deliberately, because otherwise the suite could not run this file at all. Nothing
-# below asserts that `agent` cannot write `failures`; only a real container run does, and a guarantee no
-# test covers must not read as though one does.
+# there is no `agent` user, and every run goes through the stub `sudo` defined at the top of this file,
+# which runs the command at the SAME uid. Nothing below asserts that `agent` cannot write `failures`; only
+# a real container run does, and a guarantee no test covers must not read as though one does.
 #
-# EXACTLY WHAT IS COVERED, because the previous version of this paragraph over-promised and one of the
-# checks under it was measured vacuous. Two different things are tested here:
+# EXACTLY WHAT IS COVERED, because an earlier version of this paragraph over-promised and one of the
+# checks under it was measured vacuous:
 #
-#   with the switch COMPILED OUT (no stub, the host's own state)   that a crossing step still runs and is
-#   still recorded, and that the flag selecting the uid cannot leak into the next step.
+#   that a run with no usable boundary is REFUSED at common.sh's pre-flight — before the first crossing,
+#   so before any agent code runs — and recorded as a `privilege` failure. There used to be a degraded
+#   mode instead, in which every crossing silently became a direct call at the harness's uid and the run
+#   produced a transcript indistinguishable from a real one;
 #
-#   with the switch TAKEN (a stub `sudo` staged before common.sh is sourced, below)   that the plumbing
-#   `probe_as_agent` puts in front of a command does not reach the recorded command. This one used to be
-#   asserted with the switch compiled out, where `probe_as_agent` prepends nothing at all: a seat mutated
-#   `probe_record` to record what actually ran — `sudo -n -u agent -- env HOME=... sh -c exit 3` into the
-#   `.cmd` text — and all eight privilege checks here stayed GREEN. There was nothing to leak, so the
-#   check could not fail for the reason its name gave, while in a container the same mutant writes harness
-#   internals into a COMMITTED transcript as though they were evidence about the agent.
-#
-# The stub is a `sudo` that strips `-n -u <user> --`, then runs the rest under an EMPTY environment plus a
-# fixed secure PATH — modelling `env_reset` (G4, see THE ENVIRONMENT ACROSS THE SWITCH in common.sh) so a
-# variable `probe_as_agent`'s own `env ...` line forgets to pass does not come back through inheritance —
-# with PROBE_AGENT_USER pointed at the user running the suite and PROBE_AGENT_PATH at a value the suite's
-# own PATH cannot already contain. That is not the boundary — one uid runs everything, as before — but it
-# is the real `probe_as_agent` branch, with the real argument vector AND the real environment discipline in
-# front of the real command, which is the whole of what the check is about.
+#   that the plumbing `probe_as_agent` puts in front of a command does not reach the recorded command.
+#   This was once asserted with the switch compiled out, where `probe_as_agent` prepended nothing at all:
+#   a seat mutated `probe_record` to record what actually ran — `sudo -n -u agent -- env HOME=... sh -c
+#   exit 3` into the `.cmd` text — and every privilege check here stayed GREEN. There was nothing to leak,
+#   so the check could not fail for the reason its name gave, while in a container the same mutant writes
+#   harness internals into a COMMITTED transcript as though they were evidence about the agent.
 
-run_probe 'probe_record_agent direct true'
-check "a step that would cross the boundary still runs when it is compiled out" "$probe_status" "0"
-check "and is recorded exactly as a harness step is" \
-    "$(cat "$PROBE_OUT_DIR/direct.exit-code")" "0"
+# THE REFUSAL. A user that does not exist is the "no agent user in the image" case. The observable that
+# matters is not the exit status alone but that NOTHING CROSSED: `probe_make_target`, common.sh's first
+# crossing, runs immediately after the pre-flight, so a target directory that exists means the run got
+# past the gate. The step below it must never run either.
+preamble=$(printf '%s\n' "$privsep_preamble" | sed 's/^PROBE_AGENT_USER=.*/PROBE_AGENT_USER=probe-suite-no-such-user/')
+run_probe 'probe_record_agent never true'
+check "a run whose agent user does not exist is refused" "$probe_status" "1"
+check "and the refusal is recorded as a privilege failure" \
+    "$(cat "$PROBE_OUT_DIR/state/failures")" "privilege 1"
+check "and nothing crossed the boundary before the refusal" \
+    "$([ -e "$PROBE_OUT_DIR/target" ] && echo crossed || echo none)" "none"
+check "and no step after it ran" \
+    "$([ -e "$PROBE_OUT_DIR/never.exit-code" ] && echo ran || echo none)" "none"
 
-# Spliced in before `. sandbox/probes/common.sh`, because PROBE_PRIVSEP is decided once at source time
-# from `command -v sudo` and `id "$PROBE_AGENT_USER"`.
-privsep_preamble=$(cat <<'PREAMBLE'
-cat > "$PROBE_OUT/bin/sudo" <<'STUB'
-#!/bin/sh
-# Enough of sudo for probe_as_agent: drop the flags it passes, then run what follows at the SAME uid but
-# under an EMPTY environment plus a fixed secure PATH — modelling `env_reset` + `secure_path`, so anything
-# not passed explicitly through the `env ...` that follows does not come back by inheritance.
-while [ $# -gt 0 ]; do
-    case $1 in
-        -n) shift ;;
-        -u) shift 2 ;;
-        --) shift; break ;;
-        *) break ;;
-    esac
-done
-exec env -i PATH=/usr/bin:/bin "$@"
-STUB
-chmod +x "$PROBE_OUT/bin/sudo"
-PROBE_AGENT_USER=$(id -un)
-PROBE_AGENT_HOME=$PROBE_OUT/agent-home
-# A marker segment the inherited PATH cannot already contain (a directory under this run's own $PROBE_OUT),
-# so a `PATH=...` dropped from probe_as_agent's `env` line is observable rather than silently identical to
-# the harness's own PATH.
-PROBE_AGENT_PATH=$PROBE_OUT/agent-path-marker:$PATH
-PREAMBLE
-)
+# The "sudo present but the rule does not reach the agent" case: a stub that refuses everything.
+preamble=$(printf '%s\n' "$privsep_preamble" | sed 's/^exec env -i PATH=\/usr\/bin:\/bin "\$@"$/exit 1/')
+run_probe 'probe_record_agent never true'
+check "a run whose sudo cannot reach the agent user is refused" "$probe_status" "1"
+check "and that refusal is recorded as a privilege failure too" \
+    "$(cat "$PROBE_OUT_DIR/state/failures")" "privilege 1"
+check "and nothing crossed before that refusal either" \
+    "$([ -e "$PROBE_OUT_DIR/target" ] && echo crossed || echo none)" "none"
+# "No sudo on the PATH at all" is the third branch and is not staged here, deliberately: both hosts this
+# suite runs on carry a real `sudo` on their standard PATH (Windows System32; `/usr/bin` on the Linux
+# runner), so removing it means hiding the directories the rest of common.sh needs. It is one `command -v`
+# test in front of the same refusal the two cases above reach.
 
 # The transcript states what the VENDOR documents. `sudo -n -u agent -- env HOME=... npm install ...`
 # states that plus a fact about this harness, and only the first is evidence about the agent.
-preamble=$privsep_preamble
 run_probe 'probe_record_agent boom sh -c "exit 3"
 probe_record_agent crossed sh -c "printf %s \"\$HOME\""
-printf %s "$PROBE_PRIVSEP" > "$PROBE_OUT/privsep"'
-# THE CONTROL. Without these two, the check below is the vacuous one again and nothing would say so: a
-# stub that failed to be found, or a PROBE_AGENT_USER that does not resolve, puts PROBE_PRIVSEP back to
-# empty and every crossing back to a direct call, silently.
-check "the switch really is taken for the check below" "$(cat "$PROBE_OUT_DIR/privsep")" "1"
+command -v sudo > "$PROBE_OUT/sudo-used"'
+# THE CONTROL. Without these two the check below is the vacuous one again: a switch that did not go
+# through the stub would leave the recorded command clean for the wrong reason.
+check "the stub is the sudo the switch goes through" \
+    "$(cat "$PROBE_OUT_DIR/sudo-used")" "$PROBE_OUT_DIR/bin/sudo"
 check "and the command really is run through it" \
     "$(cat "$PROBE_OUT_DIR/crossed.txt")" "$PROBE_OUT_DIR/agent-home"
 check "the privilege switch is not written into the recorded command" \
@@ -360,8 +389,9 @@ preamble=$privsep_preamble
 run_probe 'probe_record_agent g4home sh -c "printf %s \"\$HOME\""
 probe_record_agent g4path sh -c "printf %s \"\$PATH\""
 probe_record_agent g4npm sh -c "printf %s \"\$NPM_CONFIG_PREFIX\""
-printf %s "$PROBE_PRIVSEP" > "$PROBE_OUT/privsep"'
-check "the switch really is taken for the check below" "$(cat "$PROBE_OUT_DIR/privsep")" "1"
+command -v sudo > "$PROBE_OUT/sudo-used"'
+check "the stub is the sudo the switch goes through, for the checks below" \
+    "$(cat "$PROBE_OUT_DIR/sudo-used")" "$PROBE_OUT_DIR/bin/sudo"
 check "HOME crosses the switch because probe_as_agent passes it explicitly" \
     "$(cat "$PROBE_OUT_DIR/g4home.txt")" "$PROBE_OUT_DIR/agent-home"
 check "PATH crosses the switch because probe_as_agent passes it explicitly" \
@@ -452,29 +482,26 @@ printf "[%s]\n" "$PROBE_AS_AGENT" > "$PROBE_OUT/flag"'
 check "the agent flag does not leak past the call that set it" \
     "$(cat "$PROBE_OUT_DIR/flag")" "[]"
 
-# --- the agent's home, in both worlds ----------------------------------------------------------------
+# --- the agent's home ---------------------------------------------------------------------------
 #
 # The twelve probe scripts name the agent's default locations through PROBE_AGENT_HOME, because under two
-# users `$HOME` is the HARNESS's home and not where the agent writes.
+# users `$HOME` is the HARNESS's home and not where the agent writes. Its default is `/home/agent`, and
+# there is no longer a second default: it used to fall back to the harness's own home whenever the
+# boundary was absent, and that branch was the site of the worst defect this harness has had — every probe
+# watching the harness's home while the agent wrote its own, producing the empty delta `probe_delta` calls
+# a launch that changed nothing, unambiguously.
 #
-# THE DEGRADED CASE IS THE ONE THAT BITES. With the boundary compiled out there is no `agent` user and no
-# `/home/agent`, and `probe_as_agent` passes no `HOME=` — the measured command runs at the harness's uid
-# with the harness's home. A PROBE_AGENT_HOME fixed at `/home/agent` would then point every probe at a
-# directory that cannot exist, and an empty delta is what `probe_delta` calls "changed nothing,
-# unambiguously". So the default has to track PROBE_PRIVSEP, and both branches are asserted here: the
-# suite itself runs in the degraded one.
-run_probe 'printf "%s\n" "$PROBE_AGENT_HOME" > "$PROBE_OUT/agent-home"'
-check "with the boundary compiled out the agent's home is the home the agent will actually have" \
-    "$(cat "$PROBE_OUT_DIR/agent-home")" "$HOME"
-# The same run with the switch really taken, and WITHOUT the preamble's explicit override — stripped from
-# the shared preamble rather than written out again, so the two cannot drift apart. Without that strip the
-# check below would only re-read a value the test itself had set.
+# Asserted WITHOUT the preamble's explicit override — stripped from the shared preamble rather than written
+# out again, so the two cannot drift apart. Without that strip the check would only re-read a value the
+# test itself had set.
 preamble=$(printf '%s\n' "$privsep_preamble" | grep -v '^PROBE_AGENT_HOME=')
-run_probe 'printf "%s\n" "$PROBE_AGENT_HOME" > "$PROBE_OUT/agent-home"
-printf %s "$PROBE_PRIVSEP" > "$PROBE_OUT/privsep"'
-check "the switch really is taken for the check below" "$(cat "$PROBE_OUT_DIR/privsep")" "1"
-check "with the boundary in place the agent's home is the second user's, not the harness's" \
+run_probe 'printf "%s\n" "$PROBE_AGENT_HOME" > "$PROBE_OUT/agent-home"'
+check "the agent's home defaults to the second user's, not the harness's" \
     "$(cat "$PROBE_OUT_DIR/agent-home")" "/home/agent"
+# And the default does not quietly become the harness's home when this suite's own HOME is in play — the
+# old fallback's exact shape. Compared as inequality so it fails only for the defect it names.
+check "and that default is not the harness's own home" \
+    "$([ "$(cat "$PROBE_OUT_DIR/agent-home")" = "$HOME" ] && echo harness-home || echo distinct)" "distinct"
 
 # --- probe_behaviour ------------------------------------------------------------------------------
 

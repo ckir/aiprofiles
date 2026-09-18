@@ -171,44 +171,38 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 # than exporting whatever its own environment happens to hold.
 
 PROBE_AGENT_USER=${PROBE_AGENT_USER:-agent}
-# Whether the boundary is available at all. It is NOT available when this file is sourced outside the
-# container — `sandbox/tests/probe-harness.sh` runs on the maintainer's host, where neither `sudo` nor
-# the `agent` user exists — and there the indirection degrades to a direct call. Say the consequence
-# plainly rather than let the green suite imply otherwise: WITH THE BOUNDARY COMPILED OUT, NO TEST IN
-# THIS REPOSITORY EXERCISES IT. The suite measures the harness; only a real container run measures the
-# boundary. A guarantee no test covers must not read as though one does.
+# THERE IS NO DEGRADED MODE. Every crossing goes through `sudo`, always, and a run in which the switch
+# cannot be made is refused by the pre-flight below — before the first crossing, so before any agent code
+# has run — and recorded as a `privilege` failure.
 #
-# Decided HERE, above the agent's home, because that home's default depends on it — see below.
-PROBE_PRIVSEP=
-if command -v sudo >/dev/null 2>&1 && id "$PROBE_AGENT_USER" >/dev/null 2>&1; then
-    PROBE_PRIVSEP=1
-fi
+# There used to be one: with no `sudo` or no agent user, every crossing silently became a direct call at
+# the harness's own uid. That was how `sandbox/tests/probe-harness.sh` ran this file on a developer's
+# host, and it was the wrong trade. A run in that state has the measured party running as the harness,
+# owning $PROBE_OUT and $PROBE_STATE, able to write anything a transcript is assembled from — worthless
+# evidence that nonetheless produced a transcript indistinguishable from a real one. Recording the fact
+# in the transcript does not rescue it: the record would be written into a directory the agent could
+# then overwrite, in exactly the state the record exists to reveal. So the state is made unreachable
+# instead, and the suite supplies a stub `sudo` of its own for every run.
+#
+# "The host has no sudo" was never a safe assumption to build on either: Windows 11 ships a `sudo.exe` in
+# System32, which is on a Git Bash PATH, is a different program with different flags, and elevates
+# through UAC. The old detection took the switch whenever BOTH a `sudo` and the named user resolved, so
+# a suite run naming a real user with that `sudo.exe` first on the PATH would have invoked it. The suite
+# now refuses to run unless `sudo` resolves to its own stub.
 
 # The agent's home. Under two users `$HOME` is ambiguous — it is the HARNESS's home in every probe
 # script, which is not where the agent writes — so the twelve probe scripts name the agent's default
 # locations through this. Exported because the agent's own launch inherits the environment.
 #
-# THE DEFAULT TRACKS THE BOUNDARY, and it has to. With the boundary compiled out there is no second user
-# and no `/home/agent`: `probe_as_agent` degrades to a direct call, which passes no `HOME=`, so the
-# measured command runs at the harness's uid with the harness's home. A fixed `/home/agent` there would
-# point every probe at a directory that cannot exist — an empty baseline, an empty after-snapshot, an
-# empty delta — and `probe_delta` documents an empty delta as the launch having changed nothing,
-# unambiguously. That reads as clean isolation for an agent that may be leaking, which is the exact
-# failure this variable exists to prevent; it must not come back whenever the boundary is absent.
+# ONE DEFAULT, because there is one world. This used to fall back to the harness's own home whenever the
+# boundary was absent, since a degraded launch passed no `HOME=` and so wrote under the harness's home.
+# That branch was the site of the worst defect this harness has had — every probe watching the harness's
+# home while the agent wrote its own, producing the empty delta `probe_delta` calls a launch that changed
+# nothing, unambiguously — and with no degraded mode it has nothing left to serve.
 #
-# An explicit value still wins, in both cases: `sandbox/tests/probe-harness.sh` points it at a scratch
-# directory so a check can assert against a path no host actually has.
-if [ -n "${PROBE_AGENT_HOME:-}" ]; then
-    :
-elif [ -n "$PROBE_PRIVSEP" ]; then
-    PROBE_AGENT_HOME=/home/agent
-elif [ -n "${HOME:-}" ]; then
-    PROBE_AGENT_HOME=$HOME
-else
-    echo "probe: the privilege boundary is compiled out and HOME is unset, so there is no agent home" >&2
-    echo "probe: to watch; set PROBE_AGENT_HOME explicitly rather than measure a directory at random" >&2
-    exit 2
-fi
+# An explicit value still wins: `sandbox/tests/probe-harness.sh` points it at a scratch directory so a
+# check can assert against a path no host actually has.
+PROBE_AGENT_HOME=${PROBE_AGENT_HOME:-/home/agent}
 export PROBE_AGENT_HOME
 # The PATH the agent runs under: its own bin directories first, then the system ones. The harness's PATH
 # does NOT contain these (`Containerfile`), so a launch that forgot to cross the boundary fails with 127
@@ -247,8 +241,6 @@ PROBE_SOFT=
 # NOT read from the environment, for PROBE_SOFT's reason and one more: this one decides WHICH UID a
 # command runs at, so a value an install script could preset would be the boundary itself.
 PROBE_AS_AGENT=
-# PROBE_PRIVSEP — whether the boundary is available at all — used to be decided here. It is decided
-# above PROBE_AGENT_HOME instead, because that home's default now depends on it.
 
 mkdir -p "$PROBE_OUT"
 # 700 for $PROBE_STATE's reason and not a weaker one: every artefact here is written by a redirect the
@@ -277,26 +269,21 @@ mkdir -p "$PROBE_STATE/pristine"
 
 # probe_as_agent <command...>: run one command as the measured party.
 #
-# THE INDIRECTION DEGRADES TO A DIRECT CALL when the boundary is not available, which is the only way
-# `sandbox/tests/probe-harness.sh` can run this file at all: that suite runs on the maintainer's host,
-# where there is no `agent` user and no `sudo`. The degradation is deliberate and it has a price that is
-# stated here so no reader has to infer it — the suite exercises the harness WITH THE BOUNDARY COMPILED
-# OUT, so no test in this repository covers the boundary. Only a real container run does.
+# ALWAYS through `sudo`; there is no branch that runs the command directly (see "THERE IS NO DEGRADED
+# MODE" above). `sandbox/tests/probe-harness.sh` reaches this line through a stub `sudo` that runs the
+# command at the suite's own uid, so the suite exercises this exact argument vector but NOT the uid
+# separation it exists for. Only a real container run measures that.
 #
 # The environment is passed explicitly because `sudo`'s `env_reset` strips it (G4, argued at THE
 # PRIVILEGE SPLIT above). `env` itself is found through `secure_path`; everything after it is found
 # through the PATH `env` has just set. `-n` because the rule is NOPASSWD and a probe must never block on
 # a prompt: a misconfiguration has to fail, not hang until the step's timeout.
 probe_as_agent() {
-    if [ -n "$PROBE_PRIVSEP" ]; then
-        sudo -n -u "$PROBE_AGENT_USER" -- env \
-            "HOME=$PROBE_AGENT_HOME" \
-            "PATH=$PROBE_AGENT_PATH" \
-            "NPM_CONFIG_PREFIX=$PROBE_AGENT_HOME/.local" \
-            "$@"
-    else
+    sudo -n -u "$PROBE_AGENT_USER" -- env \
+        "HOME=$PROBE_AGENT_HOME" \
+        "PATH=$PROBE_AGENT_PATH" \
+        "NPM_CONFIG_PREFIX=$PROBE_AGENT_HOME/.local" \
         "$@"
-    fi
 }
 
 # probe_make_target: an empty profile directory, owned by the agent and writable by the harness.
@@ -305,9 +292,10 @@ probe_as_agent() {
 # party that has to write into it — could not. The harness still has to put the CANDIDATE file in it, so
 # the directory needs a group both users are in and a group-write bit. The group comes from the setgid
 # /home/agent (`Containerfile`), the same way everything else under it gets one, and the write bit from
-# `umask` at creation. NOT a `chmod` afterwards: chmod on a directory you do not own is refused, and with
-# the boundary compiled out that refusal aborted the probe at its first line with nothing said — measured
-# in a container by pointing PROBE_AGENT_USER at a user that does not exist.
+# `umask` at creation. NOT a `chmod` afterwards: chmod on a directory you do not own is refused, and that
+# refusal once aborted the probe at its first line with nothing said — measured in a container by pointing
+# PROBE_AGENT_USER at a user that does not exist, back when that silently degraded the boundary instead of
+# stopping the run at the pre-flight.
 probe_make_target() {
     # shellcheck disable=SC2016 # `$1` is the INNER shell's argument; `umask` must apply to ITS mkdir.
     probe_as_agent sh -c 'umask 0002 && mkdir -p "$1"' probe_make_target "$PROBE_TARGET"
@@ -418,10 +406,21 @@ trap probe_finish EXIT
 # BEFORE `trap probe_finish EXIT` was installed — exit 1, an empty `steps`, an empty `failures` and not
 # one word about why. Nothing may cross the boundary above this line.
 #
-# Not reachable when the boundary is compiled out: there $PROBE_PRIVSEP is empty and nothing is claimed
-# about a privilege switch that is not being made.
-if [ -n "$PROBE_PRIVSEP" ] && ! sudo -n -u "$PROBE_AGENT_USER" true >/dev/null 2>&1; then
-    echo "probe: the '$PROBE_AGENT_USER' user exists but 'sudo -n -u $PROBE_AGENT_USER true' failed;" >&2
+# THE ONLY GATE, and it is unconditional: this is where a run with no usable boundary stops. Three causes,
+# each named separately because each points at a different repair — no `sudo` in the image, no agent user
+# in the image, or both present but the sudoers rule not letting one reach the other. All three are
+# recorded as a `privilege` failure, so the transcript states the cause instead of carrying a run that
+# never measured anything.
+probe_privilege_refusal=
+if ! command -v sudo >/dev/null 2>&1; then
+    probe_privilege_refusal="there is no 'sudo' on the PATH"
+elif ! id "$PROBE_AGENT_USER" >/dev/null 2>&1; then
+    probe_privilege_refusal="there is no '$PROBE_AGENT_USER' user"
+elif ! sudo -n -u "$PROBE_AGENT_USER" true >/dev/null 2>&1; then
+    probe_privilege_refusal="'sudo -n -u $PROBE_AGENT_USER true' failed"
+fi
+if [ -n "$probe_privilege_refusal" ]; then
+    echo "probe: $probe_privilege_refusal;" >&2
     echo "probe: the privilege boundary is not usable, so nothing measured here would be trustworthy" >&2
     probe_fail privilege 1
     exit 1
