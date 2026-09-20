@@ -90,12 +90,24 @@ if [ "$engine" = podman ]; then
     # The host user becomes the container's `probe` user, so `shell`'s /out mount is writable and its
     # files stay yours.
     #
-    # It maps ONE id, and the container has two unprivileged users: `probe` the harness and `agent`
-    # everything measured (`sandbox/Containerfile`). Anything `agent` wrote to a bind mount would land
-    # on the host as an UNMAPPED id. Nothing does, and nothing can: `probe` and `test` mount no results
-    # directory at all, and everything a probe produces is written container-internally and lifted out
-    # with `eng cp` afterwards. Widening the mapping was the alternative and was rejected — an explicit
-    # --uidmap could carry a second id, but keeping the second uid off the mount needs no mapping.
+    # It maps TWO ids, and not to what their numbers might suggest. The container has two unprivileged
+    # users: `probe` the harness and `agent` everything measured (`sandbox/Containerfile`). `uid=1000` maps
+    # the host user to `probe`, but `gid=1000` does NOT map to `probe`'s own group — that one is gid 1001 —
+    # it maps to `probe-share`, the supplementary group both `probe` and `agent` belong to. Anything
+    # `agent` wrote to a bind mount still lands on the host as UNMAPPED, in both ids: its uid is 1001, and
+    # its files take its own primary group, 1002, because no bind mount carries the setgid bit that gives
+    # everything under /home/agent the shared group. Nothing does write one, and nothing can: `probe` and
+    # `test` mount no results directory at all, `/src` is mounted `:ro` in every mode, and everything a
+    # probe produces is written container-internally and lifted out with `eng cp` afterwards. Widening the
+    # mapping was the alternative and was rejected — an explicit --uidmap could carry a second id, but
+    # keeping the second uid off the mount needs no mapping.
+    #
+    # WHICH HALF IS MEASURED. The ids are: running this Containerfile's own `groupadd`/`useradd` lines on
+    # its pinned base image gives `uid=1000(probe) gid=1001(probe) groups=1001(probe),1000(probe-share)`
+    # and `uid=1001(agent) gid=1002(agent) groups=1002(agent),1000(probe-share)` — `groupadd probe-share`
+    # runs first, so it takes 1000 and `probe`'s own group is pushed to 1001. What is NOT measured is what
+    # podman then does with that mapping: podman is not installed on the maintainer's host, so the flag
+    # below has never been executed there.
     userns=--userns=keep-id:uid=1000,gid=1000
     # Remote Podman (a Podman machine, as on macOS) has no --root/--runroot; it keeps its own store.
     if ! remote=$(podman info --format '{{.Host.ServiceIsRemote}}' 2>&1); then

@@ -192,7 +192,9 @@ PROBE_AGENT_USER=${PROBE_AGENT_USER:-agent}
 
 # The agent's home. Under two users `$HOME` is ambiguous — it is the HARNESS's home in every probe
 # script, which is not where the agent writes — so the twelve probe scripts name the agent's default
-# locations through this. Exported because the agent's own launch inherits the environment.
+# locations through this. Exported so it reaches harness-side children, not because the agent's own launch
+# inherits it: every crossing goes through `sudo`'s `env_reset` (or the stub's `env -i`), which drops
+# everything not passed explicitly, so the agent gets its home instead from `probe_as_agent`'s own `HOME=`.
 #
 # ONE DEFAULT, because there is one world. This used to fall back to the harness's own home whenever the
 # boundary was absent, since a degraded launch passed no `HOME=` and so wrote under the harness's home.

@@ -21,10 +21,14 @@
 #
 # `$XDG_CONFIG_HOME` is RESOLVED here rather than named. Nothing in this repository sets it, and
 # `probe_as_agent` passes the agent exactly HOME, PATH and NPM_CONFIG_PREFIX through `env` -- `sudo`'s
-# `env_reset` drops the rest -- so it is unset for the measured party and the XDG spec's own default, a
-# `.config` directory under the agent's home, applies. Writing `$XDG_CONFIG_HOME/cursor` literally would
-# expand to `/cursor` and watch a path that cannot exist, which is the empty-delta failure above wearing
-# the costume of a fix.
+# `env_reset` drops the rest -- so it is unset for the measured party. Whether cursor-agent then falls back
+# to a `.config/cursor` directory under the agent's home or goes straight to `.cursor` when the variable is
+# unset is NOT settled from this repository -- the vendor docs can be read either way, and nobody has
+# verified it against the binary. That is why both are watched: the delta records whichever one it does,
+# regardless of which reading is right. The `.config/cursor` path is chosen here because it is the XDG
+# spec's own default for an unset variable, not because cursor-agent's behaviour with the variable unset
+# has been confirmed. Writing `$XDG_CONFIG_HOME/cursor` literally would expand to `/cursor` and watch a
+# path that cannot exist, which is the empty-delta failure above wearing the costume of a fix.
 #
 # That default is spelled out in words rather than as the shell variable it comes from, because the
 # harness-home check scans these files WHOLE -- comments included -- and an unqualified reference to the
