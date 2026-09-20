@@ -452,30 +452,42 @@ crossing_fns=$(awk '
     /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{$/ { fn = $1; sub(/\(\).*/, "", fn); next }
     /^}$/ { fn = ""; next }
     /^[[:space:]]*#/ { next }
-    /probe_as_agent|probe_record_agent/ { if (fn != "") print fn }
+    /probe_as_agent|probe_record_agent|(^|[;&|(!]|then|else|do|exec)[[:space:]]*sudo([[:space:]]|$)/ { if (fn != "") print fn }
 ' "$root/sandbox/probes/common.sh" | LC_ALL=C sort -u)
 unlisted=
 for fn in $crossing_fns; do
     printf '%s\n' "$split_block" | grep -qE "$fn([^A-Za-z0-9_]|\$)" || unlisted="$unlisted $fn"
 done
 check "every function that crosses the privilege boundary is named in the enumeration" "$unlisted" ""
-# The control: a collector that found nothing would pass the check above without a word. The eleven are
+# The control: a collector that found nothing would pass the check above without a word. The twelve are
 # probe_make_target, probe_record, probe_npm_install, probe_uv_install, probe_script_install,
-# probe_version, probe_help, probe_strings, probe_prepare_target, probe_restore_default, probe_apply.
+# probe_version, probe_help, probe_strings, probe_prepare_target, probe_restore_default, probe_apply,
+# probe_as_agent — the last one not because it CALLS probe_as_agent/probe_record_agent, but because its
+# own body is the `sudo -n -u "$PROBE_AGENT_USER" -- env` invocation the other eleven wrap.
 check "and the enumeration is checked against a non-empty list of them" \
-    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "11"
+    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "12"
 
 # R6-1: NAME-membership is blind to a crossing added INSIDE a function that already crosses. Wrapping
 # `probe_as_agent` onto probe_strings' `find` — which common.sh calls "the single most attractive mistake
 # in this file", because it would run agent-chosen paths at the harness uid — leaves the collected NAME
-# unchanged, the membership check above satisfied, and the count-of-11 control untouched: everything above
+# unchanged, the membership check above satisfied, and the count-of-12 control untouched: everything above
 # stays green. So pin the number of crossing LINES per function, not just whether it crosses at all.
+#
+# F2: the same blindness recurs one level down. Both collectors used to match only `probe_as_agent` and
+# `probe_record_agent` by NAME, so a crossing spelled as a bare `sudo` — prefixing probe_strings' `find`
+# with `sudo -n -u "$PROBE_AGENT_USER" --`, the mistake common.sh itself calls the single most attractive
+# one in the file — left every check above green. The pattern below now counts a line that INVOKES sudo
+# (at the start of a line, or after `;`, `&`, `|`, `(`, `!`, `then`, `else`, `do` or `exec`, followed by
+# whitespace or end of line), not a line that merely mentions the word: `command -v sudo` and the two
+# messages naming it in the pre-flight below do not match. It also counts top-level lines — outside every
+# function — under the pseudo-name `<top>`, because a crossing planted above the first function common.sh
+# defines was invisible to a collector that only ever tracked `fn`.
 #
 # Mirrors the same function-boundary and comment-skipping rules as the crossing_fns collector above (kept
 # as a second pass rather than folded into it, because this needs a running COUNT per function rather than
 # the set of functions with a nonzero one) — if those three patterns ever change, change them in both
-# places. Table measured at HEAD by counting non-comment lines matching `probe_as_agent|probe_record_agent`
-# inside each function body of common.sh.
+# places. Table measured at HEAD by counting non-comment lines matching this pattern inside each function
+# body of common.sh, plus the top-level lines outside every function.
 #
 # A LEGITIMATE change to a crossing must update this table deliberately, and that update IS the point: the
 # count forces a reviewer to look at the added or removed line, which name-membership cannot.
@@ -483,10 +495,15 @@ crossing_counts=$(awk '
     /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{$/ { fn = $1; sub(/\(\).*/, "", fn); count = 0; next }
     /^}$/ { if (fn != "" && count > 0) print fn, count; fn = ""; next }
     /^[[:space:]]*#/ { next }
-    /probe_as_agent|probe_record_agent/ { if (fn != "") count++ }
+    /probe_as_agent|probe_record_agent|(^|[;&|(!]|then|else|do|exec)[[:space:]]*sudo([[:space:]]|$)/ {
+        if (fn != "") count++; else top++
+    }
+    END { if (top > 0) print "<top>", top }
 ' "$root/sandbox/probes/common.sh" | LC_ALL=C sort)
 crossing_counts_expected=$(cat <<'TABLE'
+<top> 1
 probe_apply 4
+probe_as_agent 1
 probe_help 1
 probe_make_target 1
 probe_npm_install 1
