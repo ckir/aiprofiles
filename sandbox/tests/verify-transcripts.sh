@@ -214,6 +214,22 @@ unknown_fixture
 verify docs/evidence/example-unknown.md
 check "an outcome-2 transcript from a job that SUCCEEDED is refused" "$status" "1"
 
+# A run the HARNESS refused looks exactly like outcome 2 from here: no version, so `<id>-unknown.md`, and a
+# job that failed. It is not evidence about the agent at all, and `sandbox/transcript.sh` writes no `.md`
+# for it -- but a maintainer can still assemble one by hand from the raw results and commit that. This is
+# the check that this suite, and not a new rule parsing `exit-codes:`, is what refuses it: the run's
+# artifact holds `example-harness-refused.txt` instead, so there is no `.md` to compare against.
+#
+# It is pinned here because NOTHING ELSE enforces it. The decision not to teach `verify-transcripts.sh`
+# about the `harness-` prefix rests entirely on this existing check doing the work.
+unknown_fixture
+printf '{"jobs":[{"name":"Probe example","conclusion":"failure"}]}\n' > "$gh_dir/jobs.json"
+artifact_name=example-harness-refused.txt
+verify docs/evidence/example-unknown.md
+check "a hand-assembled transcript for a harness-refused run is refused" "$status" "1"
+check "and the reason is that the run's artifact holds no transcript" \
+    "$(printf '%s' "$out" | grep -c 'holds no example-unknown.md')" "1"
+
 # Outcomes 3 and 4: the agent installed, the version IS known, and a step was refused, so the probe
 # exited non-zero and the job concluded failure. Under the version rule this transcript could not exist —
 # a known version demanded a green job — and it is the shape aider, amp and continue produce every run.

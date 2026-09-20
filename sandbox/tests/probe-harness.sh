@@ -341,7 +341,7 @@ preamble=$(printf '%s\n' "$privsep_preamble" | sed 's/^PROBE_AGENT_USER=.*/PROBE
 run_probe 'probe_record_agent never true'
 check "a run whose agent user does not exist is refused" "$probe_status" "1"
 check "and the refusal is recorded as a privilege failure" \
-    "$(cat "$PROBE_OUT_DIR/state/failures")" "privilege 1"
+    "$(cat "$PROBE_OUT_DIR/state/failures")" "harness-privilege 1"
 check "and nothing crossed the boundary before the refusal" \
     "$([ -e "$PROBE_OUT_DIR/target" ] && echo crossed || echo none)" "none"
 check "and no step after it ran" \
@@ -352,7 +352,7 @@ preamble=$(printf '%s\n' "$privsep_preamble" | sed 's/^exec env -i PATH=\/usr\/b
 run_probe 'probe_record_agent never true'
 check "a run whose sudo cannot reach the agent user is refused" "$probe_status" "1"
 check "and that refusal is recorded as a privilege failure too" \
-    "$(cat "$PROBE_OUT_DIR/state/failures")" "privilege 1"
+    "$(cat "$PROBE_OUT_DIR/state/failures")" "harness-privilege 1"
 check "and nothing crossed before that refusal either" \
     "$([ -e "$PROBE_OUT_DIR/target" ] && echo crossed || echo none)" "none"
 # "No sudo on the PATH at all" is the third branch and is not staged here, deliberately: both hosts this
@@ -525,6 +525,37 @@ run_probe 'probe_record_agent one true
 printf "[%s]\n" "$PROBE_AS_AGENT" > "$PROBE_OUT/flag"'
 check "the agent flag does not leak past the call that set it" \
     "$(cat "$PROBE_OUT_DIR/flag")" "[]"
+
+# --- which failures the harness claims as its OWN ---------------------------------------------------
+#
+# The `harness-` prefix is what `sandbox/transcript.sh` keys on to refuse assembling a committable
+# transcript, so the SET of names carrying it is a contract, not a naming style. A new harness-side
+# failure added without the prefix silently reopens the defect: the run gets a transcript named
+# `<id>-unknown.md`, indistinguishable from a genuine "this agent would not install" measurement, and
+# §5.3's verifier accepts it against a failed job.
+#
+# Pinned as a whole-table string, like the crossing counts above, so BOTH directions fail loudly: a new
+# unprefixed harness failure, and a prefix put on a failure that is really the agent's. The three that are
+# deliberately NOT prefixed are in this table too, which is the half a "does every harness failure have
+# the prefix?" check could not express -- `pristine-N` and `restore-N` are the harness failing to archive
+# or restore, but the vendor's install code runs first and can cause exactly that, and `strings 127` is
+# the agent's binary missing from its own PATH.
+probe_fail_names=$(grep '^[[:space:]]*probe_fail ' "$root/sandbox/probes/common.sh" \
+    | sed 's/^[[:space:]]*probe_fail //' | awk '{print $1}' | LC_ALL=C sort -u)
+probe_fail_names_expected=$(cat <<'NAMES'
+"harness-mechanism-$probe_name"
+"pristine-$probe_slot"
+"restore-$probe_rn"
+harness-privilege
+harness-version-refused
+strings
+NAMES
+)
+check "every failure the harness records is classified, and the classification has not drifted" \
+    "$probe_fail_names" "$probe_fail_names_expected"
+# The control: a collector that found nothing would satisfy the check above without a word.
+check "and that table was checked against a non-empty collection" \
+    "$(printf '%s\n' "$probe_fail_names" | grep -c .)" "6"
 
 # --- the agent's home ---------------------------------------------------------------------------
 #
@@ -816,8 +847,13 @@ check "scanning a missing executable records an exit code" \
 run_probe 'PROBE_VERSION=9.9.9
 probe_script_install https://example.invalid/install.sh'
 check "an installer that cannot pin refuses a version" "$probe_status" "2"
-check "the refusal is recorded as a failed install" \
-    "$(cat "$PROBE_OUT_DIR/install.exit-code")" "2"
+check "the refusal is recorded under the harness's own name, not the agent's install" \
+    "$(cat "$PROBE_OUT_DIR/harness-version-refused.exit-code")" "2"
+# The other half, and the reason the name changed: this refusal is the OPERATOR asking for something the
+# installer cannot do, so it must not land in the row a genuine vendor install failure writes. Sharing
+# `install` made the two indistinguishable in a transcript's `exit-codes:` block.
+check "and nothing is recorded as an install failure" \
+    "$([ -e "$PROBE_OUT_DIR/install.exit-code" ] && echo recorded || echo none)" "none"
 
 # --- the scan guard itself -------------------------------------------------------------------------
 #

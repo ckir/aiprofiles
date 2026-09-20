@@ -167,6 +167,51 @@ fixture
 run_assembler example
 check "an empty exit code is not silently a clean run" "$(field probe-exit)" "unknown"
 
+# --- a run the harness refused is not evidence, and gets no committable transcript -----------------
+#
+# `common.sh` names its own failures with a reserved `harness-` prefix. Such a run stops before step 2, so
+# it would otherwise be assembled as `<id>-unknown.md` -- the same name a genuine "this agent would not
+# install" measurement carries -- and §5.3's verifier, which pairs any non-zero `probe-exit:` with a failed
+# job, would accept it. That is a transcript blaming a vendor for our own breakage.
+#
+# NOTHING IN verify-transcripts.sh ENFORCES THIS, deliberately: it reads single-line headers only, and
+# teaching it to parse `exit-codes:` would put new block-parsing in the most load-bearing gate there is.
+# What stands behind these checks instead is the verifier's EXISTING artifact-existence check -- a
+# hand-assembled `.md` is refused because the run's artifact holds no `.md` to compare against. These two
+# checks are therefore the only thing pinning the behaviour, which is why they assert the absence of the
+# transcript and not merely the presence of the diagnostic.
+fixture
+printf 'harness-privilege 1\n' > "$results/steps"
+printf '1\n' > "$results/exit-code"
+rm -f "$results/version.extracted"
+run_assembler example
+check "a run the harness refused still exits 0, so the workflow step does not mask it" \
+    "$assembler_status" "0"
+# Counted through a glob rather than `ls | grep`: POSIX sh has no nullglob, so the `[ -e ]` is what makes
+# "no matches" and "one file" distinguishable at all here.
+md_written=0
+for md_file in "$outdir"/*.md; do
+    [ -e "$md_file" ] && md_written=$((md_written + 1))
+done
+check "and NO committable transcript is written for it" "$md_written" "0"
+check "and the diagnostic it writes instead cannot be resolved by any registry row" \
+    "$(basename "$written")" "example-harness-refused.txt"
+check "and the diagnostic names the step that refused the run" \
+    "$(grep -c 'harness-privilege 1' "$written")" "1"
+
+# The other half: a run that failed for the AGENT's reasons must still produce its transcript. Without
+# this, a check that only asserted the refusal could be satisfied by an assembler that never writes
+# anything at all. `strings 127` is the agent's binary not being on its own PATH -- a fact about the agent,
+# and deliberately not prefixed.
+fixture
+printf 'install 0\nversion 0\nhelp 0\nstrings 127\n' > "$results/steps"
+printf '1\n' > "$results/exit-code"
+run_assembler example
+check "a run that failed for the agent's own reasons is still assembled" \
+    "$(basename "$written")" "example-1.2.3.md"
+check "and it records the agent-side failure" \
+    "$(sed -n '/^exit-codes:/,/^probe-exit:/p' "$written" | grep -c 'strings 127')" "1"
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
     exit 1

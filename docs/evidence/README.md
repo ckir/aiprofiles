@@ -61,6 +61,16 @@ The `Evidence` job in `ci.yml` runs on every pull request that changes a file he
 5. downloads that run's `sandbox-transcript-<id>` artifact and requires the committed file to be
    **byte-identical** to it.
 
+Step 4 is why a run **the harness itself refused** never reaches this page. If the container has no usable
+privilege boundary, or a version was passed to an agent installed by a vendor script, or a probe script
+names a mechanism the harness does not implement, the failure is ours and not the agent's — but the run
+stops before step 2, so its transcript would be named `<id>-unknown.md` and read exactly like a genuine
+"this agent would not install" measurement, which step 4 accepts against a failed job. So the harness
+names those failures with a reserved `harness-` prefix and `sandbox/transcript.sh` assembles no transcript
+for them at all, writing `<id>-harness-refused.txt` into the artifact instead. Fix the image or the
+command and probe again; there is nothing to commit, and step 5 refuses a hand-assembled file because the
+run's artifact holds no `.md` to compare against.
+
 Step 3 is not ceremony. Without it, someone with push access could dispatch the workflow on a throwaway
 branch carrying an edited probe script that prints whatever they liked: the run would be genuinely green,
 the artifact genuine, the bytes identical — and the branch that forged it would never appear in the pull

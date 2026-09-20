@@ -376,6 +376,29 @@ probe_record_agent() {
 # records, but it is the whole of its caller's bookkeeping, whereas `probe_record` has already written
 # two of them by the time it knows the status. Routing one through the other appended the step to
 # `steps` twice, which reads as the probe having run it twice.
+#
+# THE `harness-` PREFIX IS RESERVED, AND IT DECIDES WHETHER A RUN CAN BE EVIDENCE AT ALL. A step name
+# beginning `harness-` means the failure was ours -- the image, this harness, or the operator who started
+# the run -- and NOT a fact about the agent. `sandbox/transcript.sh` refuses to assemble a committable
+# transcript for a run carrying one, because the alternative is evidence that blames a vendor for our
+# breakage: a refused run records no version, so it is named `<id>-unknown.md`, which is exactly how a
+# genuine "this agent would not install" transcript is named, and §5.3's verifier pairs any non-zero
+# `probe-exit:` with a failed job and accepts it. MEASURED before this existed, end to end: a run refused
+# for a missing agent user produced `example-unknown.md` and the verifier printed "all changed transcripts
+# are bound to their runs".
+#
+# The prefix is the whole mechanism, so the three names carrying it are enumerated here and pinned by
+# `sandbox/tests/probe-harness.sh`:
+#
+#   harness-privilege                 the pre-flight: no `sudo`, no agent user, or the rule does not reach
+#   harness-version-refused           a version was passed to an agent installed by a vendor script
+#   harness-mechanism-<step>          probe_apply was handed a mechanism it does not know
+#
+# WHAT IS DELIBERATELY NOT PREFIXED. `strings 127` is the agent's binary not being on its own PATH, which
+# follows from the install and is a fact about the agent. `pristine-N` and `restore-N` are the harness
+# failing to archive or restore a watched location -- but the vendor's install code runs BEFORE them and
+# can cause exactly that, by chmod-ing its own profile directory, so calling them ours would hand an agent
+# a way to disqualify its own measurement. Every `probe_record` row is the measured command's own status.
 probe_fail() {
     echo "$2" > "$PROBE_OUT/$1.exit-code"
     echo "$1 $2" >> "$PROBE_STATE/failures"
@@ -424,7 +447,7 @@ fi
 if [ -n "$probe_privilege_refusal" ]; then
     echo "probe: $probe_privilege_refusal;" >&2
     echo "probe: the privilege boundary is not usable, so nothing measured here would be trustworthy" >&2
-    probe_fail privilege 1
+    probe_fail harness-privilege 1
     exit 1
 fi
 
@@ -464,7 +487,10 @@ probe_uv_install() {
 probe_script_install() {
     if [ -n "$PROBE_VERSION" ]; then
         echo "probe: $1 takes no version argument (asked for $PROBE_VERSION)" >&2
-        probe_fail install 2
+        # `harness-version-refused`, not `install`: this is the OPERATOR asking for something this
+        # installer cannot do, and `install` is the name a genuine vendor install failure records through
+        # `probe_record_agent`. Sharing it made the two indistinguishable in `exit-codes:`.
+        probe_fail harness-version-refused 2
         exit 2
     fi
     # The interpreter is the vendor's, because the script is the vendor's. Both script-installed agents
@@ -830,7 +856,8 @@ probe_apply() {
             probe_record_agent "$probe_name" "$probe_exe" "${probe_mech#flagfile:}" "$PROBE_TARGET/$PROBE_CONFIG_NAME" "$@" ;;
         *)
             echo "probe: unknown mechanism $probe_mech" >&2
-            probe_fail "$probe_name" 2
+            # A probe script naming a mechanism this file does not implement is OUR bug, not the agent's.
+            probe_fail "harness-mechanism-$probe_name" 2
             return 1
             ;;
     esac

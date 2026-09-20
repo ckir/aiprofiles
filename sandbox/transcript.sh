@@ -66,6 +66,49 @@ case "$probe_exit" in
 esac
 
 mkdir -p "$outdir"
+
+# A RUN THE HARNESS REFUSED IS NOT EVIDENCE ABOUT THE AGENT, and this is where that is enforced.
+#
+# `common.sh` names its own failures with a reserved `harness-` prefix (see `probe_fail` there): the
+# pre-flight finding no usable privilege boundary, a version passed to an installer that cannot take one,
+# a probe script naming a mechanism this harness does not implement. None of those is a fact about the
+# vendor's agent -- but all of them stop the run before step 2, so the transcript would be named
+# `<id>-unknown.md`, which is exactly how a genuine "this agent would not install" measurement is named.
+# §5.3's verifier pairs a non-zero `probe-exit:` with a failed job and accepts that shape, so the run
+# would be committed as outcome 2 and Gate C would force the adapter to Experimental over OUR breakage.
+# MEASURED end to end before this existed: a run refused for a missing agent user assembled cleanly and
+# the verifier printed "all changed transcripts are bound to their runs".
+#
+# So no `.md` is written at all. What goes into the artifact instead is a diagnostic under a name no
+# registry row can resolve -- `<id>-<version>.md` is the only shape §5.3 resolves -- which is also what
+# makes the existing verifier enough on its own: a maintainer who hand-assembles the `.md` anyway and
+# commits it is refused by the artifact-existence check, because the run's artifact holds no `.md` to
+# compare against. That check is already there and already tested, so nothing in `verify-transcripts.sh`
+# needs to learn to parse this block.
+if [ -s "$results/steps" ] && grep -q '^harness-' "$results/steps"; then
+    refused="$outdir/$id-harness-refused.txt"
+    {
+        echo "This run was refused by the harness. It is NOT evidence about the agent and there is"
+        echo "no transcript to commit."
+        echo
+        echo "agent: $id"
+        echo "run-id: ${GITHUB_RUN_ID:-unknown}"
+        echo "harness-commit: ${GITHUB_SHA:-unknown}"
+        echo "probe-exit: $probe_exit"
+        echo
+        echo "steps:"
+        sed 's/^/  /' "$results/steps"
+        echo
+        echo "The failing step names above beginning 'harness-' say which side failed:"
+        echo "  harness-privilege          the container has no usable privilege boundary"
+        echo "  harness-version-refused    a version was passed to a script-installed agent"
+        echo "  harness-mechanism-<step>   a probe script named a mechanism the harness does not know"
+    } > "$refused"
+    echo "transcript: the harness refused this run; wrote $refused and no transcript" >&2
+    echo "$refused"
+    exit 0
+fi
+
 out="$outdir/$id-$version.md"
 
 # section <label> <file> <max-lines>: one labelled block, stripped and bounded, or an explicit absence.
