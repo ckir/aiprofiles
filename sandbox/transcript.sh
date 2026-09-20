@@ -85,7 +85,15 @@ mkdir -p "$outdir"
 # commits it is refused by the artifact-existence check, because the run's artifact holds no `.md` to
 # compare against. That check is already there and already tested, so nothing in `verify-transcripts.sh`
 # needs to learn to parse this block.
-if [ -s "$results/steps" ] && grep -q '^harness-' "$results/steps"; then
+# NO STEPS AT ALL IS ALSO OURS, and this half was missed the first time. `steps` is written INSIDE the
+# container and lifted out afterwards, so every harness failure that happens OUTSIDE it writes none: a
+# failed `eng build`, or a container that dies before `common.sh` is sourced. Those runs still have an
+# `exit-code`, so they assembled cleanly as `<id>-unknown.md` and the verifier accepted them -- MEASURED,
+# a results directory holding only `exit-code: 125` produced a transcript with `(not recorded)` in every
+# block. A failed image build is the commonest way the image breaks, so the uncovered case was the likely
+# one. Nothing legitimate is lost: a genuine outcome 2 always carries an `install <status>` row, because
+# `probe_record_agent install` writes one before the install can fail.
+if [ ! -s "$results/steps" ] || grep -q '^harness-' "$results/steps"; then
     refused="$outdir/$id-harness-refused.txt"
     {
         echo "This run was refused by the harness. It is NOT evidence about the agent and there is"
@@ -97,9 +105,18 @@ if [ -s "$results/steps" ] && grep -q '^harness-' "$results/steps"; then
         echo "probe-exit: $probe_exit"
         echo
         echo "steps:"
-        sed 's/^/  /' "$results/steps"
+        # Guarded, because the no-steps case reaches here too: `sed` on a missing file exits 2, and under
+        # `set -eu` that would abort in the middle of writing this diagnostic -- destroying the only
+        # record of why the run was refused, in the branch that exists to preserve it.
+        if [ -s "$results/steps" ]; then
+            sed 's/^/  /' "$results/steps"
+        else
+            echo "  (no step was recorded: the run produced no measurement at all)"
+        fi
         echo
-        echo "The failing step names above beginning 'harness-' say which side failed:"
+        echo "Why this run is not evidence:"
+        echo "  no steps recorded          the run never reached the harness -- the image build failed,"
+        echo "                             or the container died before the probe was sourced"
         echo "  harness-privilege          the container has no usable privilege boundary"
         echo "  harness-version-refused    a version was passed to a script-installed agent"
         echo "  harness-mechanism-<step>   a probe script named a mechanism the harness does not know"

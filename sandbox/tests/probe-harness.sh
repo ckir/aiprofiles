@@ -491,6 +491,17 @@ check "and the enumeration is checked against a non-empty list of them" \
 #
 # A LEGITIMATE change to a crossing must update this table deliberately, and that update IS the point: the
 # count forces a reviewer to look at the added or removed line, which name-membership cannot.
+#
+# WHAT THIS PATTERN CANNOT CATCH, stated because three rounds of widening it each implied it was complete.
+# It is a HEURISTIC FOR ATTRIBUTION -- it answers "which function, how many" -- and it is not a shell
+# parser. MEASURED misses: `if sudo`, `while sudo`, `until sudo`, `eval sudo`, a backtick substitution,
+# `command sudo`, `env sudo`, `xargs sudo`, `time sudo`, `{ sudo ...; }`, assignment then `"$CMD"`, and
+# `"$(command -v sudo)"` -- which misses the SUFFIX anchor too, because `)` follows the word directly, and
+# is the most reachable of them since `command -v` is already this file's own idiom in probe_strings.
+#
+# The occurrence counts below are what covers that. They cannot say WHERE, and they do not care HOW the
+# call is spelled -- any new mention of the word in non-comment source changes the number and the check
+# goes red. Anchored table and blind count cover each other's blind spot; neither does alone.
 crossing_counts=$(awk '
     /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{$/ { fn = $1; sub(/\(\).*/, "", fn); count = 0; next }
     /^}$/ { if (fn != "" && count > 0) print fn, count; fn = ""; next }
@@ -518,6 +529,15 @@ TABLE
 )
 check "each crossing function's line count is pinned against the table measured at HEAD, not just its name" \
     "$crossing_counts" "$crossing_counts_expected"
+
+# THE SPELLING-BLIND HALF. Counts every NON-COMMENT line of common.sh that mentions the bare word,
+# however it is written, so a spelling the anchored pattern above cannot see still moves a number. Five
+# today: the switch inside probe_as_agent, the pre-flight's `command -v sudo` and its `elif ! sudo`, and
+# the two message strings that name it. Three of those five are not crossings at all, which is the price
+# of a check that does not try to understand the shell -- it trades precision for being unevadable.
+check "no line of common.sh mentions sudo without this suite noticing, whatever the spelling" \
+    "$(grep -vE '^[[:space:]]*#' "$root/sandbox/probes/common.sh" \
+        | grep -cE '(^|[^A-Za-z0-9_])sudo([^A-Za-z0-9_]|$)')" "5"
 
 # The flag decides WHICH UID a command runs at, so a value left set after a call would silently put the
 # next step — a snapshot, a restore, anything the harness does for itself — on the wrong side.
@@ -556,6 +576,18 @@ check "every failure the harness records is classified, and the classification h
 # The control: a collector that found nothing would satisfy the check above without a word.
 check "and that table was checked against a non-empty collection" \
     "$(printf '%s\n' "$probe_fail_names" | grep -c .)" "6"
+# AND THE SPELLING-BLIND HALF, for the same reason as the crossing counts above. The collector one line up
+# requires `probe_fail` to be the FIRST TOKEN ON ITS LINE, so `[ -n "$x" ] && probe_fail harness-thing 1`
+# is invisible to it -- MEASURED: adding exactly that leaves the collected table byte-identical and this
+# check prints ok. A one-liner is a more idiomatic refactor of the multi-line blocks in `common.sh` than
+# what is written there now, so this is not a contrived spelling.
+#
+# That blindness is how the whole `harness-` mechanism unravels: an unseen call site is one nobody is
+# forced to look at, so nobody notices it lacks the prefix, so `transcript.sh` assembles a committable
+# transcript for a run the harness refused. Seven occurrences today -- six call sites and the definition.
+check "no call of probe_fail escapes notice by not starting its line" \
+    "$(grep -vE '^[[:space:]]*#' "$root/sandbox/probes/common.sh" \
+        | grep -cE '(^|[^A-Za-z0-9_])probe_fail([^A-Za-z0-9_]|$)')" "7"
 
 # --- the agent's home ---------------------------------------------------------------------------
 #

@@ -71,6 +71,12 @@ for them at all, writing `<id>-harness-refused.txt` into the artifact instead. F
 command and probe again; there is nothing to commit, and step 5 refuses a hand-assembled file because the
 run's artifact holds no `.md` to compare against.
 
+The same applies to a run that recorded **no step at all** — the image build failed, or the container died
+before the probe was sourced. Those failures happen outside the container, so they leave no step rows to
+carry a prefix, and the first version of this rule was blind to them: a failed build produced a clean-
+looking `<id>-unknown.md` that the gate accepted. An absent step list is now itself a refusal, which is
+safe because a genuine "would not install" run always records an `install` row before it can fail.
+
 Step 3 is not ceremony. Without it, someone with push access could dispatch the workflow on a throwaway
 branch carrying an edited probe script that prints whatever they liked: the run would be genuinely green,
 the artifact genuine, the bytes identical — and the branch that forged it would never appear in the pull

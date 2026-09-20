@@ -199,6 +199,20 @@ check "and the diagnostic it writes instead cannot be resolved by any registry r
 check "and the diagnostic names the step that refused the run" \
     "$(grep -c 'harness-privilege 1' "$written")" "1"
 
+# The harness failures that happen OUTSIDE the container leave no step rows at all to carry a prefix: a
+# failed `eng build`, or a container that dies before `common.sh` is sourced. `sandbox/run.sh` still writes
+# an `exit-code`, so before this was covered the assembler produced a clean-looking `<id>-unknown.md` with
+# `(not recorded)` in every block -- MEASURED end to end through the real verifier, which accepted it. The
+# absence of a step list is therefore itself a refusal.
+fixture
+rm -f "$results/steps" "$results/version.extracted"
+printf '125\n' > "$results/exit-code"
+run_assembler example
+check "a run that recorded no step at all is refused too" \
+    "$(basename "$written")" "example-harness-refused.txt"
+check "and it says the run produced no measurement, rather than dying while saying so" \
+    "$(grep -c 'no step was recorded' "$written")" "1"
+
 # The other half: a run that failed for the AGENT's reasons must still produce its transcript. Without
 # this, a check that only asserted the refusal could be satisfied by an assembler that never writes
 # anything at all. `strings 127` is the agent's binary not being on its own PATH -- a fact about the agent,
