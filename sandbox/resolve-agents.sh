@@ -31,12 +31,30 @@ version=${2:-}
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
+# The repository's one answer to "a scan that produces nothing is read as clean" -- the empty-scan class the
+# `all` branch below used to guard by hand. See scripts/lib/scan-guard.sh for the three measured instances.
+. "$root/scripts/lib/scan-guard.sh"
+
 if [ "$spec" = all ]; then
     # `all` means every PROBE script, and a probe script is one that sources the harness. Listing
     # sandbox/probes/*.sh would offer `common` and `text` as agents; excluding those two by name would be
     # a list that rots the next time a library file is added. This is the actual property.
-    raw=$(grep -l '^\. sandbox/probes/common\.sh$' sandbox/probes/*.sh \
-        | sed 's|.*/||; s|\.sh$||' | LC_ALL=C sort)
+    probe_scripts=$(mktemp)
+    scan_expand "$probe_scripts" must-find 'sandbox/probes/*.sh' sandbox/probes/*.sh || exit 1
+    hits=$(mktemp)
+    scan_broken=0
+    while IFS= read -r probe_script; do
+        [ -n "$probe_script" ] || continue
+        if ! scan_grep -l '^\. sandbox/probes/common\.sh$' "$probe_script" >> "$hits"; then
+            scan_broken=1
+        fi
+    done < "$probe_scripts"
+    if [ "$scan_broken" -ne 0 ]; then
+        rm -f "$probe_scripts" "$hits"
+        exit 1
+    fi
+    raw=$(sed 's|.*/||; s|\.sh$||' "$hits" | LC_ALL=C sort)
+    rm -f "$probe_scripts" "$hits"
 else
     raw=$(printf '%s' "$spec" | tr ',' ' ' | tr -s ' \t' '\n')
 fi
@@ -45,16 +63,15 @@ fi
 list=$(printf '%s\n' "$raw" | grep -v '^$' | awk '!seen[$0]++' || true)
 count=$(printf '%s\n' "$list" | grep -c . || true)
 
-# THIS REFUSAL IS DOING TWO JOBS, and the second one is not in its name. It exists for "you asked for no
-# agents", but it is also the only thing standing between this script and the empty-scan class: the `grep
-# -l` above is the left-hand side of a pipe, so POSIX sh discards its status, and `sandbox/probes/*.sh` is
-# an unguarded glob that passes through literally if the directory is ever renamed. Either failure empties
-# `raw`, and without the check below an empty agent list would read as a clean resolution of zero agents.
+# THIS REFUSAL NOW DOES ONE JOB: "you asked for no agents". The empty-scan class it used to also stand
+# against -- the `all` branch's `grep -l` discarding its status as the left-hand side of a pipe, and
+# `sandbox/probes/*.sh` passing through literally if the directory were ever renamed -- is now caught above,
+# by `scripts/lib/scan-guard.sh`'s own refusal, before `raw` is ever assembled.
 #
-# It fails closed today, so it is deliberately NOT converted to `scripts/lib/scan-guard.sh`: sourcing the
-# gates' helper from inside `sandbox/` would point the dependency the wrong way round, since everything
-# under `sandbox/probes/` ships into the container. If the cap logic is ever relaxed to tolerate an empty
-# list, that change must bring its own scan guard with it -- the protection here is incidental, not designed.
+# An earlier version of this comment declined that conversion on the premise that sourcing the gates'
+# helper from inside `sandbox/` would point the dependency the wrong way round, because everything under
+# `sandbox/probes/` ships into the container. That premise was false: this script itself runs HOST-side, in
+# the Sandbox workflow's prepare step, before any container exists, so it is not part of what ships.
 if [ "$count" -eq 0 ]; then
     echo "resolve-agents: no agents named" >&2
     exit 1
