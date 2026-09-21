@@ -15,8 +15,21 @@
 # called it isolated.
 . sandbox/probes/common.sh
 
+# TWO locations. `~/.kiro` is the documented one and it is correct -- MEASURED with no KIRO_HOME set, the
+# settings land at `$PROBE_AGENT_HOME/.kiro/settings/cli.json`. But the agent writes a SECOND tree the
+# documentation does not mention, `$PROBE_AGENT_HOME/.local/share/kiro-cli`, holding `data.sqlite3`, a
+# run-receipts directory and a telemetry lock -- and KIRO_HOME does not move any of it. That split is
+# exactly the partial-isolation shape 8.5 predicts, now measured rather than inferred from a bug report:
+# settings follow the variable, data does not. Watching only `~/.kiro` would have recorded the settings
+# moving and called it isolated.
+default="$PROBE_AGENT_HOME/.kiro $PROBE_AGENT_HOME/.local/share/kiro-cli"
+
 probe_script_install https://cli.kiro.dev/install bash
 probe_version kiro-cli
 probe_help kiro-cli
 probe_strings kiro-cli KIRO_API_KEY KIRO_HOME AWS_ACCESS_KEY_ID AWS_PROFILE
-probe_behaviour kiro-cli "$PROBE_AGENT_HOME/.kiro" env:KIRO_HOME @none
+# `settings all` RATHER THAN THE DEFAULT `--version`, which was measured to write nothing at all at either
+# location -- an empty delta that says nothing about KIRO_HOME. `settings all` exits 0, prints nothing,
+# needs no credentials, and writes the settings file the mechanism is supposed to move. `doctor` also
+# writes but exits 1 when unauthenticated.
+probe_behaviour kiro-cli "$default" env:KIRO_HOME @none settings all

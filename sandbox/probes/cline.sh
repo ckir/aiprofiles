@@ -19,6 +19,13 @@ probe_npm_install cline
 probe_version cline
 probe_help cline
 probe_strings cline ANTHROPIC_API_KEY CLINE_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY CLINE_DATA_DIR
+# NO LAUNCH OVERRIDE, because this agent could not be measured at all on the machine that measured the
+# other eleven. `cline --version` and `cline --help` both die with SIGILL -- "Illegal instruction (core
+# dumped)", exit 132 -- before printing anything. The host was a Podman WSL virtual machine whose
+# /proc/cpuinfo advertises `avx` and no `avx2`, and cline ships native code; the ordinary Linux CI runner
+# does advertise avx2, so the expectation is that it runs there. Treat the launch commands below as
+# UNMEASURED rather than chosen, and settle them from the Sandbox workflow's run. Do NOT record the crash
+# as a property of the agent on this evidence: it is a property of that CPU and this agent together.
 probe_behaviour cline "$PROBE_AGENT_HOME/.cline" env:CLINE_DATA_DIR @none
 probe_behaviour cline "$PROBE_AGENT_HOME/.cline" flagdir:--data-dir @none
 probe_behaviour cline "$PROBE_AGENT_HOME/.cline" flagdir:--config @none

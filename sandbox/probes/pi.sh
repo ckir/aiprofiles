@@ -24,4 +24,14 @@ probe_npm_install @earendil-works/pi-coding-agent --ignore-scripts
 probe_version pi
 probe_help pi
 probe_strings pi ANTHROPIC_API_KEY OPENAI_API_KEY PI_CODING_AGENT_DIR
-probe_behaviour pi "$PROBE_AGENT_HOME/.pi" env:PI_CODING_AGENT_DIR @none
+# `-p hello` RATHER THAN THE DEFAULT `--version`. Measured per launch: `--version`, `list` and
+# `auth check` all write nothing, so the mechanism delta is empty whatever the variable does. `-p` is
+# non-interactive mode, and it INITIALISES BEFORE IT FAILS -- with no API key it exits 1 saying so,
+# having already written `auth.json`, `models-store.json` and a sessions directory. A non-zero exit is
+# the honest record here: the agent refused to answer, which is not the same as the probe failing, and
+# the transcript carries the code so a reader can see which it was.
+#
+# This also settles the default location, which the design listed as unverified: it is
+# `$PROBE_AGENT_HOME/.pi`, with the files one level down under `agent/`. Under the variable the same
+# files land directly in the target, without the `.pi/agent` prefix.
+probe_behaviour pi "$PROBE_AGENT_HOME/.pi" env:PI_CODING_AGENT_DIR @none -p hello

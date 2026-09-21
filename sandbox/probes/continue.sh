@@ -23,5 +23,13 @@ probe_help cn
 probe_strings cn CONTINUE_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY
 # See aider.sh: recorded before the first launch of either step, so both stay attributable.
 probe_pristine "$default"
+# NO LAUNCH OVERRIDE, and that is a measured result rather than an omission. `--version` and `ls` were
+# both measured in a container and neither writes anything at either location; Continue appears to
+# initialise nothing before it has credentials or a session. So there is no cheap command that would make
+# this delta informative, and the probe records the empty delta as the fact it is rather than inventing a
+# launch that looks better. Do not "fix" this by adding one without measuring it first.
+#
+# The flag name IS confirmed: `cn --help` lists `--config <path>`, which the design had carried as
+# unverified.
 probe_behaviour cn "$default" flagfile:--config "{}"
 probe_candidates cn flagfile:--config @none "" "# nothing" "{}"

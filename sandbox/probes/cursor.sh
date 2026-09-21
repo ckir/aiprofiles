@@ -46,4 +46,11 @@ probe_script_install https://cursor.com/install bash
 probe_version cursor-agent
 probe_help cursor-agent
 probe_strings cursor-agent CURSOR_API_KEY CURSOR_CONFIG_DIR XDG_CONFIG_HOME
+# NO LAUNCH OVERRIDE, and unlike Continue's case this one is positive: `--version` was measured to
+# initialise here, writing `cli-config.json` into the target with CURSOR_CONFIG_DIR set and nothing at
+# either default location. The variable is honoured and the default launch already demonstrates it, so
+# overriding it would add a heavier command for no extra evidence.
+#
+# The only default-location writes measured were a `cursor-compile-cache` under `.cache` and a `.running`
+# marker inside the installation itself -- neither is configuration, and neither is watched.
 probe_behaviour cursor-agent "$default" env:CURSOR_CONFIG_DIR @none
