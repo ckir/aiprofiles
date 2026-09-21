@@ -27,9 +27,19 @@ probe_strings pi ANTHROPIC_API_KEY OPENAI_API_KEY PI_CODING_AGENT_DIR
 # `-p hello` RATHER THAN THE DEFAULT `--version`. Measured per launch: `--version`, `list` and
 # `auth check` all write nothing, so the mechanism delta is empty whatever the variable does. `-p` is
 # non-interactive mode, and it INITIALISES BEFORE IT FAILS -- with no API key it exits 1 saying so,
-# having already written `auth.json`, `models-store.json` and a sessions directory. A non-zero exit is
-# the honest record here: the agent refused to answer, which is not the same as the probe failing, and
-# the transcript carries the code so a reader can see which it was.
+# having already written `auth.json`, `models-store.json` and a sessions directory.
+#
+# PROBE_EXPECT=1 IS WHAT MAKES THAT USABLE, and this file previously claimed it needed nothing. It said a
+# non-zero exit was "the honest record" that "the transcript carries ... so a reader can see which it
+# was" -- a property of the harness asserted without reading the harness, and the first real probe run
+# refuted it: `probe_record` routes any unexpected non-zero code to `failures`, `probe_finish` derives
+# the run's status from that file, the job failed, and `verify-transcripts.sh` accepts a transcript only
+# when `probe-exit` is 0. The measurement had succeeded and the probe reported failure.
+#
+# Declaring the code keeps the step strict rather than excusing it: 1 is a measurement, and anything else
+# -- including 0 -- still fails. If pi stops requiring a key, this step goes red, which is the right
+# alarm, because the comment above would then be describing an agent that no longer behaves that way.
+PROBE_EXPECT=1
 #
 # This also settles the default location, which the design listed as unverified: it is
 # `$PROBE_AGENT_HOME/.pi`, with the files one level down under `agent/`. Under the variable the same

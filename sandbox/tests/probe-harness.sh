@@ -581,13 +581,13 @@ for fn in $crossing_fns; do
     printf '%s\n' "$split_block" | grep -qE "$fn([^A-Za-z0-9_]|\$)" || unlisted="$unlisted $fn"
 done
 check "every function that crosses the privilege boundary is named in the enumeration" "$unlisted" ""
-# The control: a collector that found nothing would pass the check above without a word. The twelve are
+# The control: a collector that found nothing would pass the check above without a word. The thirteen are
 # probe_make_target, probe_record, probe_npm_install, probe_uv_install, probe_script_install,
-# probe_version, probe_help, probe_strings, probe_prepare_target, probe_restore_default, probe_apply,
-# probe_as_agent — the last one not because it CALLS probe_as_agent/probe_record_agent, but because its
-# own body is the `sudo -n -u "$PROBE_AGENT_USER" -- env` invocation the other eleven wrap.
+# probe_version, probe_help, probe_strings, probe_pristine, probe_prepare_target, probe_restore_default,
+# probe_apply, probe_as_agent — the last one not because it CALLS probe_as_agent/probe_record_agent, but
+# because its own body is the `sudo -n -u "$PROBE_AGENT_USER" -- env` invocation the other twelve wrap.
 check "and the enumeration is checked against a non-empty list of them" \
-    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "12"
+    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "13"
 
 # R6-1: NAME-membership is blind to a crossing added INSIDE a function that already crosses. Wrapping
 # `probe_as_agent` onto probe_strings' `find` — which common.sh calls "the single most attractive mistake
@@ -645,6 +645,7 @@ probe_help 1
 probe_make_target 1
 probe_npm_install 1
 probe_prepare_target 2
+probe_pristine 1
 probe_record 1
 probe_restore_default 4
 probe_script_install 1
@@ -928,6 +929,46 @@ check "and the sweep's refusal is not what failed it" \
 check "while the sweep's refusal is still in the step log" \
     "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" \
     "candidate-1 0,candidate-2 2,behaviour-flagfile---config 2,"
+
+# --- PROBE_EXPECT ---------------------------------------------------------------------------------
+#
+# For some agents the ONLY command that initialises is one that fails. Measured: `pi` writes nothing at
+# all under `--version`, `list` or `auth check`, and writes its whole configuration under `-p hello`,
+# which then exits 1 because no API key is set. That is a successful measurement, and the first real
+# probe run recorded it as a failed probe: the job failed and `verify-transcripts.sh` accepts a
+# transcript only when `probe-exit` is 0, so the evidence the launch existed to produce was refused.
+stage refuser 'echo "no API key"; exit 1'
+run_staged 'PROBE_EXPECT=1
+probe_behaviour refuser /nonexistent-default env:REFUSER_HOME @none'
+check "a behaviour step that exits the code its probe declared does not fail the probe" \
+    "$probe_status" "0"
+check "and the declared non-zero code is still recorded in the step log" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" "behaviour-env-REFUSER_HOME 1,"
+check "and it is not recorded as a failure" \
+    "$(wc -l < "$PROBE_OUT_DIR/failures" | tr -d ' ')" "0"
+
+# THE HALF THAT DISTINGUISHES THIS FROM `PROBE_SOFT`, and the only half worth having. Soft tolerates ANY
+# non-zero code, which would turn a segfault, a missing shared library or a timeout into a successful
+# measurement with an empty delta. A declaration names ONE code, and every other code -- including 0 --
+# is still a failure. Without this check the two are indistinguishable: everything above would pass just
+# as well against a `PROBE_SOFT` widened to behaviour steps.
+stage compliant 'exit 0'
+run_staged 'PROBE_EXPECT=1
+probe_behaviour compliant /nonexistent-default env:COMPLIANT_HOME @none'
+check "a behaviour step that exits 0 where non-zero was declared FAILS the probe" \
+    "$probe_status" "1"
+check "and the unexpected success is what is recorded as the failure" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/failures")" "behaviour-env-COMPLIANT_HOME 0,"
+
+# A declaration that outlived its launch would silently excuse the NEXT step, and the next step is
+# routinely a second mechanism's launch whose own expected code is 0. `probe_behaviour` clears it, so the
+# second launch below is judged against 0 and fails on its non-zero exit even though the first declared 1.
+stage twofailed 'exit 1'
+run_staged 'PROBE_EXPECT=1
+probe_behaviour twofailed /nonexistent-default env:FIRST_HOME @none
+probe_behaviour twofailed /nonexistent-default env:SECOND_HOME @none'
+check "a declaration does not leak past the launch it was made for" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/failures")" "behaviour-env-SECOND_HOME 1,"
 
 # `probe_candidates`' own loop restores every registered location (`probe_restore_known`) BEFORE each
 # candidate's launch, so the sweep runs every candidate against the same default location the one before
