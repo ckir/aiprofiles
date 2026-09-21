@@ -21,7 +21,12 @@ usage() {
     exit 2
 }
 
-[ $# -ge 2 ] && [ $# -le 3 ] || usage
+# An `if`, not `[ ... ] && [ ... ] || usage`: in that form the `||` fires whenever the LAST test fails, so
+# it reads as if-then-else while being something else (SC2015). The twin in `resolve-agents.sh` was fixed
+# in the same commit; these were the only two of this shape.
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    usage
+fi
 id=$1
 results=$2
 outdir=${3:-docs/evidence}
