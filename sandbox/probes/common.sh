@@ -590,11 +590,22 @@ probe_strings() {
     # The resolved file and its siblings. An npm package's bundle sits beside its entry point and a
     # script-installed agent is one binary, so one directory covers both shapes. `-size -64M` keeps a
     # vendored toolchain from turning this step into the job's time limit.
+    #
+    # THE RESOLVED EXECUTABLE IS EXEMPT FROM THAT CAP, and the exemption is the whole point rather than a
+    # nicety. The cap exists to skip files this step never needed to read; the resolved binary is the one
+    # file it exists to read, so a cap that excludes it does not trade completeness for time -- it deletes
+    # the measurement and reports the deletion as a finding. MEASURED: `@opencode/cli` ships a single
+    # 200529376-byte executable and nothing else in its `bin` directory, so the unexempted scan matched no
+    # file at all and recorded every documented variable as ABSENT, including ones a control proved are in
+    # the binary. That is the exact shape of the error this repository keeps rediscovering -- a scan that
+    # read nothing reporting as a scan that found nothing -- and an agent shipping a large single binary is
+    # a normal packaging choice, not an exotic one, so nothing about it would have looked wrong in review.
+    # The cap still governs every OTHER file in the directory.
     for probe_var in "$@"; do
         # Tested by what grep PRINTS, not by find's exit status. `-exec ... +` batches, and it reports
         # failure when ANY batch's grep found nothing — so a variable present in the first of two batches
         # would be recorded ABSENT, which is the answer that ends an investigation early.
-        if find "$probe_dir" -maxdepth 1 -type f -size -64M \
+        if find "$probe_dir" -maxdepth 1 -type f \( -size -64M -o -path "$probe_real" \) \
             -exec grep -aFl -e "$probe_var" {} + 2>/dev/null | grep -q .; then
             printf 'documented %s: present\n' "$probe_var" >> "$probe_out_file"
         else
@@ -604,7 +615,7 @@ probe_strings() {
 
     printf '#\n# variable-shaped tokens that name a credential or a location, documented or not\n' \
         >> "$probe_out_file"
-    find "$probe_dir" -maxdepth 1 -type f -size -64M \
+    find "$probe_dir" -maxdepth 1 -type f \( -size -64M -o -path "$probe_real" \) \
         -exec grep -aohE '[A-Z][A-Z0-9_]{3,}' {} + 2>/dev/null \
         | grep -E '(KEY|TOKEN|SECRET|CREDENTIAL|PASSWORD|AUTH|HOME|CONFIG|DATA_DIR|PROFILE|SETTINGS)' \
         | LC_ALL=C sort -u \
@@ -871,7 +882,11 @@ probe_apply() {
 # of step 5.
 #
 # The first argument is the EXECUTABLE, not the agent id: they differ for kiro (kiro-cli), cursor
-# (cursor-agent) and continue (cn), and this file has no registry to look one up in.
+# (cursor-agent), continue (cn) and opencode (opencode2), and this file has no registry to look one up in.
+# OpenCode's is the one that is a CHOICE rather than a vendor spelling: its 2.x package installs the same
+# binary under BOTH `opencode` and `opencode2`, while the 1.x package installs only `opencode`. The probe
+# names the unambiguous one, so that probing both lines cannot come down to which package was installed
+# last.
 #
 # The launch arguments default to `--version` and each probe script overrides them where it can, because
 # `--version` is a FLOOR, not a good measurement: an agent that exits before initialising writes nothing,

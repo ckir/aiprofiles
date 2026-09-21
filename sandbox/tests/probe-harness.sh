@@ -774,7 +774,7 @@ done | LC_ALL=C sort -u)
 check "no literal step name given to probe_record claims the harness's own prefix" \
     "$(printf '%s\n' "$record_names" | grep -c '^harness-' || true)" "0"
 check "and that was checked against the literal names actually found" \
-    "$record_names" "$(printf 'help\ninstall\nversion\n')"
+    "$record_names" "$(printf 'help\ninstall\nservice-stop-dir\nservice-stop-file\nversion\n')"
 
 # --- the agent's home ---------------------------------------------------------------------------
 #
@@ -1089,6 +1089,28 @@ check "a documented variable that is absent is recorded" \
 # The undocumented sweep is the half that pays: FAKE_HOME was never passed in.
 check "an undocumented variable is still found" \
     "$(grep -c '^FAKE_HOME$' "$PROBE_OUT_DIR/strings.txt")" "1"
+
+# A LARGE SINGLE BINARY IS STILL SCANNED. `probe_strings` caps the files it reads at 64M so a vendored
+# toolchain beside the entry point cannot turn this step into the job's time limit, and that cap used to
+# apply to the resolved executable as well. MEASURED against `@opencode/cli`, which ships one 200529376-byte
+# executable and nothing else in its `bin` directory: the scan matched NO file, and every documented
+# variable was recorded ABSENT while a control grep proved the names are in the binary. The failure is
+# silent and it reads as a finding, which is the worst of both -- an adapter would conclude the agent
+# supports no isolation mechanism at all.
+#
+# The fixture is padded PAST the cap rather than merely near it, so the check fails if the exemption is
+# removed or the cap is merely raised to some larger arbitrary number. `truncate` extends sparsely, so the
+# file costs no disk; `probe_strings` never executes the staged agent, it only resolves and greps it, so
+# the padding cannot affect anything but the size.
+stage bigagent 'echo "reads BIG_API_KEY"'
+run_staged 'truncate -s 65M "$PROBE_OUT/bin/bigagent"
+probe_strings bigagent BIG_API_KEY'
+check "a resolved executable larger than the scan cap is still read" \
+    "$(grep -c '^documented BIG_API_KEY: present$' "$PROBE_OUT_DIR/strings.txt")" "1"
+# The control: without it the check above passes for a fixture that was never actually over the cap, which
+# is the one way this test could certify the exemption while proving nothing about it.
+check "and that fixture really was over the cap" \
+    "$(find "$PROBE_OUT_DIR/bin" -maxdepth 1 -type f -name bigagent -size -64M | wc -l)" "0"
 
 # The undocumented sweep's filter is eleven alternatives
 # (KEY|TOKEN|SECRET|CREDENTIAL|PASSWORD|AUTH|HOME|CONFIG|DATA_DIR|PROFILE|SETTINGS), and until now only
