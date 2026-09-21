@@ -192,6 +192,23 @@ verify
 check "a matrix job that failed is refused for a successful probe" "$status" "1"
 check "and the reason names the job" "$(printf '%s' "$out" | grep -c "job 'Probe example'")" "1"
 
+# Both API calls are guarded by `if ! ...; then fail; continue; fi`. Removing `run.json`/`jobs.json` makes
+# the fake `gh` exit non-zero for that call, the same shape a real transient API failure or a bad token
+# takes -- and the guard must turn that into a refusal, not an unset `$run`/`$jobs` fed to `jq`.
+fixture
+rm -f "$gh_dir/run.json"
+verify
+check "a run whose run API call fails is refused" "$status" "1"
+check "and the reason names the run" \
+    "$(printf '%s' "$out" | grep -c 'run 4242 could not be read from')" "1"
+
+fixture
+rm -f "$gh_dir/jobs.json"
+verify
+check "a run whose jobs API call fails is refused" "$status" "1"
+check "and the reason names the jobs" \
+    "$(printf '%s' "$out" | grep -c 'the jobs of run 4242 could not be read')" "1"
+
 # --- the conclusion rule ----------------------------------------------------------------------------
 #
 # Which conclusion a transcript requires is decided by the status the PROBE EXITED WITH — `probe-exit`,
@@ -386,6 +403,19 @@ verify
 check "a transcript the registry still names but the pull request deleted is allowed" "$status" "0"
 check "and says it was removed" \
     "$(printf '%s' "$out" | grep -c 'docs/evidence/example-1.2.3.md was removed')" "1"
+
+# --- the README exemption in the orphan loop --------------------------------------------------------
+#
+# A pull request that refreshes a transcript AND updates docs/evidence/README.md in the same commit is
+# routine. Without the `docs/evidence/README.md) continue ;;` arm, the orphan loop would refuse the README
+# with "no adapter in the registry resolves to this transcript" -- so the README must exist on disk here,
+# or the refusal would never fire and this check would pass for the wrong reason.
+fixture
+echo "# evidence" > "$work/repo/docs/evidence/README.md"
+verify docs/evidence/example-1.2.3.md docs/evidence/README.md
+check "a change to the evidence README is not an orphan transcript" "$status" "0"
+check "and the reason names no failure for the README" \
+    "$(printf '%s' "$out" | grep -c 'docs/evidence/README.md: no adapter')" "0"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"

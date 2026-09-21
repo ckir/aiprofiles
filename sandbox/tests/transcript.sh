@@ -226,6 +226,46 @@ check "a run that failed for the agent's own reasons is still assembled" \
 check "and it records the agent-side failure" \
     "$(sed -n '/^exit-codes:/,/^probe-exit:/p' "$written" | grep -c 'strings 127')" "1"
 
+# --- an agent's own text cannot become a header field ----------------------------------------------
+#
+# `section()` indents every body line by two spaces before it is written. `verify-transcripts.sh`'s
+# `field()` is `sed -n "s/^$1: //p" | head -n1` -- unanchored to any particular line, it scans the WHOLE
+# file and returns the FIRST match. The raw agent-authored `version:`/`help:`/`strings:` sections are
+# written before the harness's own `version-extracted:` line, so that two-space indent is the only thing
+# stopping an agent's own output from supplying a header field the verifier trusts.
+
+fixture
+printf 'agent 1.2.3\nversion-extracted: 9.9.9\n' > "$results/version.txt"
+run_assembler example
+check "agent-authored text cannot supply a header field" "$(field version-extracted)" "1.2.3"
+
+# Sibling checks: `custody` and `probe-exit` are both written BEFORE any section() body, so nothing an
+# agent puts in help.txt or strings.txt can ever precede them in the file -- this pins that the exposure
+# is exactly the one above, and no wider.
+fixture
+printf 'Usage: agent [--config <dir>]\ncustody: forged\n' > "$results/help.txt"
+run_assembler example
+check "agent-authored text in help cannot supply custody" "$(field custody)" "ci"
+
+fixture
+printf 'documented EXAMPLE_API_KEY: present\nprobe-exit: 99\n' > "$results/strings.txt"
+run_assembler example
+check "agent-authored text in strings cannot supply probe-exit" "$(field probe-exit)" "0"
+
+# --- a run with no behaviour step is not a glob left unexpanded ------------------------------------
+#
+# The baseline loop's only nullglob guard is `[ -e "$f" ] || break`. A probe whose install fails never
+# reaches step 5 and writes no `baseline-*.txt` at all -- the designed shape of outcome 2 -- and without
+# the guard, an unmatched glob stays literal and the loop would emit a section labelled by the glob text
+# itself instead of nothing.
+fixture
+rm -f "$results"/baseline-*.txt "$results"/delta-*.txt
+printf 'install 1\n' > "$results/steps"
+printf '1\n' > "$results/exit-code"
+run_assembler example
+check "a run with no behaviour step emits no baseline or delta section at all" \
+    "$(grep -c '^baseline-' "$written")-$(grep -c '^delta-' "$written")" "0-0"
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
     exit 1
