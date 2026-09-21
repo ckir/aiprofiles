@@ -168,6 +168,25 @@ probe_state_default=$(sed -n 's/^PROBE_STATE=${PROBE_STATE:-\(.*\)}$/\1/p' "$roo
 check "the harness's bookkeeping directory is where run.sh lifts it from" \
     "$probe_state_default" "/home/probe/.probe-state"
 
+# THE THIRD OF THE TRIO, and the one with no pin at all until now. $PROBE_OUT's and $PROBE_STATE's
+# defaults above are literal paths a `sed` capture can compare directly; $PROBE_TARGET's default is
+# `$PROBE_AGENT_HOME/probe-target` (an expression, not a literal), so the captured text is evaluated
+# with PROBE_AGENT_HOME pinned to ITS OWN sed-extracted default before the comparison. `run.sh`'s
+# `cleanup` lifts `/home/agent/probe-target` by that literal path (see run.sh's `eng cp` block for the
+# profile directory), so a default pointing anywhere else strands the profile directory the agent was
+# pointed at inside the removed container, exactly as an unpinned $PROBE_STATE would have stranded
+# `failures` and `steps`.
+probe_agent_home_default=$(sed -n 's/^PROBE_AGENT_HOME=${PROBE_AGENT_HOME:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
+probe_target_expr=$(sed -n 's/^PROBE_TARGET=${PROBE_TARGET:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
+probe_target_default=$(
+    # shellcheck disable=SC2034 # read by the `eval` below, not referenced directly -- shellcheck
+    # cannot see through eval's re-parse of $probe_target_expr, which is where $PROBE_AGENT_HOME expands.
+    PROBE_AGENT_HOME=$probe_agent_home_default
+    eval "printf %s \"$probe_target_expr\""
+)
+check "the profile directory's default is where run.sh lifts it from" \
+    "$probe_target_default" "/home/agent/probe-target"
+
 # --- run.sh's copy-back, RUN rather than grepped ----------------------------------------------------
 #
 # THE DEFECT CLASS: a source-text assertion wearing a behavioural name. This used to be
@@ -271,6 +290,71 @@ check "an interrupted run exits 130" "$eng_status" "130"
 check "and still lifts its artefacts out before the container is removed" \
     "$eng_lifted" "./from-.probe-out,./from-.probe-state,./target/from-probe-target,"
 check "and the removal still happens, after the copies" "$eng_order" "cp,cp,cp,rm,rmi,"
+
+# --- run.sh's own refusals --------------------------------------------------------------------------
+#
+# `fake_engine_run` above always calls `sandbox/run.sh probe claude` with a valid agent and no version —
+# every other arm of run.sh's own argument handling is unexercised: the version-charset guard, the
+# agent-charset guard and the missing-probe-script refusal. The version guard is the serious one: it
+# stands between a probe's version argument and the harness-uid shell that assembles the container's
+# command line. Without it, `sandbox/run.sh probe claude "1.0'; id; echo PWNED; :'"` splices `id` and
+# `echo PWNED` into that shell as separate commands, running BEFORE any install, at the uid running the
+# harness, with every recorded artefact still writable.
+#
+# fake_engine_case <arg...>: run `sandbox/run.sh` with a stub `docker` and the given arguments. Sets
+# $case_status, $case_stderr (stderr only) and $case_ran (1 if the stub's `run` subcommand was ever
+# invoked). $case_ran is what makes a refusal check non-vacuous: a guard that fired too LATE would still
+# exit non-zero, but only "no run" says the injected content never reached the container's command line.
+fake_engine_case() {
+    case_dir=$(mktemp -d)
+    cat > "$case_dir/docker" <<'ENGINE'
+#!/bin/sh
+printf '%s\n' "$1" >> "$FAKE_ENG_LOG"
+case $1 in
+    inspect) echo 0 ;;
+    diff) echo "stub diff" ;;
+esac
+exit 0
+ENGINE
+    chmod +x "$case_dir/docker"
+    : > "$case_dir/calls"
+    set +e
+    case_stderr=$(FAKE_ENG_LOG="$case_dir/calls" AGENT_PROFILE_SANDBOX_ENGINE=docker \
+        PATH="$case_dir:$PATH" sh "$root/sandbox/run.sh" "$@" 2>&1 >/dev/null)
+    case_status=$?
+    set -e
+    if grep -qx run "$case_dir/calls"; then case_ran=1; else case_ran=0; fi
+    rm -rf "$case_dir"
+}
+
+fake_engine_case probe claude '1.0; id'
+check "run.sh refuses a version outside the charset before it reaches the container (semicolon)" \
+    "$case_status" "2"
+check "and names the charset (semicolon)" "$case_stderr" "sandbox: versions are [A-Za-z0-9._-]"
+check "and the container is never told to run (semicolon)" "$case_ran" "0"
+
+fake_engine_case probe claude '1.0 --flag'
+check "run.sh refuses a version outside the charset before it reaches the container (space)" \
+    "$case_status" "2"
+check "and names the charset (space)" "$case_stderr" "sandbox: versions are [A-Za-z0-9._-]"
+check "and the container is never told to run (space)" "$case_ran" "0"
+
+fake_engine_case probe claude '$(id)'
+check 'run.sh refuses a version outside the charset before it reaches the container (command substitution)' \
+    "$case_status" "2"
+check 'and names the charset (command substitution)' "$case_stderr" "sandbox: versions are [A-Za-z0-9._-]"
+check 'and the container is never told to run (command substitution)' "$case_ran" "0"
+
+fake_engine_case probe 'claude;id'
+check "run.sh refuses an agent word outside [a-z0-9-]" "$case_status" "2"
+check "and names the agent charset" "$case_stderr" "sandbox: agent names are [a-z0-9-]"
+check "and the container is never told to run (bad agent word)" "$case_ran" "0"
+
+fake_engine_case probe nosuchagent
+check "run.sh refuses an agent with no probe script" "$case_status" "2"
+check "and names the missing script" "$case_stderr" \
+    "sandbox: no probe script sandbox/probes/nosuchagent.sh"
+check "and the container is never told to run (no probe script)" "$case_ran" "0"
 
 # --- probe_record ---------------------------------------------------------------------------------
 
@@ -823,6 +907,28 @@ check "while the sweep's refusal is still in the step log" \
     "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" \
     "candidate-1 0,candidate-2 2,behaviour-flagfile---config 2,"
 
+# `probe_candidates`' own loop restores every registered location (`probe_restore_known`) BEFORE each
+# candidate's launch, so the sweep runs every candidate against the same default location the one before
+# it saw — not just the first, which is all the checks above happen to exercise since none of their
+# stubs write to a registered default location at all. This stub exits 0 the first time it finds ITS OWN
+# marker already sitting in the default location, and 2 otherwise, and plants that marker on every
+# launch: a restored location is empty going in, so a working sweep sees "no marker" (2) every time,
+# while a sweep that stopped restoring between candidates would see the first launch's marker on every
+# launch after it (2,0,0).
+default_loc_sweep=$(mktemp -d)
+rm -rf "$default_loc_sweep"
+sweep_body='marker="'"$default_loc_sweep"'/marker"
+mkdir -p "'"$default_loc_sweep"'"
+if [ -e "$marker" ]; then result=0; else result=2; fi
+: > "$marker"
+exit "$result"'
+stage sweepagent "$sweep_body"
+run_staged "probe_pristine $default_loc_sweep
+probe_candidates sweepagent flagfile:--config @none @none @none"
+check "each candidate in a sweep is launched against the same default location as the one before it" \
+    "$(cat "$PROBE_OUT_DIR/candidate-1.exit-code") $(cat "$PROBE_OUT_DIR/candidate-2.exit-code") $(cat "$PROBE_OUT_DIR/candidate-3.exit-code")" \
+    "2 2 2"
+
 # --- the default location, between launches -------------------------------------------------------
 
 # The defect: nothing reset the agent's DEFAULT location between launches, so only the FIRST launch of a
@@ -883,6 +989,20 @@ check "a truncated excerpt says so at the cut" \
 
 run_probe 'printf "1\n2\n" | probe_excerpt 5 > "$PROBE_OUT/excerpt"'
 check "an excerpt that fits carries no marker" "$(grep -c truncated "$PROBE_OUT_DIR/excerpt")" "0"
+
+# probe_excerpt's OTHER bound: a single line over 500 characters is cut and the cut is marked with
+# "  [line truncated]" — only the line-COUNT bound above was ever asserted; the per-line bound was not.
+probe_excerpt_600=$(awk 'BEGIN { s = ""; for (i = 0; i < 600; i++) s = s "x"; print s }')
+probe_excerpt_500=$(awk 'BEGIN { s = ""; for (i = 0; i < 500; i++) s = s "x"; print s }')
+
+run_probe "printf '%s\n' '$probe_excerpt_600' | probe_excerpt 5 > \"\$PROBE_OUT/excerpt\""
+check "an over-long line is cut and says so at the cut" \
+    "$(cat "$PROBE_OUT_DIR/excerpt")" "$probe_excerpt_500  [line truncated]"
+
+# The boundary control: without it, the check above would pass just as well for a filter that truncates
+# every line to 500 regardless of its own length.
+run_probe "printf '%s\n' '$probe_excerpt_500' | probe_excerpt 5 > \"\$PROBE_OUT/excerpt\""
+check "a line at the bound is passed whole" "$(cat "$PROBE_OUT_DIR/excerpt")" "$probe_excerpt_500"
 
 # --- probe_version --------------------------------------------------------------------------------
 
@@ -947,6 +1067,28 @@ check "a documented variable that is absent is recorded" \
 # The undocumented sweep is the half that pays: FAKE_HOME was never passed in.
 check "an undocumented variable is still found" \
     "$(grep -c '^FAKE_HOME$' "$PROBE_OUT_DIR/strings.txt")" "1"
+
+# The undocumented sweep's filter is eleven alternatives
+# (KEY|TOKEN|SECRET|CREDENTIAL|PASSWORD|AUTH|HOME|CONFIG|DATA_DIR|PROFILE|SETTINGS), and until now only
+# one of them (HOME, via FAKE_HOME above) was ever exercised. This is the half that found Claude's
+# `CLAUDE_CODE_USE_BEDROCK` and three OAuth variables — one token per category, plus a negative control
+# in the SAME fixture: a token of the same [A-Z][A-Z0-9_]{3,} shape that names no category, so a filter
+# that passed everything through unfiltered could not satisfy this check either.
+stage categoryagent 'echo "X_KEY X_TOKEN X_SECRET X_CREDENTIAL X_PASSWORD X_AUTH X_HOME X_CONFIG X_DATA_DIR X_PROFILE X_SETTINGS UNRELATED_BANNER"'
+run_staged 'probe_strings categoryagent'
+# `if ... ; then` rather than `grep ... && printf ...`: the latter, inside this command substitution
+# and under `set -eu`, aborts the WHOLE suite the moment a category is absent -- exactly what a narrowed
+# filter does to most of these eleven -- instead of letting the check below report a clean FAIL. An `if`
+# condition is the POSIX-exempted form; a bare command on the left of `&&` here is not.
+probe_strings_found=$(for probe_cat_tok in X_KEY X_TOKEN X_SECRET X_CREDENTIAL X_PASSWORD X_AUTH \
+    X_HOME X_CONFIG X_DATA_DIR X_PROFILE X_SETTINGS; do
+    if grep -qx "$probe_cat_tok" "$PROBE_OUT_DIR/strings.txt"; then printf '%s ' "$probe_cat_tok"; fi
+done)
+check "the undocumented sweep reports a token for every category the filter claims" \
+    "$probe_strings_found" \
+    "X_KEY X_TOKEN X_SECRET X_CREDENTIAL X_PASSWORD X_AUTH X_HOME X_CONFIG X_DATA_DIR X_PROFILE X_SETTINGS "
+check "and a token in no category is not reported" \
+    "$(grep -c '^UNRELATED_BANNER$' "$PROBE_OUT_DIR/strings.txt")" "0"
 
 run_probe 'probe_strings nosuchagent SOME_KEY'
 check "scanning a missing executable fails the probe" "$probe_status" "1"

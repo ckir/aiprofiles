@@ -72,6 +72,51 @@ check "a path is refused" "$status" "1"
 resolve "a b c d e f g h i j k l m n o p q r s t u v w x y"
 check "more than the cap is refused" "$status" "1"
 
+# CAP=24 in sandbox/resolve-agents.sh, and the test above passes 25 names -- the boundary itself, 24
+# accepted and 25 refused, was never touched. Every real name also has to pass the per-agent loop's own
+# `grep` check, "is this a genuine probe script", and the repository has only twelve of those -- fewer
+# than the cap. So this builds an ISOLATED COPY of resolve-agents.sh, with its own
+# scripts/lib/scan-guard.sh and 25 throwaway one-line probe scripts under a temporary sandbox/probes/,
+# and runs THAT copy. `root=$(cd "$(dirname "$0")/.." && pwd)` in resolve-agents.sh resolves relative to
+# wherever the script itself lives, so copying it to <tmp>/sandbox/resolve-agents.sh alongside
+# <tmp>/sandbox/probes/*.sh makes the cap boundary exercisable without touching the real registry or the
+# real cap.
+cap_root=$(mktemp -d)
+mkdir -p "$cap_root/sandbox/probes" "$cap_root/scripts/lib"
+cp "$root/sandbox/resolve-agents.sh" "$cap_root/sandbox/resolve-agents.sh"
+cp "$root/scripts/lib/scan-guard.sh" "$cap_root/scripts/lib/scan-guard.sh"
+cap_names=
+cap_i=1
+while [ "$cap_i" -le 25 ]; do
+    echo '. sandbox/probes/common.sh' > "$cap_root/sandbox/probes/agent$cap_i.sh"
+    cap_names="$cap_names agent$cap_i"
+    cap_i=$((cap_i + 1))
+done
+cap_names=${cap_names# }
+cap24=$(printf '%s\n' "$cap_names" | tr ' ' '\n' | sed -n '1,24p' | tr '\n' ' ')
+cap24=${cap24% }
+
+set +e
+cap24_out=$(sh "$cap_root/sandbox/resolve-agents.sh" "$cap24" 2>/dev/null)
+cap24_status=$?
+set -e
+check "exactly the cap is accepted" "$cap24_status" "0"
+check "and the accepted array holds all 24 names" \
+    "$(printf '%s' "$cap24_out" | grep -o '"[^"]*"' | wc -l | tr -d ' ')" "24"
+
+# The resolver also requires every name to be a real probe script, checked one at a time AFTER the cap.
+# A refusal here could in principle come from either check, so this asserts the specific MESSAGE the cap
+# refusal prints -- naming the count and the cap -- rather than trusting exit status 1 alone to mean the
+# boundary was what fired.
+set +e
+cap25_err=$(sh "$cap_root/sandbox/resolve-agents.sh" "$cap_names" 2>&1 >/dev/null)
+cap25_status=$?
+set -e
+check "one more than the cap is refused" "$cap25_status" "1"
+check "and the refusal names the cap" "$cap25_err" "resolve-agents: 25 agents requested; the cap is 24"
+
+rm -rf "$cap_root"
+
 resolve claude 2.1.270
 check "a version with one agent is accepted" "$status" "0"
 
