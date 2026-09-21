@@ -24,7 +24,11 @@ usage() {
     exit 2
 }
 
-[ $# -ge 1 ] && [ $# -le 2 ] || usage
+# Spelled as an `if` rather than `[ ... ] && [ ... ] || usage`: in that form the `||` fires whenever the
+# LAST test fails, so it reads as if-then-else while being something else, and SC2015 says so.
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    usage
+fi
 spec=$1
 version=${2:-}
 

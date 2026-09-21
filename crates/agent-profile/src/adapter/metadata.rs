@@ -113,7 +113,7 @@ impl ConflictOption {
 ///
 /// # Three renderings, one per consumer — do not collapse them
 ///
-/// 1. [`Display`] — the **path-free** sentence, for error messages. An error message cannot name a
+/// 1. [`std::fmt::Display`] — the **path-free** sentence, for error messages. An error message cannot name a
 ///    path, because `check_conflicts` refuses an argument before any plan exists and therefore before
 ///    any path has been chosen. It prints the placeholder `<dir>` / `<file>` instead.
 /// 2. [`Mechanism::sentence_for`] — the **concrete** sentence that becomes
@@ -126,8 +126,9 @@ impl ConflictOption {
 /// questions at different times. For environment mechanisms they coincide, because there is no path in
 /// the sentence to differ over.
 ///
-/// All three are generated from this one value, and so is the launch itself:
-/// [`Mechanism::plan`](super::Mechanism::plan) dispatches on the variant and takes the variable name or
+/// All three are generated from this one value, and so is the launch itself: `Mechanism::plan` (crate
+/// internal, so not linked here — a public doc comment cannot link a private item) dispatches on the
+/// variant and takes the variable name or
 /// flag spelling out of the variant's own payload. An adapter passes no name and no flag, so there is no
 /// second string for the first to drift from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -132,8 +132,13 @@ eng() {
     fi
 }
 
-# shellcheck disable=SC2329 # invoked by the EXIT/INT/TERM/HUP traps below, which shellcheck does
+# shellcheck disable=SC2317,SC2329 # invoked by the EXIT/INT/TERM/HUP traps below, which shellcheck does
 # not follow. Removing it as "unused" would leave every run's container and image behind.
+#
+# BOTH codes, because the two shellchecks in play disagree about which one this is. 0.11 (the maintainer's)
+# reports the FUNCTION as never invoked, SC2329. The older build on `ubuntu-latest`, which is what the
+# Shellcheck job actually runs, reports every COMMAND inside it as unreachable, SC2317 -- so a tree that
+# passes locally fails in CI, which is exactly what happened on this branch's first push.
 cleanup() {
     status=$?
     trap '' INT TERM HUP

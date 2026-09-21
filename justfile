@@ -66,9 +66,20 @@ tools-doc:
 tools-doc-check:
     sh scripts/gen-tool-table.sh --check
 
+# Fails on a broken rustdoc link, exactly as ci.yml's `Docs build` job does. Here because the local gate
+# did not run it and CI does: this branch's first push failed that job on two links a green `just check`
+# had just certified, and a gate that cannot see a required check is a gate you learn to distrust.
+doc-check:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+
 # The local gate: fmt + clippy + typos + shellcheck + line-citations + test + the probe harness +
-# tools-doc freshness
-check: fmt-check clippy typos shellcheck line-citations test probe-tests tools-doc-check
+# tools-doc freshness + the docs build
+#
+# It mirrors the REQUIRED CHECKS in ci.yml, and the mirror is the point -- every recipe here exists
+# because CI runs the same command. One caveat it cannot fix: `shellcheck` is whatever version is on the
+# machine, and `ubuntu-latest`'s is older than a current local install. The older one reports SC2317 where
+# the newer reports SC2329, so a file can pass here and fail there; `sandbox/run.sh` carries both codes.
+check: fmt-check clippy typos shellcheck line-citations test probe-tests tools-doc-check doc-check
 
 # Background watcher
 watch:
