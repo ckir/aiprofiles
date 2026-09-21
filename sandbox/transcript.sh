@@ -136,15 +136,32 @@ fi
 
 out="$outdir/$id-$version.md"
 
-# section <label> <file> <max-lines>: one labelled block, stripped and bounded, or an explicit absence.
+# section <label> <file> <max-lines> [empty-text]: one labelled block, stripped and bounded, or an
+# explicit absence -- and those are THREE states, not two.
 #
 # A missing artefact is PRINTED rather than skipped. A transcript with no `help:` line reads as an agent
 # with no help text; one saying `(not recorded)` reads as a probe that did not get that far, and those are
 # different findings.
+#
+# AN ARTEFACT THAT EXISTS AND IS EMPTY IS A THIRD THING, and collapsing it into the second was a defect
+# this file shipped. `[ -s ]` is false for missing AND for empty, so a delta recording that NOTHING MOVED
+# printed `(not recorded)` -- the phrase reserved for a step that never ran. `common.sh`'s `probe_delta`
+# says the opposite in as many words: an empty delta "means the launch changed nothing, unambiguously,
+# which is a finding rather than a gap". Two comments in this repository, describing one file, disagreeing.
+#
+# MEASURED on the first real probe run: `claude 2.1.278` launched with `CLAUDE_CONFIG_DIR` set wrote
+# nothing at either watched location, and the transcript rendered that measurement as `(not recorded)`.
+# SP4b reads these files to decide a support level, and "measured, nothing moved" and "not measured" are
+# opposite answers to the question it asks.
+#
+# The caller supplies the empty text, because what an empty file MEANS is the caller's knowledge: for a
+# delta it is the isolation finding, for a captured stream it is the agent having printed nothing.
 section() {
     printf '%s:\n' "$1"
     if [ -s "$2" ]; then
         probe_excerpt "$3" < "$2" | sed 's/^/  /'
+    elif [ -e "$2" ]; then
+        echo "  ${4:-(recorded, and empty)}"
     else
         echo "  (not recorded)"
     fi
@@ -190,7 +207,13 @@ section() {
         [ -e "$f" ] || break
         label=$(basename "$f" .txt)
         section "$label" "$f" 200
-        section "delta-${label#baseline-}" "$results/delta-${label#baseline-}.txt" 200
+        # The empty text is THE FINDING for a delta, not a note about the file: the harness watched both
+        # locations across the launch and nothing appeared, moved or vanished. Whether that means the
+        # mechanism isolated the agent or the launch never made it write anything is decided by the
+        # LAUNCH, which `exit-codes:` names -- a probe whose behaviour step runs `--version` proves the
+        # second, not the first.
+        section "delta-${label#baseline-}" "$results/delta-${label#baseline-}.txt" 200 \
+            "(no change: nothing was created, moved or removed at the watched locations)"
     done
 
     # §8.4's acceptance sweep, present only for the configuration-file agents.
