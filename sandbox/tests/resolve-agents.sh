@@ -138,6 +138,38 @@ check "a version outside Gate A's charset is refused" "$status" "1"
 resolve claude 1.2.3-beta.1
 check "a version using every permitted character is accepted" "$status" "0"
 
+# --- every script a workflow runs DIRECTLY must be executable ---------------------------------------
+#
+# A workflow line like `sandbox/resolve-agents.sh "$AGENTS"` executes the file rather than passing it to a
+# shell, so a file committed without its executable bit dies with `Permission denied` and exit 126. The
+# mode is invisible on Windows, where these are authored, and only Linux enforces it -- so this cannot be
+# caught by reading the script or by running the suite on the maintainer's host.
+#
+# MEASURED: `sandbox/verify-transcripts.sh` was committed 100644 and failed exactly that way on this
+# branch's first CI run. `resolve-agents.sh` and `transcript.sh` had the same mode and had not run yet --
+# they are invoked by the Sandbox workflow, so the failure was waiting for THE PROBE RUN.
+#
+# Derived from the workflows rather than from a list here, because a list would rot the next time a
+# workflow line is added -- which is the failure this check exists to prevent, one level up.
+direct_scripts=$(grep -hoE '(^|[^a-zA-Z0-9_/-])(sandbox|scripts)/[a-zA-Z0-9_-]+\.sh' \
+    "$root"/.github/workflows/*.yml \
+    | sed 's|^[^a-zA-Z0-9_/-]||' | LC_ALL=C sort -u)
+not_executable=
+for direct in $direct_scripts; do
+    # Only the ones a workflow EXECUTES; `sh <path>` and `just <recipe>` do not need the bit, and asking
+    # for it there would be noise. A path that appears only after `sh ` is filtered out here.
+    if grep -qE "(^|[^a-zA-Z0-9_])sh +$direct" "$root"/.github/workflows/*.yml; then continue; fi
+    case "$(git -C "$root" ls-files -s -- "$direct" | awk '{print $1}')" in
+        100755) ;;
+        '') ;;
+        *) not_executable="$not_executable $direct" ;;
+    esac
+done
+check "every script a workflow executes directly is committed executable" "$not_executable" ""
+# The control: a collector that found nothing would pass the check above without a word.
+check "and that was checked against a non-empty list of scripts" \
+    "$([ -n "$direct_scripts" ] && echo found || echo none)" "found"
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
     exit 1
