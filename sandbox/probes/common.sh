@@ -126,6 +126,19 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 #                                                                 archive is read from a descriptor the
 #                                                                 harness opened, so $PROBE_STATE stays
 #                                                                 unreadable to the agent.
+#     probe_pristine's `tar -c`                                   the MIRROR of probe_restore_default's
+#                                                                 `tar -x` below, and it crosses for the
+#                                                                 reason that one does not have to: the
+#                                                                 tree being read is the AGENT's, and a
+#                                                                 read at the harness's uid fails on any
+#                                                                 path the agent left without a group-read
+#                                                                 bit — measured at 0700 and 0600 inside
+#                                                                 two real agents' config directories,
+#                                                                 which failed those probes outright. The
+#                                                                 archive is written to a descriptor the
+#                                                                 harness opened, so $PROBE_STATE stays
+#                                                                 unwritable to the agent and the harness
+#                                                                 still owns what the restore trusts.
 #     probe_strings' `command -v`                                 "which file did the install put on the
 #                                                                 PATH" is a question about the AGENT's
 #                                                                 PATH. `command -v` is a shell builtin:
@@ -237,6 +250,24 @@ PROBE_CONFIG_NAME=${PROBE_CONFIG_NAME:-config}
 # so nothing legitimate would arrive that way, and a variable that decides whether a failed step counts is
 # the one thing an install script must not be able to preset.
 PROBE_SOFT=
+# The exit code a step is EXPECTED to produce. Empty means 0, which is every step's default; a probe
+# script sets it for the length of one `probe_behaviour` call, which clears it again.
+#
+# It exists because for some agents the only command that initialises is one that FAILS. Measured: `pi`
+# writes nothing at all under `--version`, `list` or `auth check`, and writes its whole configuration
+# under `-p hello` — which then exits 1 because no API key is set. The measurement succeeded and the
+# probe called it a failure, so the transcript was refused for a run that had produced exactly the
+# evidence it was launched to produce.
+#
+# NOT `PROBE_SOFT` widened to behaviour steps, and the difference is the whole point: soft means any
+# non-zero code is tolerated, which would turn a segfault, a missing shared library or a timeout into a
+# successful measurement with an empty delta. This names ONE code, and any other — including 0 — is still
+# a failure. An agent that stops needing a key would exit 0 here and fail this step, which is the correct
+# alarm rather than a false one: what the probe script claims about the agent would have gone stale.
+#
+# NOT read from the environment, for PROBE_SOFT's reason: a variable that decides whether a failed step
+# counts is one an install script must not be able to preset.
+PROBE_EXPECT=
 # Whether the command `probe_record` is about to run belongs to the measured party. Empty means the
 # harness, which is every step's default; `probe_record_agent` sets it for the length of one call.
 #
@@ -347,7 +378,10 @@ probe_record() {
     # refuses a missing, an empty and a comment-only `.aider.conf.yml` by design (`aider.rs`'s
     # `INITIAL_CONFIG` constant) — so routing them here would make the probe exit non-zero, the matrix job
     # conclude failure, and `verify-transcripts.sh` refuse the transcript the sweep exists to produce.
-    if [ "$status" -ne 0 ] && [ -z "$PROBE_SOFT" ]; then
+    # Compared against the EXPECTED code, which is 0 unless the probe script declared otherwise, rather
+    # than against 0 outright. A step that produces the declared code is a measurement; anything else,
+    # including 0 where non-zero was declared, is a failure.
+    if [ "$status" -ne "${PROBE_EXPECT:-0}" ] && [ -z "$PROBE_SOFT" ]; then
         echo "$name $status" >> "$PROBE_STATE/failures"
     fi
     return 0
@@ -773,13 +807,30 @@ probe_pristine() {
             # records it: "registered and absent" and "never registered" must not look the same to
             # `probe_restore_default`, or a failed archive would read as absence and delete a real one.
             : > "$PROBE_STATE/pristine/$probe_slot.absent"
-        # The archive is taken AS THE HARNESS and lands in $PROBE_STATE, which the agent cannot read or
-        # write: it is the state probe_restore_default restores TO, so the measured party must not be
-        # able to choose it. It reads the agent's files through the shared group, which is why the
-        # Containerfile gives /home/agent one; a location the agent has chmodded to 700 is unreadable
-        # and lands here as a recorded `pristine-N` failure rather than as a silently empty archive.
-        elif ! tar -cf "$PROBE_STATE/pristine/$probe_slot.tar" \
-            -C "$(dirname "$probe_loc")" "$(basename "$probe_loc")" 2>/dev/null; then
+        # THE READING HALF RUNS AS THE AGENT, and the archive stays the harness's — the exact mirror of
+        # probe_restore_default, whose writing half runs as the agent while the archive it reads from is
+        # opened by this shell. The redirect below is performed by THIS shell, as `probe`, before the
+        # privilege switch, so what the agent is handed is one open descriptor and no path it can act on;
+        # $PROBE_STATE stays unreadable and unwritable to it, and it is still the harness that decides
+        # what probe_restore_default restores TO.
+        #
+        # IT USED TO READ AS THE HARNESS, THROUGH THE SHARED GROUP, and that was a reachable defect rather
+        # than a hardening: an agent only had to create ONE path without a group-read bit inside its own
+        # config directory to make `tar` exit non-zero, and the recorded `pristine-N` failure then failed
+        # the entire probe. MEASURED on the first real run — `~/.codex/tmp/arg0` is a directory at 0700
+        # and `~/.cline/cli-node-extra-ca-certs.pem` is a file at 0600, so two of twelve agents could
+        # never produce evidence at all. The comment here used to predict that failure and call it
+        # acceptable; it is not, and a private credential file is a NORMAL thing for a coding agent to
+        # write. (It also guessed the wrong cause: both LOCATIONS are 0755, and it is a nested path that
+        # is unreadable.)
+        #
+        # Handing the agent authorship of these bytes gives away nothing, and that is a structural
+        # property rather than a hope: probe_restore_default ALREADY extracts with `probe_as_agent`, so a
+        # crafted archive — traversal, absolute paths, a symlink planted before the archive was taken —
+        # can only ever write where the agent could already write.
+        elif ! probe_as_agent tar -cf - \
+            -C "$(dirname "$probe_loc")" "$(basename "$probe_loc")" \
+            > "$PROBE_STATE/pristine/$probe_slot.tar" 2>/dev/null; then
             rm -f "$PROBE_STATE/pristine/$probe_slot.tar"
             echo "probe: could not archive $probe_loc before the first launch" >&2
             probe_fail "pristine-$probe_slot" 1
@@ -927,6 +978,11 @@ probe_behaviour() {
     # shellcheck disable=SC2086 # the caller supplies literal paths, and the split is the point
     probe_snapshot "baseline-$probe_lbl" "$PROBE_TARGET" $probe_default
     probe_apply "behaviour-$probe_lbl" "$probe_exe" "$probe_mech" "$@"
+    # Cleared HERE, by the helper, rather than left to each probe script to clear after itself. A
+    # declaration that outlived its launch would silently excuse the NEXT step's failure — and the next
+    # step is often a second mechanism's launch, whose own expected code is 0. `probe_candidates` clears
+    # PROBE_SOFT the same way and for the same reason.
+    PROBE_EXPECT=
     # shellcheck disable=SC2086
     probe_snapshot "after-$probe_lbl" "$PROBE_TARGET" $probe_default
     probe_delta "$PROBE_OUT/baseline-$probe_lbl.txt" "$PROBE_OUT/after-$probe_lbl.txt" \
