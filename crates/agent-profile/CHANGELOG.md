@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3](https://github.com/ckir/aiprofiles/compare/v0.0.2...v0.0.3) - 2026-09-21
+
+### Added
+
+- *(sandbox)* probe harness and evidence pipeline (SP4a) ([#24](https://github.com/ckir/aiprofiles/pull/24))
+
 ## [0.0.2](https://github.com/ckir/aiprofiles/compare/v0.0.1...v0.0.2) - 2026-09-16
 
 ### Added
