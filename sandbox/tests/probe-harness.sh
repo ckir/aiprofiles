@@ -156,10 +156,14 @@ check "the harness's output directory is not the /out bind mount" \
 #
 # What it costs in a container is worse than the artefacts, because this directory holds the run's STATUS.
 # `run.sh`'s `eng cp` block lifts `/home/probe/.probe-state` by that literal path, so a default pointing
-# anywhere else strands `failures` and `steps` inside the container: `transcript.sh` finds no `steps` and
-# prints `exit-codes: (not recorded)`, while `probe-exit:` — written from OUTSIDE the container and so
-# unaffected — still reads `0`. `verify-transcripts.sh` checks the exit code and the bytes, neither of
-# which notices, and accepts a transcript that records no step at all as a clean run.
+# anywhere else strands `failures` and `steps` inside the container.
+#
+# THE CONSEQUENCE CHANGED, and this paragraph used to describe the old one: it said the assembler would
+# print `exit-codes: (not recorded)` and the verifier would accept a transcript recording no step as a
+# clean run. That is no longer possible — an absent step list is now itself a refusal. What a stranded
+# `steps` costs today is the opposite and still a defect: a COMPLETE measurement is discarded, because the
+# run looks to the assembler exactly like one the harness refused. Either way the default must be what
+# `run.sh` lifts, which is what this pins.
 probe_state_default=$(sed -n 's/^PROBE_STATE=${PROBE_STATE:-\(.*\)}$/\1/p' "$root/sandbox/probes/common.sh")
 check "the harness's bookkeeping directory is where run.sh lifts it from" \
     "$probe_state_default" "/home/probe/.probe-state"
@@ -191,7 +195,19 @@ case $1 in
     run)
         if [ -n "${FAKE_ENG_INTERRUPT:-}" ]; then
             kill -INT "$PPID"
-            sleep 5
+            # WAIT FOR THE PARENT TO BE GONE, not for a duration. This was `sleep 5`, and that raced: the
+            # stub must not return before the signal has been acted on, but under load the parent can be
+            # descheduled past any fixed window -- the sleep then expires, this returns normally, run.sh
+            # carries on, and the run exits 0 instead of 130. MEASURED by a review seat: the check failed
+            # twice in full-suite runs while three agents were working, and passed 3/3 with the machine
+            # idle. The bound is kept so a parent that never dies fails the check instead of hanging the
+            # suite, and the poll costs nothing when idle because it ends the moment the parent is gone.
+            probe_eng_waited=0
+            while kill -0 "$PPID" 2>/dev/null; do
+                probe_eng_waited=$((probe_eng_waited + 1))
+                [ "$probe_eng_waited" -gt 600 ] && break
+                sleep 0.1 2>/dev/null || sleep 1
+            done
         fi
         ;;
     inspect) echo 0 ;;
@@ -499,9 +515,13 @@ check "and the enumeration is checked against a non-empty list of them" \
 # `"$(command -v sudo)"` -- which misses the SUFFIX anchor too, because `)` follows the word directly, and
 # is the most reachable of them since `command -v` is already this file's own idiom in probe_strings.
 #
-# The occurrence counts below are what covers that. They cannot say WHERE, and they do not care HOW the
-# call is spelled -- any new mention of the word in non-comment source changes the number and the check
-# goes red. Anchored table and blind count cover each other's blind spot; neither does alone.
+# The PINNED LINE SETS below are what covers that. They cannot say WHICH FUNCTION a line belongs to, and
+# they do not care how the call is spelled: any line mentioning the word, written any way, must appear in
+# the set verbatim. Anchored table and pinned text cover each other's blind spot; neither does alone.
+#
+# This was a pair of COUNTS first, and the counts were unsound: three of the five `sudo` lines are prose,
+# so one commit that reworded a message string and added a crossing netted to zero and left the suite
+# byte-identical to its baseline. A total over a set containing editable prose is not a tripwire.
 crossing_counts=$(awk '
     /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{$/ { fn = $1; sub(/\(\).*/, "", fn); count = 0; next }
     /^}$/ { if (fn != "" && count > 0) print fn, count; fn = ""; next }
@@ -530,14 +550,35 @@ TABLE
 check "each crossing function's line count is pinned against the table measured at HEAD, not just its name" \
     "$crossing_counts" "$crossing_counts_expected"
 
-# THE SPELLING-BLIND HALF. Counts every NON-COMMENT line of common.sh that mentions the bare word,
-# however it is written, so a spelling the anchored pattern above cannot see still moves a number. Five
-# today: the switch inside probe_as_agent, the pre-flight's `command -v sudo` and its `elif ! sudo`, and
-# the two message strings that name it. Three of those five are not crossings at all, which is the price
-# of a check that does not try to understand the shell -- it trades precision for being unevadable.
-check "no line of common.sh mentions sudo without this suite noticing, whatever the spelling" \
-    "$(grep -vE '^[[:space:]]*#' "$root/sandbox/probes/common.sh" \
-        | grep -cE '(^|[^A-Za-z0-9_])sudo([^A-Za-z0-9_]|$)')" "5"
+# THE SPELLING-BLIND HALF, and it pins the LINES rather than how many there are.
+#
+# A COUNT WAS TRIED HERE FIRST AND WAS UNSOUND. It totalled the non-comment lines mentioning the word, and
+# three of the five are prose -- `command -v sudo` and two message strings -- which are the most
+# edit-prone lines in the file. MEASURED: one commit that rewords a message string and adds the
+# `if sudo ... -- find` crossing nets to zero, and the whole suite stayed byte-identical to its baseline
+# with a real crossing present. A total over a set that contains editable prose is not a tripwire.
+#
+# The pinned TEXT has neither failure. A reworded line changes the list, so nothing can net out; and the
+# repair is to read the line the diff shows, not to edit a digit -- a number invites being bumped, which
+# would codify the very blind spot the anchored pattern above already has.
+#
+# Scoped across EVERY probe script, not just common.sh: the twelve source it, and a crossing written in
+# one of them was read by nothing here.
+sudo_mentions=$(for probe_file in "$root"/sandbox/probes/*.sh; do
+    grep -vE '^[[:space:]]*#' "$probe_file" \
+        | grep -E '(^|[^A-Za-z0-9_])sudo([^A-Za-z0-9_]|$)' \
+        | sed "s|^[[:space:]]*|$(basename "$probe_file")  |"
+done | LC_ALL=C sort)
+sudo_mentions_expected=$(cat <<'MENTIONS'
+common.sh  elif ! sudo -n -u "$PROBE_AGENT_USER" true >/dev/null 2>&1; then
+common.sh  if ! command -v sudo >/dev/null 2>&1; then
+common.sh  probe_privilege_refusal="'sudo -n -u $PROBE_AGENT_USER true' failed"
+common.sh  probe_privilege_refusal="there is no 'sudo' on the PATH"
+common.sh  sudo -n -u "$PROBE_AGENT_USER" -- env \
+MENTIONS
+)
+check "every line under sandbox/probes that mentions sudo is one of these, whatever the spelling" \
+    "$sudo_mentions" "$sudo_mentions_expected"
 
 # The flag decides WHICH UID a command runs at, so a value left set after a call would silently put the
 # next step — a snapshot, a restore, anything the harness does for itself — on the wrong side.
@@ -584,10 +625,50 @@ check "and that table was checked against a non-empty collection" \
 #
 # That blindness is how the whole `harness-` mechanism unravels: an unseen call site is one nobody is
 # forced to look at, so nobody notices it lacks the prefix, so `transcript.sh` assembles a committable
-# transcript for a run the harness refused. Seven occurrences today -- six call sites and the definition.
-check "no call of probe_fail escapes notice by not starting its line" \
-    "$(grep -vE '^[[:space:]]*#' "$root/sandbox/probes/common.sh" \
-        | grep -cE '(^|[^A-Za-z0-9_])probe_fail([^A-Za-z0-9_]|$)')" "7"
+# transcript for a run the harness refused.
+#
+# PINNED AS TEXT, and scoped across every probe script, for the three reasons a count failed here. A count
+# of LINES cannot see two calls joined with `;` on one line -- the text can, because the line itself
+# changes. A count reading only common.sh cannot see a `probe_fail` in one of the twelve, which is a
+# helper they all source -- MEASURED: one added to `codex.sh` left the whole suite green while its
+# unprefixed name would have let `transcript.sh` assemble evidence for a harness-side refusal. And a
+# number invites being bumped, where a line has to be read before it can be pasted in.
+probe_fail_lines=$(for probe_file in "$root"/sandbox/probes/*.sh; do
+    grep -vE '^[[:space:]]*#' "$probe_file" \
+        | grep -E '(^|[^A-Za-z0-9_])probe_fail([^A-Za-z0-9_]|$)' \
+        | sed "s|^[[:space:]]*|$(basename "$probe_file")  |"
+done | LC_ALL=C sort)
+probe_fail_lines_expected=$(cat <<'CALLS'
+common.sh  probe_fail "harness-mechanism-$probe_name" 2
+common.sh  probe_fail "pristine-$probe_slot" 1
+common.sh  probe_fail "restore-$probe_rn" 1
+common.sh  probe_fail harness-privilege 1
+common.sh  probe_fail harness-version-refused 2
+common.sh  probe_fail strings 127
+common.sh  probe_fail() {
+CALLS
+)
+check "every line under sandbox/probes that names probe_fail is one of these" \
+    "$probe_fail_lines" "$probe_fail_lines_expected"
+
+# THE OTHER WRITER OF `steps`, which three rounds of guards never bounded. `transcript.sh` refuses a run
+# whose step list carries a `harness-` row, and `steps` is written from TWO places: `probe_fail` above,
+# and `probe_record`/`probe_record_agent`. Everything above reads only the first. MEASURED: a step named
+# `harness-help` through `probe_record_agent` makes the assembler discard a fully successful run --
+# `probe-exit: 0`, a real version -- and write no transcript at all. The failure direction is the safe one
+# (evidence lost, not forged), but the comment above calls this set a contract, and half of it was unheld.
+#
+# Only LITERAL names can be checked here; `probe_apply`'s are built from a mechanism label at runtime, and
+# those labels come from the four known prefixes, none of which can begin `harness-`.
+record_names=$(for probe_file in "$root"/sandbox/probes/*.sh; do
+    grep -vE '^[[:space:]]*#' "$probe_file" \
+        | grep -oE 'probe_record(_agent)?[[:space:]]+[A-Za-z0-9_-]+' \
+        | sed 's/.*[[:space:]]//'
+done | LC_ALL=C sort -u)
+check "no literal step name given to probe_record claims the harness's own prefix" \
+    "$(printf '%s\n' "$record_names" | grep -c '^harness-' || true)" "0"
+check "and that was checked against the literal names actually found" \
+    "$record_names" "$(printf 'help\ninstall\nversion\n')"
 
 # --- the agent's home ---------------------------------------------------------------------------
 #

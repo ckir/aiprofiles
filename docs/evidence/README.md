@@ -75,7 +75,8 @@ The same applies to a run that recorded **no step at all** — the image build f
 before the probe was sourced. Those failures happen outside the container, so they leave no step rows to
 carry a prefix, and the first version of this rule was blind to them: a failed build produced a clean-
 looking `<id>-unknown.md` that the gate accepted. An absent step list is now itself a refusal, which is
-safe because a genuine "would not install" run always records an `install` row before it can fail.
+safe because a genuine "would not install" run always records an `install` row as soon as the install
+returns, however it returns.
 
 Step 3 is not ceremony. Without it, someone with push access could dispatch the workflow on a throwaway
 branch carrying an edited probe script that prints whatever they liked: the run would be genuinely green,

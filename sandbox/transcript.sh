@@ -92,7 +92,10 @@ mkdir -p "$outdir"
 # a results directory holding only `exit-code: 125` produced a transcript with `(not recorded)` in every
 # block. A failed image build is the commonest way the image breaks, so the uncovered case was the likely
 # one. Nothing legitimate is lost: a genuine outcome 2 always carries an `install <status>` row, because
-# `probe_record_agent install` writes one before the install can fail.
+# `probe_record` writes one as soon as the install RETURNS, however it returns -- non-zero, 127, or killed
+# by `timeout`. What it writes before running the command is `install.cmd`, not the row; an earlier
+# wording of this sentence claimed the row. The only way to lose it is the shell dying mid-install, which
+# is an infrastructure failure this refusal is right to catch.
 if [ ! -s "$results/steps" ] || grep -q '^harness-' "$results/steps"; then
     refused="$outdir/$id-harness-refused.txt"
     {
