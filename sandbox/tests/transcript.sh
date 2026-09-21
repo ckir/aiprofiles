@@ -239,9 +239,17 @@ printf 'agent 1.2.3\nversion-extracted: 9.9.9\n' > "$results/version.txt"
 run_assembler example
 check "agent-authored text cannot supply a header field" "$(field version-extracted)" "1.2.3"
 
-# Sibling checks: `custody` and `probe-exit` are both written BEFORE any section() body, so nothing an
-# agent puts in help.txt or strings.txt can ever precede them in the file -- this pins that the exposure
-# is exactly the one above, and no wider.
+# Sibling checks, and TWO independent things hold them -- measured, because the single mutant above does
+# not redden them and that could be mistaken for a vacuous pair.
+#
+# The first is ORDER: `custody` and `probe-exit` are written before any section() body, so nothing an agent
+# puts in help.txt or strings.txt can precede them, and `field()` takes the FIRST match. The second is the
+# INDENT: even out of order, an injected line arrives as `  probe-exit: 99`, which `^probe-exit: ` does not
+# match. MEASURED: moving the `probe-exit:` emission after the sections leaves this suite GREEN while the
+# indent stands, and only dropping BOTH turns this check red with `probe-exit` reading the agent's 99.
+#
+# So these are defence in depth rather than a wider version of the check above, and a single-point mutant
+# leaving them green is the expected result, not a sign they assert nothing.
 fixture
 printf 'Usage: agent [--config <dir>]\ncustody: forged\n' > "$results/help.txt"
 run_assembler example
