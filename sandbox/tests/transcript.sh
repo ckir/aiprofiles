@@ -122,6 +122,34 @@ run_assembler example
 check "a missing artefact is stated, not skipped" \
     "$(sed -n '/^help:/{n;p;}' "$written")" "  (not recorded)"
 
+# AN EMPTY ARTEFACT IS THE THIRD STATE, and reading it as the second was a defect this repository shipped
+# and then measured on its first real probe run. `[ -s ]` is false for missing AND for empty, so a delta
+# recording that NOTHING MOVED printed `(not recorded)` -- the phrase reserved for a step that never ran.
+#
+# The two directions are checked separately because only their DIFFERENCE carries the meaning: one test
+# could be satisfied by an assembler that printed the same phrase for both, which is precisely the defect.
+fixture
+: > "$results/help.txt"
+run_assembler example
+check "an artefact that exists and is empty is not reported as missing" \
+    "$(sed -n '/^help:/{n;p;}' "$written")" "  (recorded, and empty)"
+
+# The delta is the case that matters, because SP4b reads it to decide a support level and "measured,
+# nothing moved" and "not measured" are opposite answers. MEASURED: claude 2.1.278 launched with
+# CLAUDE_CONFIG_DIR set wrote nothing at either location, and the transcript called that `(not recorded)`.
+fixture
+: > "$results/delta-env-EXAMPLE_HOME.txt"
+run_assembler example
+check "a delta that recorded no change says so, rather than reading as unmeasured" \
+    "$(sed -n '/^delta-env-EXAMPLE_HOME:/{n;p;}' "$written")" \
+    "  (no change: nothing was created, moved or removed at the watched locations)"
+
+fixture
+rm "$results/delta-env-EXAMPLE_HOME.txt"
+run_assembler example
+check "and a delta that is absent still reads as unmeasured" \
+    "$(sed -n '/^delta-env-EXAMPLE_HOME:/{n;p;}' "$written")" "  (not recorded)"
+
 # --- refusals -------------------------------------------------------------------------------------
 
 # Gate A resolves `docs/evidence/<id>-<version>.md` from the registry's upstream_version. A version
