@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    EnvOverride, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan, profile_dir,
+    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -15,7 +15,7 @@ const VAR: &str = "CLAUDE_CONFIG_DIR";
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "claude",
     executable: "claude",
-    mechanism_summary: "environment variable CLAUDE_CONFIG_DIR",
+    mechanism: Mechanism::Env(VAR),
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "claude-config-dir-v1",
@@ -30,19 +30,19 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::ConfigIsolation,
             state: CapabilityState::Supported,
-            basis: "user settings live in the config directory; project .claude/settings*.json and .mcp.json \
-                    still layer on top",
+            basis: "cited: user settings live in the config directory; project .claude/settings*.json \
+                    and .mcp.json still layer on top",
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::Conditional,
-            basis: "per-directory .credentials.json and macOS Keychain entry (cited); credential environment \
-                    variables override it (measured)",
+            basis: "measured: credential environment variables override it; the per-directory \
+                    .credentials.json and macOS Keychain entry are cited, not measured",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::NotGuaranteed,
-            basis: "history and project state moving with the directory is community-sourced only",
+            basis: "cited: history and project state moving with the directory is community-sourced only",
         },
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
@@ -63,6 +63,6 @@ impl Adapter for Claude {
     }
 
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-        env_dir_plan(self, ctx, VAR)
+        METADATA.mechanism.plan(self, ctx)
     }
 }

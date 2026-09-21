@@ -1,2 +1,5 @@
 *.sh text eol=lf
 sandbox/Containerfile text eol=lf
+# Evidence transcripts are compared byte for byte against the CI artifact that produced
+# them, so they must never be translated on checkout or commit (SP4 design §5.3).
+docs/evidence/** -text

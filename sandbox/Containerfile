@@ -12,19 +12,62 @@ ARG NEXTEST_VERSION=0.9.144
 ARG NEXTEST_PLATFORM=linux
 ARG UV_VERSION=0.12.15
 
+# `sudo` is here for exactly one rule, written below: it is what lets the unprivileged harness reach the
+# second unprivileged user. Without it `probe` cannot become `agent` at all — only root may `su`.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl git nodejs npm pkg-config python3 xz-utils \
+        build-essential ca-certificates curl git nodejs npm pkg-config python3 sudo xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --create-home --shell /bin/bash probe
+# uv goes to a shared location rather than into a home directory. `sandbox/run.sh test` runs as `probe`
+# while the aider probe's `uv tool install` now runs as `agent`, and one copy under either home would be
+# on only one of the two PATHs.
+RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+        | env UV_NO_MODIFY_PATH=1 UV_INSTALL_DIR=/usr/local/bin sh
+
+# TWO unprivileged users, because one is not a boundary: code running at the harness's uid can rewrite
+# the harness's bookkeeping, and the repository is public so it knows where that is.
+#
+#   probe  the harness. Owns /home/probe/.probe-out and /home/probe/.probe-state at mode 700, takes the
+#          snapshots, computes the deltas, writes the step records, decides the run's exit status.
+#   agent  everything measured — the INSTALL included, because `npm install --global <pkg>` runs the
+#          package's own install scripts, which are agent-controlled code running before the agent
+#          binary ever launches. An install as `probe` would hand an attacker the harness uid before
+#          the boundary applied.
+#
+# Neither is root. `probe ALL=(agent)` is the whole of the privilege granted, and it is one-directional:
+# `agent` is given nothing. `visudo -c` checks the rule at BUILD time, so a malformed one fails the build
+# instead of surfacing as "command not found" in every later step.
+#
+# The two share the supplementary group `probe-share`, and /home/agent is group `probe-share` and setgid,
+# so everything the agent creates under it carries a group the harness is in and can therefore be read by
+# the snapshot that has to measure it. The harness's own two directories stay 700, so the shared group
+# does not reopen the hole it exists to close.
+#
+# /home/probe is made traversable explicitly because Debian's useradd honours HOME_MODE from
+# /etc/login.defs (0700 in trixie) and the agent is launched with the HARNESS's cwd, /home/probe/work.
+RUN groupadd probe-share \
+    && useradd --create-home --shell /bin/bash --groups probe-share probe \
+    && useradd --create-home --shell /bin/bash --groups probe-share agent \
+    && chmod 0755 /home/probe \
+    && chgrp probe-share /home/agent \
+    && chmod 2775 /home/agent \
+    && echo 'probe ALL=(agent) NOPASSWD: ALL' > /etc/sudoers.d/probe-to-agent \
+    && chmod 0440 /etc/sudoers.d/probe-to-agent \
+    && visudo -cf /etc/sudoers.d/probe-to-agent
+
 USER probe
 WORKDIR /home/probe
+# The HARNESS's environment. It deliberately does NOT name the agent's bin directories: the agent's
+# binaries are reachable only through the privilege switch, so a launch that forgot to take it fails
+# loudly with 127 instead of quietly running the agent at the harness's uid. The agent's own PATH and
+# npm prefix are passed across the switch by `common.sh`'s probe_as_agent, not inherited from here.
 ENV PATH=/home/probe/.cargo/bin:/home/probe/.local/bin:$PATH \
     NPM_CONFIG_PREFIX=/home/probe/.local \
     CARGO_TERM_COLOR=never
 
+# Rust and nextest belong to the harness: `sandbox/run.sh test` runs `cargo nextest` as `probe`, and
+# none of that moves.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --component rustfmt,clippy \
-    && curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/${NEXTEST_PLATFORM}" | tar zxf - -C /home/probe/.cargo/bin \
-    && curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_NO_MODIFY_PATH=1 sh
+    && curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/${NEXTEST_PLATFORM}" | tar zxf - -C /home/probe/.cargo/bin

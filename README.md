@@ -74,8 +74,13 @@ The global default is set by editing `default_profile`. Discovery reads only the
 ## Supported agents
 
 Every profile lives under `<root>/profiles/<profile>/<agent>/` and is created on first launch. Each row is
-backed by an evidence entry (verified 2026-09-15); a state weaker than `Supported` means exactly what its
-reason says.
+backed by a transcript in [`docs/evidence/`](docs/evidence/) recording the measurement it rests on; a state
+weaker than `Supported` means exactly what its reason says.
+
+**Read the whole row, not the support column.** `Proven` is a statement about the mechanism, not about the
+account: an adapter can honestly be `Proven` while its credential isolation is `Unknown`, because proving
+that stored credentials separate requires logging in to each vendor and that cannot be measured in CI. The
+capability states are never hidden behind a flag for this reason.
 
 | Agent | Mechanism | Support | Config isolation | Credential isolation | State isolation |
 |---|---|---|---|---|---|
@@ -87,9 +92,15 @@ A new Codex profile starts logged out. Arguments that select the same mechanism 
 and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
 `.cmd` shim is refused, and the error names the `[agents.<id>] executable` setting to use instead.
 
+**On Windows, two limits compound for the npm-installed agents.** The executable is a shim, and a shim is
+refused with a hint rather than parsed, so `executable` must be set in the configuration. Meanwhile the
+probes run in a Linux container, so the evidence behind every claim above is Linux evidence. Neither fact
+is hidden by the other: an agent can be both refused by default on Windows *and* unmeasured there.
+
 ## Planned adapters — not yet implemented or evidence-verified
 
-The mechanisms below are the specification's starting point, not a claim about isolation.
+The mechanisms below are the specification's starting point, not a claim about isolation. Each is cited
+from first-party documentation and none is yet measured; where a probe contradicts a row, the probe wins.
 
 | Agent | Primary mechanism | Intended semantic tier |
 |---|---|---|

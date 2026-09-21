@@ -2,11 +2,14 @@ name: Sandbox
 
 # Runs sandbox/run.sh on a fresh GitHub-hosted Linux runner: probes by hand (Actions → Sandbox → Run workflow).
 # The runner VM is discarded after the job, so real coding agents installed by a probe never touch a maintainer's
-# machine, and pull-request CI never runs them. Results are uploaded as the `sandbox-results` artifact.
+# machine, and pull-request CI never runs them.
 #
-# No secrets are used: probes measure installs, versions, help text and dry runs, never logged-in agents.
+# No secrets are used, and none may be added: a probe runs third-party installers, which is precisely the job
+# that must never hold a credential. `permissions: contents: read` is the whole grant.
+#
 # A pull request that changes the harness runs it in `test` mode only (the crate's suite, no agent), so the
-# harness itself stays working.
+# harness itself stays working. That job is not optional scaffolding — it is the only CI that keeps the probes
+# runnable, and splitting the workflow into a matrix is exactly the change that could quietly drop it.
 
 on:
   pull_request:
@@ -20,17 +23,29 @@ on:
         type: choice
         options: [test, probe]
         default: probe
-      agent:
-        description: Agent to probe (a script in sandbox/probes/; ignored for test)
+      agents:
+        description: Agents to probe — names from sandbox/probes/, whitespace- or comma-separated, or `all`
         type: string
         default: claude
+      version:
+        description: Version to pin (one agent only; vendor install scripts refuse it)
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
+# One wave at a time. A re-dispatch must not put a second set of installer jobs alongside a set already in
+# flight. NOT cancel-in-progress: a probe killed half way leaves partial measurements, and the assembler
+# would write a transcript stating them as though the run had finished.
+concurrency:
+  group: sandbox-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  sandbox:
-    name: Sandbox (${{ inputs.mode || 'test' }})
+  test:
+    name: Harness test
+    if: github.event_name == 'pull_request' || inputs.mode == 'test'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -38,22 +53,147 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run in the sandbox
+      - name: Run the crate suite in the sandbox
         env:
           AGENT_PROFILE_SANDBOX_ENGINE: podman
-          MODE: ${{ inputs.mode }}
-          AGENT: ${{ inputs.agent }}
-        run: |
-          if [ "$MODE" = probe ]; then
-            sandbox/run.sh probe "$AGENT"
-          else
-            sandbox/run.sh test
-          fi
+        run: sandbox/run.sh test
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sandbox-results
+          name: sandbox-test-results
           path: target/sandbox/
+          retention-days: 14
           if-no-files-found: warn
+
+  prepare:
+    name: Resolve the agent list
+    # The event gate is not optional. On `pull_request` there are no `workflow_dispatch` inputs, so
+    # `inputs.agents` is empty and an ungated job would fail every pull request that touches sandbox/** —
+    # reddening the very CI that exists to keep the harness working.
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      agents: ${{ steps.resolve.outputs.agents }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve, validate and cap
+        id: resolve
+        env:
+          AGENTS: ${{ inputs.agents }}
+          VERSION: ${{ inputs.version }}
+        # The rules live in sandbox/resolve-agents.sh, not here. Every one of them — dedupe, the cap, the
+        # charset, the "is this actually a probe script" check — fails quietly when it is wrong, and shell
+        # embedded in YAML cannot be tested. sandbox/tests/resolve-agents.sh tests it.
+        run: |
+          set -eu
+          agents=$(sandbox/resolve-agents.sh "$AGENTS" "$VERSION")
+          echo "resolved: $agents"
+          {
+            printf 'agents=%s\n' "$agents"
+            printf 'version=%s\n' "$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+  probe:
+    name: Probe ${{ matrix.agent }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      # One agent's failure or hang must not consume another's budget: an agent that cannot be installed
+      # is itself a finding (§9 outcome 2), and cancelling its eleven siblings would discard eleven
+      # measurements to record one.
+      fail-fast: false
+      matrix:
+        agent: ${{ fromJSON(needs.prepare.outputs.agents) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Probe
+        env:
+          AGENT_PROFILE_SANDBOX_ENGINE: podman
+          AGENT: ${{ matrix.agent }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        # A failed probe is a RESULT, not a broken job: §9's outcomes 2, 3 and 4 are recorded by a
+        # non-zero exit, and the transcript that states them is written by the next step. The job's own
+        # status is set at the end, after the evidence has been assembled and uploaded.
+        #
+        # A REFUSED CANDIDATE IS NOT ONE OF THEM. The acceptance sweep asks what the smallest config the
+        # agent tolerates is, so a refusal is the measurement, not a failure — it exits ZERO and is
+        # recorded in `exit-codes:` only. Coupling the two made aider, amp and continue unverifiable by
+        # construction, because their sweeps are designed to refuse. `verify-transcripts.sh` reads
+        # `probe-exit:` from the transcript rather than inferring the expected conclusion from the version.
+        continue-on-error: true
+        run: sandbox/run.sh probe "$AGENT" $VERSION
+
+      - name: Assemble the transcript
+        if: always()
+        env:
+          AGENT: ${{ matrix.agent }}
+        run: |
+          set -eu
+          results=$(ls -d target/sandbox/probe-"$AGENT"-* 2>/dev/null | tail -n1 || true)
+          if [ -z "$results" ]; then
+            echo "::error::the probe left no results directory; there is nothing to assemble"
+            exit 1
+          fi
+          mkdir -p transcript
+          sandbox/transcript.sh "$AGENT" "$results" transcript
+
+      # The transcript is what §5.3 compares byte for byte against the committed file, so it is uploaded
+      # alone. The bounded container-delta summary is INSIDE it, not beside it: that summary is the only
+      # record of a write to a location nobody predicted, and routing it into the expiring logs artifact
+      # would leave the broadest evidence the least protected.
+      - name: Upload the transcript
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sandbox-transcript-${{ matrix.agent }}
+          path: transcript/
+          # Long enough that committing a transcript inside its artifact's lifetime is routine rather than
+          # a race. §5.3's verification depends on that window still being open.
+          retention-days: 90
+          if-no-files-found: error
+
+      # Megabytes of toolchain-download noise, kept out of the file a human reviews.
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sandbox-logs-${{ matrix.agent }}
+          path: |
+            target/sandbox/probe-${{ matrix.agent }}-*/build.log
+            target/sandbox/probe-${{ matrix.agent }}-*/output.log
+            target/sandbox/probe-${{ matrix.agent }}-*/diff.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+      # The probe's status is applied HERE rather than by the probe step, so that a failed probe still
+      # uploads its evidence — and still goes red. Both halves matter. D13's whole point is that a probe
+      # which failed must exit non-zero, because otherwise the run's green light carries no information;
+      # but a red job that discarded its transcript would lose the very measurement that explains why.
+      - name: Apply the probe's own status
+        if: always()
+        env:
+          AGENT: ${{ matrix.agent }}
+        run: |
+          set -eu
+          results=$(ls -d target/sandbox/probe-"$AGENT"-* 2>/dev/null | tail -n1 || true)
+          if [ -z "$results" ] || [ ! -f "$results/exit-code" ]; then
+            echo "::error::$AGENT left no exit code; the run cannot be called a measurement"
+            exit 1
+          fi
+          code=$(cat "$results/exit-code")
+          echo "$AGENT exit code: $code"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::$AGENT probed with exit code $code; its transcript records which steps failed"
+          fi
+          exit "$code"

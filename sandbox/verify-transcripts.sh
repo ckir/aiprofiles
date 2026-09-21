@@ -1,0 +1,261 @@
+#!/bin/sh
+# Binds every evidence transcript changed by a pull request to the CI run that produced it (SP4 §5.3).
+#
+# Usage: sandbox/verify-transcripts.sh <manifest> <head-sha> [changed-file...]
+#          <manifest>       one `<id> <upstream_version>` line per real adapter, from the REGISTRY —
+#                           `cargo run --example evidence-manifest`
+#          <head-sha>       the pull request's head commit
+#          [changed-file]   paths the pull request changes; only docs/evidence/** are considered
+#
+# Every gate in §5 checks a file's SHAPE. None checks that it came from anywhere, and a convincing
+# transcript — real run URL copied from the public Actions tab, plausible --help excerpt, a column of zero
+# exit codes — can be written by hand in minutes and passes all of them. This is the job that makes a
+# transcript evidence rather than prose.
+#
+# `GH` is injectable so the rules below can be tested without the network; sandbox/tests/verify-transcripts.sh
+# substitutes a fake. The rules are the point, and shell embedded in YAML cannot be tested.
+
+set -eu
+
+GH=${GH:-gh}
+REPO=${GITHUB_REPOSITORY:-}
+
+usage() {
+    sed -n '/^# Usage:/,/^#$/p' "$0" | sed '/^#$/d; s/^# \{0,1\}//' >&2
+    exit 2
+}
+
+[ $# -ge 2 ] || usage
+manifest=$1
+head_sha=$2
+shift 2
+
+[ -f "$manifest" ] || { echo "verify: no manifest at $manifest" >&2; exit 2; }
+[ -n "$REPO" ] || { echo "verify: GITHUB_REPOSITORY is not set" >&2; exit 2; }
+
+failures=0
+fail() {
+    echo "verify: FAIL $*" >&2
+    failures=$((failures + 1))
+}
+
+# The changed evidence files, so a transcript nobody touched is never re-verified. That is deliberate and
+# §5.3 says why: artifacts expire, and a check that cannot fail is not a check. An existing verified
+# transcript stays verified; introducing or modifying one after its artifact has expired is refused.
+changed=$(mktemp)
+for path in "$@"; do
+    case "$path" in
+        docs/evidence/*.md) printf '%s\n' "$path" >> "$changed" ;;
+    esac
+done
+
+if [ ! -s "$changed" ]; then
+    echo "verify: no evidence transcript changed"
+    rm -f "$changed"
+    exit 0
+fi
+
+# field <label> <file>: the value of a `label: value` line, from the header only.
+field() {
+    sed -n "s/^$1: //p" "$2" | head -n1
+}
+
+verified=$(mktemp)
+
+while read -r id version; do
+    [ -n "$id" ] || continue
+    file="docs/evidence/$id-$version.md"
+    grep -qxF "$file" "$changed" || continue
+    printf '%s\n' "$file" >> "$verified"
+
+    # A deletion is legitimate: §7.4's retention rule replaces a superseded transcript and deletes an
+    # `unknown` one once the agent installs. There is nothing to compare.
+    if [ ! -f "$file" ]; then
+        echo "verify: $file was removed"
+        continue
+    fi
+
+    # No `off-ci` escape here. §7.4.1's hand-reviewed transcript is named `<id>-<version>-credentials.md`,
+    # which no registry row can ever resolve to, so it is handled by the orphan loop below and never
+    # reaches this line. The only file that can is the primary CI transcript every ConfigIsolation claim
+    # rests on — and exempting THAT on the strength of one word in a pull-request-supplied file would skip
+    # the whole of §5.3: run id, harness commit, ancestry, the run API, the matrix conclusion, the
+    # artifact download and the byte comparison.
+    custody=$(field custody "$file")
+    if [ "$custody" != ci ]; then
+        fail "$file: custody is '$custody', expected ci"
+        continue
+    fi
+
+    # Binding the BODY to the version the file name claims. `sandbox/transcript.sh`'s
+    # `version-extracted:` line writes this field from the version the probe actually extracted
+    # (`unknown` when it extracted none), so a relabel —
+    # `git mv <id>-1.2.3.md <id>-3.0.0.md` with the registry bumped to match, zero bytes changed — is
+    # refused here rather than sailing through every check below as a measurement of the wrong version.
+    extracted=$(field version-extracted "$file")
+    if [ "$extracted" != "$version" ]; then
+        fail "$file: version-extracted is '$extracted', but the registry says '$version'"
+        continue
+    fi
+
+    run_id=$(field run-id "$file")
+    case "$run_id" in
+        '' | *[!0-9]*)
+            fail "$file: run-id '$run_id' is not a run id"
+            continue
+            ;;
+    esac
+    harness=$(field harness-commit "$file")
+    case "$harness" in
+        *[!0-9a-f]* | '')
+            fail "$file: harness-commit '$harness' is not a commit"
+            continue
+            ;;
+    esac
+    [ "${#harness}" -eq 40 ] || { fail "$file: harness-commit is not 40 hex"; continue; }
+
+    # Without this, a person with push access dispatches Sandbox on a throwaway branch carrying an edited
+    # probe script that prints a fabricated --help. The run is genuinely green, the artifact is genuine,
+    # the bytes match exactly, and the forging branch never appears in the pull request.
+    #
+    # Ancestry of the PR HEAD, not of the base branch. The probe is dispatched on the feature branch, so
+    # its head SHA is a commit on that branch, and a commit on an open pull request's head is never an
+    # ancestor of the base — the base-branch form is unsatisfiable by construction. The PR-head form says
+    # what is actually meant: the harness that produced this evidence is in the history you are reviewing.
+    if ! git merge-base --is-ancestor "$harness" "$head_sha" 2>/dev/null; then
+        fail "$file: harness-commit $harness is not an ancestor of the pull request head"
+        continue
+    fi
+
+    # §5.3 requires the run id to reach the API without passing through `${{ }}` interpolation, because it
+    # is read out of a pull-request-supplied file and expression interpolation would splice it into the
+    # shell the runner generates before this script ever ran. That rule binds the WORKFLOW, and the
+    # workflow satisfies it by interpolating nothing: this script opens the file itself. Here the id is an
+    # ordinary shell variable, already constrained to [0-9]+ above, passed as one argument.
+    if ! run=$($GH api "repos/$REPO/actions/runs/$run_id" 2>/dev/null); then
+        fail "$file: run $run_id could not be read from $REPO"
+        continue
+    fi
+
+    got_repo=$(printf '%s' "$run" | jq -r '.repository.full_name // ""')
+    got_path=$(printf '%s' "$run" | jq -r '.path // ""')
+    got_sha=$(printf '%s' "$run" | jq -r '.head_sha // ""')
+
+    [ "$got_repo" = "$REPO" ] || fail "$file: run $run_id belongs to $got_repo, not $REPO"
+    [ "$got_path" = ".github/workflows/sandbox.yml" ] \
+        || fail "$file: run $run_id is $got_path, not the Sandbox workflow"
+    [ "$got_sha" = "$harness" ] \
+        || fail "$file: run $run_id ran at $got_sha, but the transcript records $harness"
+
+    # The MATRIX JOB's conclusion, not the run's. Twelve matrix jobs share one run id, and §9 outcome 2 is
+    # a DESIGNED outcome in which a probe legitimately fails — so a run-level check would let one
+    # uninstallable agent invalidate eleven good transcripts.
+    if ! jobs=$($GH api "repos/$REPO/actions/runs/$run_id/jobs" --paginate 2>/dev/null); then
+        fail "$file: the jobs of run $run_id could not be read"
+        continue
+    fi
+    conclusion=$(printf '%s' "$jobs" | jq -r --arg name "Probe $id" \
+        '[.jobs[]? | select(.name == $name)] | first | .conclusion // ""')
+
+    # What the job concluded is decided by what the PROBE EXITED WITH, which the transcript states.
+    # §9's outcomes 2, 3 and 4 are all recorded by a non-zero exit — an agent that would not install, and
+    # an agent that installed and then refused a step — so keying this on the version instead ("unknown
+    # means the probe failed") had no committable form for 3 and 4 at all: a known version against a job
+    # that concluded failure was refused outright.
+    #
+    # `probe-exit` is written by `sandbox/run.sh`'s write to `$out/exit-code` from OUTSIDE the container,
+    # from the engine's own record of the container's status, so it is not a number the measured party can
+    # choose; and it sits inside the transcript, which the `cmp` below already pins byte-for-byte against
+    # the artifact.
+    #
+    # Keying on the `exit-codes:` block instead was considered and is WRONG: an acceptance sweep's
+    # refusals are recorded there and are not failures (`common.sh`'s `PROBE_SOFT`), so "any non-zero step
+    # means the job failed" would expect `failure` from a probe that legitimately exited 0.
+    #
+    # FAILS CLOSED. Absent, empty or non-numeric is refused rather than defaulted — `transcript.sh` writes
+    # `unknown` when it could not read the status, and a default of either conclusion would let a
+    # transcript with no status at all satisfy some job.
+    probe_exit=$(field probe-exit "$file")
+    case "$probe_exit" in
+        '' | *[!0-9]*)
+            fail "$file: probe-exit '$probe_exit' is not a probe exit code"
+            continue
+            ;;
+    esac
+    if [ "$probe_exit" -eq 0 ]; then
+        expected=success
+    else
+        expected=failure
+    fi
+    if [ "$conclusion" != "$expected" ]; then
+        fail "$file: job 'Probe $id' concluded '$conclusion', expected '$expected'"
+        continue
+    fi
+
+    # Expiry FAILS CLOSED. Degrading to "the run exists and was green" would check nothing that is a
+    # function of the agent, the version, or the bytes — it would leave only the two bindings below
+    # standing between a committed file and the run that is supposed to have produced it.
+    dir=$(mktemp -d)
+    if ! $GH run download "$run_id" --name "sandbox-transcript-$id" --dir "$dir" >/dev/null 2>&1; then
+        fail "$file: artifact sandbox-transcript-$id is unavailable (expired?); a transcript cannot be introduced or modified after its artifact has gone"
+        rm -rf "$dir"
+        continue
+    fi
+
+    # Binding the artifact's NAME, not merely "whatever .md it happens to hold". `upload-artifact` with
+    # `path: transcript/` roots the file at the artifact root and `sandbox/transcript.sh`'s `out=`
+    # assignment writes exactly `<id>-<version>.md`, so this is the name the probe itself chose — the one
+    # thing in the artifact a pull request cannot rewrite. Taking the first .md instead would let the
+    # artifact of the 1.2.3 run satisfy a file committed as 3.0.0.
+    downloaded="$dir/$id-$version.md"
+    if [ ! -f "$downloaded" ]; then
+        fail "$file: artifact sandbox-transcript-$id holds no $id-$version.md"
+        rm -rf "$dir"
+        continue
+    fi
+    if cmp -s "$file" "$downloaded"; then
+        echo "verify: ok $file"
+    else
+        # The machine assembles, the human reviews, the job compares. A mismatch means somebody edited a
+        # transcript; an excerpt that needs changing means the PROBE needs changing and the probe re-runs.
+        fail "$file: not byte-identical to the artifact from run $run_id"
+    fi
+    rm -rf "$dir"
+done < "$manifest"
+
+# A changed evidence file that no registry row resolves to. Without this, adding a transcript for an agent
+# the registry does not carry is simply never checked by anything here.
+while read -r path; do
+    grep -qxF "$path" "$verified" && continue
+    case "$path" in
+        docs/evidence/README.md) continue ;;
+    esac
+
+    # A DELETION reaches here whenever the registry row that used to resolve it is gone — which is exactly
+    # what both retention flows in docs/evidence/README.md do. Refreshing bumps `upstream_version` and
+    # deletes the superseded file; a successful re-probe deletes the `unknown` one. In both the manifest
+    # names the NEW path by the time this runs, so the removed path resolves to nothing and would otherwise
+    # redden every refresh. A deletion cannot introduce false evidence; it is the absence of evidence.
+    [ -e "$path" ] || { echo "verify: $path was removed"; continue; }
+
+    # §7.4.1's exemption, scoped to the one name that can legitimately claim it. An authenticated
+    # measurement cannot run in CI, so `<id>-<version>-credentials.md` carries a weaker custody block and
+    # is reviewed by hand. Any other name asking for the same exemption is asking to skip §5.3.
+    case "$path" in
+        docs/evidence/*-credentials.md)
+            if [ "$(field custody "$path")" = off-ci ]; then
+                echo "verify: $path is off-ci; reviewed by hand"
+                continue
+            fi
+            ;;
+    esac
+    fail "$path: no adapter in the registry resolves to this transcript"
+done < "$changed"
+
+rm -f "$changed" "$verified"
+
+if [ "$failures" -ne 0 ]; then
+    echo "verify: $failures transcript check(s) failed" >&2
+    exit 1
+fi
+echo "verify: all changed transcripts are bound to their runs"

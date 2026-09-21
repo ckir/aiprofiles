@@ -174,11 +174,23 @@ fn spawn_wrapper(root: &Root, env: &[(&str, &str)]) -> ChildGuard {
 
 /// The first line of a pipe, read on a helper thread with a timeout.
 fn first_line(pipe: impl std::io::Read + Send + 'static) -> String {
+    first_lines(pipe, 1).pop().expect("one line")
+}
+
+/// The first `count` lines, read on a worker thread so a silent pipe times out instead of hanging.
+fn first_lines(pipe: impl std::io::Read + Send + 'static, count: usize) -> Vec<String> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut line = String::new();
-        let _ = BufReader::new(pipe).read_line(&mut line);
-        let _ = tx.send(line);
+        let mut reader = BufReader::new(pipe);
+        let mut lines = Vec::new();
+        for _ in 0..count {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                break;
+            }
+            lines.push(line);
+        }
+        let _ = tx.send(lines);
     });
     rx.recv_timeout(Duration::from_secs(30)).expect("no line within 30 s")
 }
@@ -275,8 +287,11 @@ fn killing_the_wrapper_before_spawn_starts_no_agent() {
     let mut wrapper =
         spawn_wrapper(&root, &[("AGENT_PROFILE_DEBUG_PAUSE_BEFORE_SPAWN_MS", "10000")]);
     let child = wrapper.0.as_mut().unwrap();
-    let marker = first_line(child.stderr.take().unwrap());
-    assert_eq!(marker.trim_end(), "agent-profile: debug: paused before spawn");
+    // `fake` is Experimental, so the launch hedge is the first stderr line and the pause marker the second
+    // (SP4 design §7.2).
+    let lines = first_lines(child.stderr.take().unwrap(), 2);
+    assert!(lines[0].starts_with("agent-profile: fake is experimental"), "{lines:?}");
+    assert_eq!(lines[1].trim_end(), "agent-profile: debug: paused before spawn");
     child.kill().unwrap();
     child.wait().unwrap();
     let mut stdout = String::new();

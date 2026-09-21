@@ -3,11 +3,13 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use agent_profile::adapter::gate::GateFailure;
 use agent_profile::adapter::{
-    self, Adapter, Capability, PathKind, PlanContext, PlannedLaunch, ProfilePath, ProfilePresence,
-    SupportLevel,
+    self, Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
+    Mechanism, PathKind, PlanContext, PlannedLaunch, ProfilePath, ProfilePresence, SupportLevel,
+    gate,
 };
 use agent_profile::config::{AppRoot, Config};
 use agent_profile::error::{Error, Result};
@@ -151,6 +153,113 @@ fn codex_new_profile_note_disappears_once_the_home_exists() {
     assert_eq!(fixture.plan(codex, "work", &[]).unwrap().notes, Vec::<String>::new());
 }
 
+/// The one configuration file an adapter owns, for the mechanisms that name a file.
+fn config_file(planned: &PlannedLaunch) -> PathBuf {
+    planned
+        .paths
+        .iter()
+        .find(|entry| matches!(entry.kind, PathKind::File { .. }))
+        .expect("a file mechanism owns a file")
+        .path
+        .clone()
+}
+
+/// The variable an environment mechanism names must also appear in `metadata.env`. That list is written
+/// separately from the mechanism, which makes it the independent second source this check needs: a
+/// mechanism payload edited on its own no longer agrees with it.
+fn assert_declared(metadata: &AdapterMetadata, name: &str) {
+    assert!(
+        metadata.env.iter().any(|declared| declared.name == name),
+        "{}: the mechanism names {name}, which `env` does not declare",
+        metadata.id
+    );
+}
+
+/// The plan sets exactly `name` to `target`, adds no argument, and reports the variable.
+fn assert_env_mechanism(planned: &PlannedLaunch, id: &str, name: &str, target: &Path) {
+    assert_eq!(
+        planned.plan.env,
+        vec![(OsString::from(name), target.to_path_buf().into_os_string())],
+        "{id}: the plan must set exactly {name}"
+    );
+    assert!(planned.plan.args.is_empty(), "{id}: an environment mechanism adds no argument");
+    assert_eq!(planned.mechanism, format!("environment variable {name}"), "{id}");
+}
+
+/// The plan passes exactly `spelling target` ahead of the opaque arguments, sets no variable, and reports
+/// that argument.
+fn assert_flag_mechanism(planned: &PlannedLaunch, id: &str, spelling: &str, target: &Path) {
+    assert_eq!(
+        planned.plan.args,
+        vec![OsString::from(spelling), target.to_path_buf().into_os_string()],
+        "{id}: the plan must pass exactly `{spelling} <target>`"
+    );
+    assert!(planned.plan.env.is_empty(), "{id}: a flag mechanism sets no variable");
+    assert_eq!(planned.mechanism, format!("argument {spelling} {}", target.display()), "{id}");
+}
+
+/// The declared mechanism is the one the plan *executes* and the one the report names.
+///
+/// Deliberately not `assert_eq!(planned.mechanism, metadata.mechanism.sentence_for(target))`: that is the
+/// same call on the same value, so for an environment mechanism — whose `sentence_for` ignores the path
+/// entirely — it can never fail. It was tautological, and a seat proved it by mutating a declared
+/// `Mechanism::Env` payload and watching it stay green.
+///
+/// Instead this reads the executed plan and reconstructs the sentence from *that*, and — the part the
+/// mutant needed — checks an environment mechanism's variable against `metadata.env`, the independently
+/// written declaration of what the adapter may set. Changing the payload of `Mechanism::Env` alone now
+/// reddens this test, not just the hand-written row in `plan_contract`.
+///
+/// The `match` carries no wildcard arm, so a fifth `Mechanism` variant stops this suite compiling.
+#[test]
+fn the_planned_mechanism_is_the_declared_one() {
+    for adapter in adapter::registry() {
+        let fixture = fixture();
+        let metadata = adapter.metadata();
+        let id = metadata.id;
+        let planned = fixture.plan(adapter, "work", &[]).unwrap();
+        match metadata.mechanism {
+            Mechanism::Env(name) => {
+                assert_env_mechanism(&planned, id, name, &planned.profile_dir);
+                assert_declared(metadata, name);
+            }
+            Mechanism::EnvFile(name) => {
+                assert_env_mechanism(&planned, id, name, &config_file(&planned));
+                assert_declared(metadata, name);
+            }
+            Mechanism::FlagDir(option) => {
+                assert_flag_mechanism(&planned, id, option.spelling(), &planned.profile_dir);
+            }
+            Mechanism::FlagFile(option) => {
+                assert_flag_mechanism(&planned, id, option.spelling(), &config_file(&planned));
+            }
+        }
+    }
+}
+
+/// A flag adapter refuses the flag it launches with, because `check_conflicts` scans the mechanism's own
+/// option. Generic over the registry, so a ninth adapter is bound without a row.
+#[test]
+fn every_flag_mechanism_refuses_its_own_option() {
+    let mut checked = 0;
+    for adapter in adapter::registry() {
+        let metadata = adapter.metadata();
+        let Some(option) = metadata.mechanism.conflict_option() else { continue };
+        let spelling =
+            *option.long.first().expect("a flag mechanism declares at least one long spelling");
+        assert!(
+            matches!(
+                adapter::check_conflicts(metadata, &args(&[spelling])),
+                Err(Error::ArgumentConflict { .. })
+            ),
+            "{}: {spelling} must be refused",
+            metadata.id
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no flag-mechanism adapter is registered; this test would prove nothing");
+}
+
 #[test]
 fn declared_environment_contract() {
     for adapter in adapter::registry() {
@@ -264,13 +373,33 @@ fn metadata_invariants() {
         for field in [evidence.mechanism_id, evidence.upstream_version, evidence.source_url] {
             assert!(!field.is_empty(), "{id}");
         }
-        for option in metadata.conflicts {
+        // The mechanism's OWN option is included, not just the declared extras: a flag mechanism renders
+        // through `ConflictOption::spelling` in `Display`, `sentence_for`, `probe_token` and `plan`, each
+        // of which `expect`s a spelling. And `!is_empty` is asserted separately because `.all()` over an
+        // empty slice is vacuously true — the spelling check alone would let an empty list through to
+        // those four panics.
+        let mechanism_option = metadata.mechanism.conflict_option();
+        for option in metadata.conflicts.iter().chain(mechanism_option.iter().copied()) {
+            assert!(!option.long.is_empty(), "{id}: a conflict option declares no long spelling");
             assert!(option.long.iter().all(|spelling| spelling.starts_with("--")), "{id}");
         }
     }
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), registry.len(), "adapter ids must be unique");
+
+    // Gates A-shape, B and C over every real adapter. `fake` is excluded from A and C by design: it has no
+    // upstream product, so demanding evidence of one would force a fabricated transcript (SP4 design D4).
+    for adapter in adapter::REAL_ADAPTERS {
+        let metadata = adapter.metadata();
+        assert_eq!(gate::gates_before_transcripts(metadata), Ok(()), "{}", metadata.id);
+    }
+    // Gate B applies to every adapter including the fixture, which has real claims and must not model bad
+    // ones.
+    for adapter in &registry {
+        let metadata = adapter.metadata();
+        assert_eq!(gate::gate_b(metadata), Ok(()), "{}", metadata.id);
+    }
 
     let real: Vec<(&str, SupportLevel)> = adapter::REAL_ADAPTERS
         .iter()
@@ -301,6 +430,15 @@ fn paths_contract() {
         );
         assert_eq!(planned.profile_dir, declared[0].0, "{}", adapter.metadata().id);
         assert_eq!(declared[0].1, PathKind::Dir, "{}", adapter.metadata().id);
+        for (path, _) in &declared {
+            assert!(
+                path.starts_with(&planned.profile_dir),
+                "{}: {} declares a path outside its profile dir {}",
+                adapter.metadata().id,
+                path.display(),
+                planned.profile_dir.display()
+            );
+        }
     }
 }
 
@@ -468,4 +606,347 @@ fn initialization_contract() {
             .unwrap();
         assert_profile_dir_error(aider.initialize(&dangling), "dangling symlink at the Aider file");
     }
+}
+
+// --- Gate negative fixtures (SP4 design §10) ---------------------------------------------------------
+//
+// The gates are library functions rather than inline assertions precisely so these can exist: a rule
+// expressed only over `static METADATA` items is unreachable by `cargo mutants`, so a weaker-than-intended
+// gate would pass because no shipped adapter exhibits the excluded combination.
+
+/// A metadata value that passes every gate, for a test to break in exactly one way.
+fn sound_metadata() -> AdapterMetadata {
+    AdapterMetadata {
+        id: "fixture",
+        executable: "fixture",
+        mechanism: Mechanism::Env("FIXTURE_HOME"),
+        support: SupportLevel::Proven,
+        evidence: AdapterEvidence {
+            mechanism_id: "fixture-home-v1",
+            verified_at: "2026-09-16",
+            upstream_version: "1.0.0",
+            source_url: "measured",
+            notes: "measured in a sandbox",
+        },
+        capabilities: &[
+            CapabilityClaim {
+                capability: Capability::ConfigIsolation,
+                state: CapabilityState::Supported,
+                basis: "measured: config moved with the variable",
+            },
+            CapabilityClaim {
+                capability: Capability::CredentialIsolation,
+                state: CapabilityState::Unknown,
+                basis: "unmeasured: requires an authenticated session",
+            },
+            CapabilityClaim {
+                capability: Capability::StateIsolation,
+                state: CapabilityState::NotSupported,
+                basis: "measured: sessions stay in the default location",
+            },
+        ],
+        env: &[],
+        conflicts: &[],
+    }
+}
+
+#[test]
+fn the_sound_fixture_passes_every_gate() {
+    assert_eq!(gate::gates_before_transcripts(&sound_metadata()), Ok(()));
+}
+
+#[test]
+fn gate_b_rejects_an_unmeasured_prefix_on_a_non_unknown_state() {
+    // The D5 attack verbatim: without the biconditional this reaches `Proven` with nothing measured.
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::NotGuaranteed,
+        basis: "unmeasured: no vendor session available",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::UnmeasuredMismatch {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::NotGuaranteed,
+        })
+    );
+}
+
+#[test]
+fn gate_b_rejects_an_unknown_state_without_the_unmeasured_prefix() {
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::CredentialIsolation,
+        state: CapabilityState::Unknown,
+        basis: "measured: this claim was never measured, whatever it says",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::UnmeasuredMismatch {
+            id: "fixture",
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::Unknown,
+        })
+    );
+}
+
+#[test]
+fn gate_b_rejects_a_basis_without_a_provenance_prefix() {
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "config moved with the variable",
+    }];
+    assert!(matches!(gate::gate_b(&metadata), Err(GateFailure::BasisPrefix { .. })));
+}
+
+#[test]
+fn gate_b_rejects_a_basis_that_is_only_its_provenance_prefix() {
+    // A basis consisting of only its provenance prefix cites a provenance for nothing: it clears
+    // `starts_with`, contains no newline, and (for `unmeasured:`) is never `Unknown`-mismatched, so
+    // without this check it reaches `Proven` as a content-free claim.
+    let mut metadata = sound_metadata();
+
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "measured: ",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisWithoutContent {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            basis: "measured: ",
+        })
+    );
+
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "cited: ",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisWithoutContent {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            basis: "cited: ",
+        })
+    );
+
+    // Must pair with an `Unknown` state, or `gate_b` fails earlier on `UnmeasuredMismatch`.
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Unknown,
+        basis: "unmeasured: ",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisWithoutContent {
+            id: "fixture",
+            capability: Capability::ConfigIsolation,
+            basis: "unmeasured: ",
+        })
+    );
+}
+
+#[test]
+fn gate_b_rejects_a_basis_containing_a_newline() {
+    // One `Vec` entry is one report line; an embedded newline would silently render as two.
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[CapabilityClaim {
+        capability: Capability::ConfigIsolation,
+        state: CapabilityState::Supported,
+        basis: "measured: first line\nsecond line",
+    }];
+    assert_eq!(
+        gate::gate_b(&metadata),
+        Err(GateFailure::BasisNewline { id: "fixture", capability: Capability::ConfigIsolation })
+    );
+}
+
+#[test]
+fn gate_c_rejects_proven_with_two_unknown_claims() {
+    let mut metadata = sound_metadata();
+    metadata.capabilities = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: requires an authenticated session",
+        },
+    ];
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::ProvenWithTooManyUnknowns { id: "fixture", unknowns: 2 })
+    );
+}
+
+#[test]
+fn gate_c_rejects_proven_with_empty_notes() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.notes = "";
+    assert_eq!(gate::gate_c(&metadata), Err(GateFailure::ProvenWithoutNotes { id: "fixture" }));
+}
+
+#[test]
+fn gate_c_rejects_an_unknown_version_that_did_not_degrade_to_experimental() {
+    // Without this clause, Gate A's token exemption is a hole: a failed probe could still ship `Proven`
+    // beside a `Supported` config claim, with no mechanism token observed anywhere.
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "unknown";
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" })
+    );
+
+    metadata.support = SupportLevel::Experimental;
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" }),
+        "experimental alone is not enough; the config claim must be Unknown too"
+    );
+
+    metadata.capabilities = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: requires an authenticated session",
+        },
+    ];
+    assert_eq!(gate::gate_c(&metadata), Ok(()));
+}
+
+/// The existing three-arm test above never isolates the support-level clause: with `unknowns > 1` its
+/// third arm returns `Ok` for a different reason before that clause is reached, so a version reading the
+/// support-level check away entirely still leaves all three arms agreeing with the weakened predicate.
+/// This fixture holds `support == Proven` and exactly one `Unknown` claim (`ConfigIsolation`), so the
+/// support-level clause is the sole thing standing between it and `Ok`.
+///
+/// TRAP: a second `Unknown` claim here would make `gate_c` fail on `unknowns > 1`
+/// (`ProvenWithTooManyUnknowns`) before ever reaching the support-level clause, pinning the wrong rule.
+#[test]
+fn gate_c_rejects_a_proven_adapter_whose_probe_failed_even_with_an_unknown_config_claim() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "unknown";
+    metadata.capabilities = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: requires an authenticated session",
+        },
+        CapabilityClaim {
+            capability: Capability::StateIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: sessions stay in the default location",
+        },
+    ];
+    assert_eq!(
+        gate::gate_c(&metadata),
+        Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" })
+    );
+}
+
+#[test]
+fn gate_c_treats_the_failed_probe_sentinel_case_insensitively() {
+    // Gate A's charset ([A-Za-z0-9._-]) accepts cased spellings of the sentinel; Gate C must degrade
+    // them exactly like the lowercase one, not let a cased sentinel evade the rule with `==`. Mirrors
+    // `gate_c_rejects_a_proven_adapter_whose_probe_failed_even_with_an_unknown_config_claim` above,
+    // which pins the lowercase case.
+    //
+    // Exactly one `Unknown` claim (`ConfigIsolation`): a second would make `gate_c` fail earlier on
+    // `unknowns > 1` (`ProvenWithTooManyUnknowns`), pinning the wrong rule.
+    let claims = &[
+        CapabilityClaim {
+            capability: Capability::ConfigIsolation,
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: the probe never ran",
+        },
+        CapabilityClaim {
+            capability: Capability::CredentialIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: requires an authenticated session",
+        },
+        CapabilityClaim {
+            capability: Capability::StateIsolation,
+            state: CapabilityState::NotSupported,
+            basis: "measured: sessions stay in the default location",
+        },
+    ];
+
+    let mut lowercase = sound_metadata();
+    lowercase.evidence.upstream_version = "unknown";
+    lowercase.capabilities = claims;
+    let expected = Err(GateFailure::UnknownVersionNotExperimental { id: "fixture" });
+    assert_eq!(gate::gate_c(&lowercase), expected);
+
+    let mut uppercase = sound_metadata();
+    uppercase.evidence.upstream_version = "UNKNOWN";
+    uppercase.capabilities = claims;
+    assert_eq!(gate::gate_c(&uppercase), expected, "UNKNOWN must degrade exactly like unknown");
+
+    let mut mixed_case = sound_metadata();
+    mixed_case.evidence.upstream_version = "Unknown";
+    mixed_case.capabilities = claims;
+    assert_eq!(gate::gate_c(&mixed_case), expected, "Unknown must degrade exactly like unknown");
+}
+
+#[test]
+fn gate_a_rejects_a_version_outside_the_permitted_charset() {
+    // Gate A builds `docs/evidence/<id>-<version>.md` from this field, so it must name one file.
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "1.0.0 (build 7)";
+    assert_eq!(
+        gate::gate_a_shape(&metadata),
+        Err(GateFailure::VersionCharset { id: "fixture", version: "1.0.0 (build 7)" })
+    );
+}
+
+/// `"".bytes().all(...)` is vacuously true, so the charset clause alone never rejects an empty version;
+/// only the `is_empty()` disjunct does.
+#[test]
+fn gate_a_rejects_an_empty_upstream_version() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.upstream_version = "";
+    assert_eq!(
+        gate::gate_a_shape(&metadata),
+        Err(GateFailure::VersionCharset { id: "fixture", version: "" })
+    );
+}
+
+#[test]
+fn gate_a_rejects_a_source_url_that_is_neither_a_url_nor_measured() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.source_url = "the vendor told me";
+    assert!(matches!(gate::gate_a_shape(&metadata), Err(GateFailure::SourceUrlShape { .. })));
+    metadata.evidence.source_url = "https://example.com/docs";
+    assert_eq!(gate::gate_a_shape(&metadata), Ok(()));
+}
+
+#[test]
+fn gate_a_rejects_measured_without_notes() {
+    let mut metadata = sound_metadata();
+    metadata.evidence.notes = "";
+    assert_eq!(
+        gate::gate_a_shape(&metadata),
+        Err(GateFailure::MeasuredWithoutNotes { id: "fixture" })
+    );
 }

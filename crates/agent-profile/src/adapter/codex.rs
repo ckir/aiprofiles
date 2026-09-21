@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    EnvOverride, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan, profile_dir,
+    EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel, profile_dir,
 };
 use crate::config::AppRoot;
 use crate::error::Result;
@@ -19,7 +19,7 @@ pub const NEW_PROFILE_NOTE: &str =
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "codex",
     executable: "codex",
-    mechanism_summary: "environment variable CODEX_HOME",
+    mechanism: Mechanism::Env(VAR),
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "codex-home-v1",
@@ -34,19 +34,19 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::ConfigIsolation,
             state: CapabilityState::Supported,
-            basis: "config.toml and <name>.config.toml live in CODEX_HOME; project-level configuration layering \
-                    is not measured",
+            basis: "cited: config.toml and <name>.config.toml live in CODEX_HOME; project-level \
+                    configuration layering is not measured",
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::Conditional,
-            basis: "auth.json and the keyring key follow CODEX_HOME; OPENAI_API_KEY, CODEX_API_KEY and \
-                    CODEX_ACCESS_TOKEN bypass it (measured)",
+            basis: "measured: OPENAI_API_KEY, CODEX_API_KEY and CODEX_ACCESS_TOKEN bypass it; auth.json \
+                    and the keyring key follow CODEX_HOME",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::Conditional,
-            basis: "CODEX_SQLITE_HOME relocates the state database (measured)",
+            basis: "measured: CODEX_SQLITE_HOME relocates the state database",
         },
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
@@ -67,7 +67,7 @@ impl Adapter for Codex {
     }
 
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-        let mut planned = env_dir_plan(self, ctx, VAR)?;
+        let mut planned = METADATA.mechanism.plan(self, ctx)?;
         if !planned.paths[0].existed {
             planned.notes.push(NEW_PROFILE_NOTE.to_owned());
         }

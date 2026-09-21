@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     Adapter, AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState,
-    ConflictOption, EnvOverride, PathKind, PlanContext, PlannedLaunch, SupportLevel, env_dir_plan,
+    ConflictOption, EnvOverride, Mechanism, PathKind, PlanContext, PlannedLaunch, SupportLevel,
     profile_dir,
 };
 use crate::config::AppRoot;
@@ -16,7 +16,7 @@ const VAR: &str = "FAKE_AGENT_HOME";
 static METADATA: AdapterMetadata = AdapterMetadata {
     id: "fake",
     executable: "fake-agent",
-    mechanism_summary: "environment variable FAKE_AGENT_HOME",
+    mechanism: Mechanism::Env(VAR),
     support: SupportLevel::Experimental,
     evidence: AdapterEvidence {
         mechanism_id: "fake-home-v1",
@@ -29,17 +29,17 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::ConfigIsolation,
             state: CapabilityState::Unknown,
-            basis: "test fixture",
+            basis: "unmeasured: a fixture has nothing to isolate",
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::Unknown,
-            basis: "test fixture",
+            basis: "unmeasured: a fixture has nothing to isolate",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::Unknown,
-            basis: "test fixture",
+            basis: "unmeasured: a fixture has nothing to isolate",
         },
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
@@ -60,6 +60,6 @@ impl Adapter for Fake {
     }
 
     fn plan(&self, ctx: &PlanContext<'_>) -> Result<PlannedLaunch> {
-        env_dir_plan(self, ctx, VAR)
+        METADATA.mechanism.plan(self, ctx)
     }
 }

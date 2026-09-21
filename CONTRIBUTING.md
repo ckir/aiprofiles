@@ -126,14 +126,41 @@ just sandbox-shell    # sandbox/run.sh --net shell: interactive shell with netwo
 ```
 
 Results land in `target/sandbox/<mode>[-<agent>]-<timestamp>/`: `build.log`, `exit-code`, `output.log` (not for
-`shell`), `diff.txt` (files the run added, changed or deleted in the container) and the probe's own files. A probe
-is a short script in `sandbox/probes/<agent>.sh` built on `sandbox/probes/common.sh`; add one when an adapter needs
-evidence. The image is built for the host's architecture (x86_64 or aarch64).
+`shell`), `diff.txt` (files the run added, changed or deleted in the container) and the probe's own files. The
+image is built for the host's architecture (x86_64 or aarch64).
+
+A probe is a short script in `sandbox/probes/<agent>.sh` built on `sandbox/probes/common.sh`, and it runs six
+steps **in this order**, because the order is what makes the result attributable:
+
+```sh
+. sandbox/probes/common.sh
+
+probe_npm_install @example/agent          # 1. the only step that runs vendor code before a snapshot exists
+probe_version example                     # 2. --version, verbatim, plus the token the registry will carry
+probe_help example                        # 3. --help, where the mechanism token is read from
+probe_strings example EXAMPLE_API_KEY     # 4. which credential variables are really in the binary
+probe_behaviour example "$HOME/.example" env:EXAMPLE_HOME @none   # 5 and 6: baseline, then apply and diff
+```
+
+Step 5 is inside `probe_behaviour` and is not optional: it baselines **both** the profile target and the agent's
+default location, after the install and after anything the probe itself created. Skip it and the install's own
+files get attributed to the agent, which reads as isolation that did not happen. Repeat `probe_behaviour` once per
+mechanism under test; each repetition re-baselines, because a second launch measured against the first launch's
+baseline is not attributable.
+
+A probe never supplies a credential, never waits for input, and never launches the agent through `agent-profile` —
+the CLI refuses an agent word it does not know, so a probe written that way silently measures nothing.
+
+`sandbox/tests/` holds the harness's own tests. They need no container and no agent, and `just check` runs them.
 
 **No container engine? Use CI.** **Actions → Sandbox → Run workflow** runs the same script on a fresh GitHub
-runner, whose virtual machine is discarded afterwards, and uploads the results as the `sandbox-results` artifact.
-Probes run only when triggered by hand; a pull request that changes the harness runs it in `test` mode only (the
-crate's test suite, no agent), so pull-request CI never installs or runs a real agent. It uses no secrets.
+runner, whose virtual machine is discarded afterwards. Name one agent, several, or `all`; each gets its own job.
+Two artifacts come back per agent: `sandbox-transcript-<id>`, holding the finished evidence transcript, and
+`sandbox-logs-<id>`, holding the raw logs and container diff. A `test`-mode run uploads `sandbox-test-results`
+instead. Probes run only when triggered by hand; a pull request that changes the harness runs it in `test` mode
+only (the crate's test suite, no agent), so pull-request CI never installs or runs a real agent. **It uses no
+secrets, and none may be added** — a probe executes third-party installers, which is precisely the job that must
+never hold a credential.
 
 **macOS:** the harness runs under Docker Desktop, OrbStack, Colima or Podman Desktop for behaviour that does not
 depend on macOS, with the base image and build cache kept in that engine's store as described above; use Tart
@@ -141,7 +168,31 @@ disposable macOS virtual machines when the behaviour does depend on macOS (for e
 `sandbox-exec` is deprecated, so it is not a substitute.
 
 Record each measurement in the adapter's `AdapterEvidence` (`verified_at`, `upstream_version`, `source_url`,
-`notes`) and in the design document's decision table.
+`notes`), in the design document's decision table, and — for anything a probe measured — as a committed transcript
+under `docs/evidence/`. See [docs/evidence/README.md](docs/evidence/README.md) for what a transcript must contain
+and how CI binds it to the run that produced it.
+
+## Adding an adapter
+
+An adapter is a small file in `crates/agent-profile/src/adapter/`, but most of the work is the evidence behind it.
+In order:
+
+1. **Write the probe first.** `sandbox/probes/<id>.sh`, as above. Run it and read what comes back; the mechanism
+   the documentation describes and the one the agent implements are not always the same, and it is cheaper to find
+   that out now than after the adapter is written around the wrong one.
+2. **Commit the transcript**, byte for byte, from the CI artifact. Never hand-edited.
+3. **Write the adapter**, with one `CapabilityClaim` per capability. Every `basis` starts with `measured:`,
+   `cited:` or `unmeasured:`, and `unmeasured:` is required exactly when the state is `Unknown` — the contract
+   suite enforces the biconditional, so an `Unknown` with a confident-sounding basis will not build.
+4. **Register it** in `REAL_ADAPTERS` and add its contract and end-to-end rows.
+5. **Add its README row**, with the capability states beside the support level. A support level on its own
+   overclaims: `proven` describes the mechanism, not the account, and the two are only safe to print together.
+
+The gates in `src/adapter/gate.rs` are the mechanical part of this and they will tell you what is missing. What
+they cannot tell you is whether a claim is honest, which is what steps 1 and 2 are for.
+
+Claim the weakest state the evidence supports. `NotSupported` with a reason is a better adapter than `Supported`
+with a hope, because a user can work around a stated limit and cannot work around a wrong promise.
 
 ## Commit messages
 
