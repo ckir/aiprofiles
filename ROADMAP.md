@@ -26,6 +26,14 @@ declaration and stays unconstructed.
 
 ## Tracked debt
 
+**Antigravity CLI has no isolation mechanism, and the README says so.** Measured on 2026-09-22 against
+`agy` 1.2.7: nothing relocates `~/.gemini/antigravity-cli/`, and credentials live in the OS keyring. It
+is documented under "Agents that cannot be isolated" rather than shipped as an adapter, because the
+`Adapter` trait materialises a profile directory and one that nothing reads would imply isolation the
+user does not have. Re-measure if the vendor ships a configuration-directory variable or flag; at that
+point it is an ordinary adapter candidate and a specification change, since V3's roster is closed at
+twelve.
+
 **Two contradictory action-pinning idioms.** `ci.yml` and `docs.yml` pin `actions/checkout` with the
 floating tag `@v7`, while `release-plz.yml`, `release.yml` and `sandbox.yml` pin the same action by commit
 SHA with a version comment. Whichever is right, the repository should not hold both — a reviewer cannot

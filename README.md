@@ -114,6 +114,34 @@ from first-party documentation and none is yet measured; where a probe contradic
 | Continue CLI | `--config` | Configuration selection |
 | Amp | `--settings-file` | Settings selection |
 
+## Agents that cannot be isolated
+
+An agent belongs here when it offers no mechanism to relocate what it stores, so this tool cannot give it
+a profile. The distinction matters: an adapter that isolates *little* is useful and honest — `aider`
+ships one, declaring two of its three capabilities `NotSupported` — because its mechanism still moves
+something. An agent with no mechanism at all would get a profile directory nothing ever reads, and a user
+who sees a profile directory reasonably concludes they have isolation they do not have.
+
+| Agent | Why not | Measured |
+|---|---|---|
+| Antigravity CLI (`agy`) | No environment variable, flag or settings key relocates its configuration, and its credentials are in the OS keyring rather than a file | 2026-09-22, `agy` 1.2.7 |
+
+Antigravity stores settings, session state and skills under `~/.gemini/antigravity-cli/`, inside the
+directory Gemini CLI uses. Sharing that parent is deliberate: the Antigravity IDE, SDK and CLI use it for
+global rules, plugins, skills and authentication, so isolating one of them would cut it off from the
+others by design rather than by oversight.
+
+Measured in a disposable container, each with a positive and a negative control: `AGY_HOME`,
+`ANTIGRAVITY_HOME`, `AGY_CONFIG`, `ANTIGRAVITY_CONFIG_DIR` and `GEMINI_CLI_HOME` are absent from the
+binary; `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are present but relocate nothing. Only overriding `HOME`
+moves its files, and that is not a mechanism this tool will use for a coding agent: with `HOME`
+relocated, `git commit` exits 128 with no author identity and `ssh` exits 255 on host-key verification,
+so the agent loses the ability to commit or reach a remote. Credentials would remain shared regardless,
+because the keyring is not a directory.
+
+This row is a statement about a measured version, not a permanent judgement. If Antigravity gains a
+configuration-directory mechanism, it becomes an ordinary adapter candidate.
+
 ## Workspace
 
 | Crate | Responsibility |
