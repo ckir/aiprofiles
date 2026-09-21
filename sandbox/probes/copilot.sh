@@ -12,4 +12,13 @@ probe_npm_install @github/copilot
 probe_version copilot
 probe_help copilot
 probe_strings copilot COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN COPILOT_HOME
-probe_behaviour copilot "$PROBE_AGENT_HOME/.copilot" env:COPILOT_HOME @none
+# `plugin list` RATHER THAN THE DEFAULT `--version`, which was measured to write nothing at all -- an
+# empty delta that says nothing about COPILOT_HOME. `plugin list` exits 0, needs no credentials, and
+# writes into the target. `init` writes more (a session-state tree as well as logs) but exits 1 without
+# authentication, so it would record a failure for a measurement that worked.
+#
+# The default-location watch stays `~/.copilot` deliberately. Every launch also extracts a runtime
+# package into `$PROBE_AGENT_HOME/.cache/copilot` -- measured at 283 paths, and COPILOT_HOME does not
+# move it -- but that is a cache keyed by version and platform, not configuration or credentials, and
+# watching it would bury the delta that matters. Same call as opencode's `.cache` directory.
+probe_behaviour copilot "$PROBE_AGENT_HOME/.copilot" env:COPILOT_HOME @none plugin list

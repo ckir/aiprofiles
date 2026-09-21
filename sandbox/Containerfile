@@ -14,9 +14,15 @@ ARG UV_VERSION=0.12.15
 
 # `sudo` is here for exactly one rule, written below: it is what lets the unprivileged harness reach the
 # second unprivileged user. Without it `probe` cannot become `agent` at all — only root may `su`.
+#
+# `unzip` is here for the kiro probe, and it was missing: the vendor installer at cli.kiro.dev refuses
+# with "Missing required dependencies: unzip" and cleans up, so `sandbox/run.sh probe kiro` failed at the
+# INSTALL step — before any measurement — in this image and in CI alike. Nothing caught it because no
+# probe had been run against a real agent. `xz-utils` beside it is the same kind of dependency for a
+# different archive format; an installer's unpacker is part of the toolchain, not part of the agent.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl git nodejs npm pkg-config python3 sudo xz-utils \
+        build-essential ca-certificates curl git nodejs npm pkg-config python3 sudo unzip xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # uv goes to a shared location rather than into a home directory. `sandbox/run.sh test` runs as `probe`
