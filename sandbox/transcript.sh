@@ -234,6 +234,12 @@ section() {
         grep -v '^[ACD] /home/probe/work\(/\|$\)' "$results/diff.txt" \
             | probe_excerpt 300 \
             | sed 's/^/  /'
+    elif [ -e "$results/diff.txt" ]; then
+        # The same three states `section()` distinguishes, and for the same reason. An EMPTY diff means
+        # the engine answered and nothing outside the watched locations changed; a MISSING one means the
+        # question was never asked, which is what a failed `eng diff` leaves behind through its `|| true`.
+        # Under Docker that is exactly what an image/container name collision produced -- silently.
+        echo "  (no change: the engine reported nothing added, changed or removed)"
     else
         echo "  (not recorded)"
     fi
