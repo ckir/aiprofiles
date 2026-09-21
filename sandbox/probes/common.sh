@@ -265,6 +265,15 @@ PROBE_SOFT=
 # a failure. An agent that stops needing a key would exit 0 here and fail this step, which is the correct
 # alarm rather than a false one: what the probe script claims about the agent would have gone stale.
 #
+# IT CAN STILL MASK A CRASH, and the first run that used it did exactly that, so the limit belongs here
+# beside the feature. `pi` was declared to exit 1, and it did — but because the agent could not START at
+# all (the image's Node was too old for its bundle), not because it refused for want of a key. A declared
+# code cannot tell "refused for the documented reason" from "died with the same number". What caught it
+# was `version` and `help` failing on their own, which makes those two steps the backstop: NEVER declare
+# a non-zero code for them. A probe whose `version` step is excused has nothing left that can notice the
+# agent is not running, and every delta it reports afterwards would be an empty one it calls a
+# measurement.
+#
 # NOT read from the environment, for PROBE_SOFT's reason: a variable that decides whether a failed step
 # counts is one an install script must not be able to preset.
 PROBE_EXPECT=
