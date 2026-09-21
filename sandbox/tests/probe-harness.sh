@@ -209,7 +209,12 @@ fake_engine_run() {
 #!/bin/sh
 # Records every subcommand, and for `cp` drops one recognisable file where the real engine would have put
 # the container directory named in "$2" (`<id>:/path/to/dir/.`).
+#
+# The full argument vector goes to a SECOND file, because the first is matched line-by-line as bare
+# subcommands and widening it would break that. The target matters for `diff`: the image tag and the
+# container name were once the same string, and `diff` is the only subcommand here that accepts either.
 printf '%s\n' "$1" >> "$FAKE_ENG_LOG"
+printf '%s\n' "$*" >> "$FAKE_ENG_LOG.args"
 case $1 in
     run)
         if [ -n "${FAKE_ENG_INTERRUPT:-}" ]; then
@@ -260,6 +265,11 @@ ENGINE
         if [ -d "$d" ] && ! grep -qxF "$d" "$eng_dir/before"; then eng_new=$d; fi
     done
     eng_order=$(grep -xE 'cp|rm|rmi' "$eng_dir/calls" | tr '\n' ',')
+    # The TARGET of each call, not just its name. `eng diff` takes an image OR a container, so a run that
+    # named both the same string could ask the engine about the wrong one and never notice.
+    eng_diff_target=$(sed -n 's/^diff //p' "$eng_dir/calls.args" | head -n1)
+    eng_cp_target=$(sed -n 's/^cp \([^:]*\):.*/\1/p' "$eng_dir/calls.args" | head -n1)
+    eng_build_target=$(sed -n 's/^build --tag \([^ ]*\) .*/\1/p' "$eng_dir/calls.args" | head -n1)
     # Never let an empty name through to the `cd` and the `rm -rf` below. Say so as a failed check rather
     # than as a green one: a run that produced no results directory at all is exactly the outcome these
     # checks exist to notice.
@@ -277,6 +287,18 @@ fake_engine_run ''
 check "run.sh lifts the harness's output directory out of the stopped container" \
     "$eng_lifted" "./from-.probe-out,./from-.probe-state,./target/from-probe-target,"
 check "and lifts it before the container is removed" "$eng_order" "cp,cp,cp,rm,rmi,"
+
+# THE ENGINE MUST BE ASKED ABOUT THE CONTAINER, NOT THE IMAGE. `eng diff` is the only subcommand here that
+# accepts either, and the two were once the same string -- so the question "what did the RUN write" was
+# answered with "what the IMAGE BUILD wrote". MEASURED on a real probe run: `diff.txt` came back holding
+# this Containerfile's final rustup layer and not one path the container had touched, while the agent's own
+# installed binary was absent from it. That block is the only instrument for a write to a location nobody
+# predicted, and it reported the wrong filesystem in silence.
+check "the engine is asked what the CONTAINER changed, not the image" \
+    "$([ "$eng_diff_target" = "$eng_build_target" ] && echo same-as-image || echo distinct)" "distinct"
+# And the copy-back must read that same container, or the artefacts come from somewhere else again.
+check "and the artefacts are copied out of the container the diff asked about" \
+    "$([ "$eng_cp_target" = "$eng_diff_target" ] && echo same || echo different)" "same"
 
 # A SIGINT during a multi-minute install used to destroy every artefact the run had bought: the copies were
 # on the main path, `exit 130` went straight to the EXIT trap, and `eng rm -f` took the container away with

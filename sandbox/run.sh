@@ -80,7 +80,21 @@ esac
 command -v "$engine" >/dev/null 2>&1 || { echo "sandbox: $engine is not installed" >&2; exit 2; }
 
 stamp=$(date +%Y%m%d-%H%M%S)
+# THE IMAGE TAG AND THE CONTAINER NAME MUST DIFFER, and this is not tidiness.
+#
+# They were the same string, and `eng diff` is the one command here that accepts EITHER an image or a
+# container -- `rm`, `rmi`, `inspect` and `cp` each take only one kind, so they were never ambiguous.
+# MEASURED on probe run 35594555278: `diff.txt` came back holding `/home/probe/.cargo` and
+# `/home/probe/.rustup`, which is exactly this Containerfile's final `rustup` layer, and NOT one path the
+# container had written -- the agent's own `/home/agent/.local/bin/claude` was absent from it while the
+# transcript's `strings:` block resolved that very path. podman had answered about the IMAGE.
+#
+# That block is §9 outcome 4's only instrument: the record of a write to a location nobody predicted. It
+# was reporting the image's build layers instead, silently, and under Docker -- where `diff` takes only a
+# container -- the same call errors into `|| true` and leaves the file empty, silently. Wrong under one
+# engine, absent under the other, and both look like a clean run.
 id="agent-profile-sandbox-$stamp-$$"
+container="$id-run"
 out="$root/target/sandbox/$mode${agent:+-$agent}-$stamp"
 mkdir -p "$out"
 
@@ -185,13 +199,13 @@ cleanup() {
     # has no such directory, and a build that never produced a container has no container. `eng diff` is NOT
     # here — it needs the container alive, and it still runs on the main path, which is the only path that
     # reaches a stopped container rather than an interrupted one.
-    eng cp "$id:/home/probe/.probe-out/." "$out/" >/dev/null 2>&1 || true
-    eng cp "$id:/home/probe/.probe-state/." "$out/" >/dev/null 2>&1 || true
+    eng cp "$container:/home/probe/.probe-out/." "$out/" >/dev/null 2>&1 || true
+    eng cp "$container:/home/probe/.probe-state/." "$out/" >/dev/null 2>&1 || true
     if [ "$mode" = probe ]; then
         mkdir -p "$out/target"
-        eng cp "$id:/home/agent/probe-target/." "$out/target/" >/dev/null 2>&1 || true
+        eng cp "$container:/home/agent/probe-target/." "$out/target/" >/dev/null 2>&1 || true
     fi
-    eng rm -f "$id" >/dev/null 2>&1 || true
+    eng rm -f "$container" >/dev/null 2>&1 || true
     eng rmi -f "$id" >/dev/null 2>&1 || true
     if [ -n "$store" ]; then
         eng unshare rm -rf "$store" >/dev/null 2>&1 || rm -rf "$store" >/dev/null 2>&1 || true
@@ -252,21 +266,21 @@ esac
 set +e
 if [ "$mode" = shell ]; then
     # shellcheck disable=SC2086 # $userns is empty or one flag. /out is mounted HERE ONLY; see `eng cp`.
-    eng run -it --init --name "$id" ${net:+--network "$net"} $userns --security-opt label=disable \
+    eng run -it --init --name "$container" ${net:+--network "$net"} $userns --security-opt label=disable \
         --volume "$root:/src:ro" --volume "$out:/out" "$id" sh -c "$script"
 else
     # --init forwards Ctrl-C to the workload, so an interrupted run stops and reaches cleanup.
     # shellcheck disable=SC2086
-    eng run --init --name "$id" ${net:+--network "$net"} $userns --security-opt label=disable \
+    eng run --init --name "$container" ${net:+--network "$net"} $userns --security-opt label=disable \
         --volume "$root:/src:ro" "$id" sh -c "$script" > "$out/output.log" 2>&1
 fi
-code=$(eng inspect --format '{{.State.ExitCode}}' "$id" 2>/dev/null || echo 125)
+code=$(eng inspect --format '{{.State.ExitCode}}' "$container" 2>/dev/null || echo 125)
 set -e
 echo "$code" > "$out/exit-code"
 # The container is still alive here and `eng diff` needs it to be; the artefacts are lifted out by the EXIT
 # trap afterwards (see the `eng cp` block in `cleanup`). `output.log` is written by THIS shell's redirect of
 # `eng run`, not by the copy-back, so tailing it before the copies shows exactly what it always showed.
-eng diff "$id" > "$out/diff.txt" 2>&1 || true
+eng diff "$container" > "$out/diff.txt" 2>&1 || true
 [ "$mode" = shell ] || tail -n 20 "$out/output.log"
 echo "sandbox: exit code $code" >&2
 exit "$code"
