@@ -102,6 +102,45 @@ RUN groupadd probe-share \
     && chmod 0440 /etc/sudoers.d/probe-to-agent \
     && visudo -cf /etc/sudoers.d/probe-to-agent
 
+# THE MEASUREMENT DEPENDS ON THESE BINARIES BEING ONES THE AGENT CANNOT REPLACE, so the build refuses to
+# produce an image where that is not true. `probe_snapshot` enumerates the agent's own locations through
+# `probe_as_agent`, because a shared group does not survive mode 0700 and a harness-side read of such a
+# directory silently recorded it as EMPTY. Running the enumeration at the agent's uid is only safe while
+# the binary doing it is beyond the agent's reach: `probe_as_agent` hands the command a PATH whose first
+# element is /home/agent/.local/bin, which the agent owns, so `common.sh` names each of these by ABSOLUTE
+# path. MEASURED before that change: a `find` planted in that directory was executed by the harness's own
+# idiom, and the measured party would have decided what the measurement said.
+#
+# WHY THE BUILD AND NOT THE RUN. The threat model stops at a hostile AGENT; the image is digest-pinned and
+# trusted by construction, and neither user is root, so /usr/bin cannot change while a probe runs. What
+# this guards is therefore maintainer error — a future edit here that weakens the directory — and a
+# build-time error belongs at build time, where it fails before an image exists rather than as a puzzling
+# probe failure later.
+#
+# `sandbox/tests/probe-harness.sh` ties this list to the code: it extracts the `/usr/bin/...` set that
+# `common.sh` actually uses and fails if it is not exactly the list below. Without that tie this is a
+# hand-maintained list in a different file from the thing it protects, which is the shape that rotted the
+# privilege-split enumeration three times before it was made mechanical. KEEP THE SPELLING UNIFORM
+# (`probe_as_agent /usr/bin/<name>`) or the extraction stops seeing what it is meant to see.
+#
+# `stat -L` and `find -L` dereference on purpose. Every one of these is a regular root-owned file in this
+# image today -- verified, none is a symlink -- but a base image that routed one through
+# `update-alternatives` would otherwise pass a check on the link while something else executed. The
+# directory is checked as well as the file: a binary the agent cannot write is still replaceable if it
+# can unlink it from a directory it can write.
+RUN set -eu; \
+    for probe_bin in find mkdir rm tar test; do \
+        probe_path="/usr/bin/$probe_bin"; \
+        [ -e "$probe_path" ] || { echo "harness: $probe_path is missing" >&2; exit 1; }; \
+        for probe_target in "$probe_path" "$(dirname "$(readlink -f "$probe_path")")"; do \
+            [ "$(stat -Lc '%U' "$probe_target")" = root ] \
+                || { echo "harness: $probe_target is not owned by root" >&2; exit 1; }; \
+            [ -z "$(find -L "$probe_target" -maxdepth 0 -perm /022 -print)" ] \
+                || { echo "harness: $probe_target is group- or world-writable" >&2; exit 1; }; \
+        done; \
+    done; \
+    echo "harness: the binaries the measurement depends on are root-owned and not group-writable"
+
 USER probe
 WORKDIR /home/probe
 # The HARNESS's environment. It deliberately does NOT name the agent's bin directories: the agent's
