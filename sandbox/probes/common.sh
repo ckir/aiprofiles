@@ -126,6 +126,16 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 #                                                                 archive is read from a descriptor the
 #                                                                 harness opened, so $PROBE_STATE stays
 #                                                                 unreadable to the agent.
+#     probe_snapshot's `test` and `find`                          THE MEASUREMENT ITSELF, and it crosses
+#                                                                 because the shared group does not
+#                                                                 survive mode 0700: read as the harness,
+#                                                                 a 0700 agent directory listed as EMPTY
+#                                                                 rather than failing, so the delta
+#                                                                 silently omitted the files that decide
+#                                                                 the result. Both are invoked by
+#                                                                 ABSOLUTE path, which is what keeps this
+#                                                                 from becoming "the measured party
+#                                                                 enumerates itself" — see the function
 #     probe_pristine's `tar -c`                                   the MIRROR of probe_restore_default's
 #                                                                 `tar -x` below, and it crosses for the
 #                                                                 reason that one does not have to: the
@@ -149,8 +159,8 @@ PROBE_STATE=${PROBE_STATE:-/home/probe/.probe-state}
 #     probe_record's bookkeeping      .cmd, .exit-code, `steps`, `failures` — the records the boundary
 #                                     exists to protect. Only the command inside it crosses over.
 #     probe_fail, probe_finish        the run's status.
-#     probe_snapshot, probe_delta     the measurement itself, reading agent-owned locations through the
-#                                     shared group.
+#     probe_delta                     the measurement's ARITHMETIC: it reads two files the harness itself
+#                                     wrote, under $PROBE_OUT, and touches nothing the agent owns.
 #     probe_version's extraction      the harness's own statement about what it measured — the token
 #     probe_candidates' index         SP4b types into the registry, and which content each candidate
 #                                     exit code belongs to. NOTHING MECHANICAL STOPS A WRAPPER HERE, and
@@ -678,15 +688,40 @@ probe_snapshot() {
     name=$1
     shift
     : > "$PROBE_OUT/$name.txt"
+    # READ AS THE AGENT, THROUGH ABSOLUTE BINARY PATHS. Both halves of that are load-bearing and neither
+    # is sufficient alone.
+    #
+    # AS THE AGENT, because the shared group does not survive mode 0700 and this used to read as the
+    # harness. MEASURED against a real agent: `~/.local/share/amp` is created at 0700, and a harness-side
+    # `find` on such a directory prints the directory and NOTHING INSIDE IT -- it cannot descend, and the
+    # error goes to `2>/dev/null`. The snapshot recorded an empty directory where there was content, the
+    # delta omitted those files, and the transcript stated that as a measurement. The omitted files are
+    # exactly the ones that prove or disprove isolation. This is the same blindness that made
+    # `probe_pristine` fail outright, one step further on: there it was loud, here it was silent, which is
+    # worse.
+    #
+    # THROUGH ABSOLUTE PATHS, because `probe_as_agent` hands the command a PATH whose FIRST element is
+    # `$PROBE_AGENT_HOME/.local/bin` -- a directory the agent owns, and owns precisely because
+    # NPM_CONFIG_PREFIX points npm's global installs there. MEASURED: a `find` planted at
+    # `/home/agent/.local/bin/find` IS executed by this idiom. Without the absolute path, "read as the
+    # agent" would mean "let the measured party enumerate itself", and an agent could simply omit the
+    # config file it left in the default location. With it, the enumeration is a root-owned binary the
+    # agent cannot replace, running after the agent's own process is dead; the uid is borrowed only to
+    # satisfy the kernel's permission check, which is the whole point.
+    #
+    # The existence tests cross too, and for the same reason as the listing: an ancestor the harness
+    # cannot traverse would otherwise answer "(absent)" for a location that exists and has content.
     for dir in "$@"; do
         echo "# $dir" >> "$PROBE_OUT/$name.txt"
-        if [ -d "$dir" ]; then
-            find "$dir" -printf '%y %p\n' 2>/dev/null | LC_ALL=C sort >> "$PROBE_OUT/$name.txt"
-        elif [ -e "$dir" ]; then
+        if probe_as_agent /usr/bin/test -d "$dir"; then
+            probe_as_agent /usr/bin/find "$dir" -printf '%y %p\n' 2>/dev/null \
+                | LC_ALL=C sort >> "$PROBE_OUT/$name.txt"
+        elif probe_as_agent /usr/bin/test -e "$dir"; then
             # A default location is not always a directory: Aider's is the file `.aider.conf.yml`
             # (`aider.rs`'s `FILE_NAME` constant). Reporting an existing file as `(absent)` would read as the
             # agent having written nothing to its default location, which is the finding the whole probe is for.
-            find "$dir" -maxdepth 0 -printf '%y %p\n' 2>/dev/null >> "$PROBE_OUT/$name.txt"
+            probe_as_agent /usr/bin/find "$dir" -maxdepth 0 -printf '%y %p\n' 2>/dev/null \
+                >> "$PROBE_OUT/$name.txt"
         else
             echo "(absent)" >> "$PROBE_OUT/$name.txt"
         fi
@@ -746,7 +781,7 @@ probe_label() {
 # The `umask` still makes the file group-writable, so an agent that rewrites its own config in place can,
 # rather than failing with EACCES and having that recorded as the mechanism refusing the content.
 probe_prepare_target() {
-    probe_as_agent rm -rf "$PROBE_TARGET"
+    probe_as_agent /usr/bin/rm -rf "$PROBE_TARGET"
     probe_make_target
     case "${1:-@none}" in
         @none) ;;
@@ -837,7 +872,7 @@ probe_pristine() {
         # property rather than a hope: probe_restore_default ALREADY extracts with `probe_as_agent`, so a
         # crafted archive — traversal, absolute paths, a symlink planted before the archive was taken —
         # can only ever write where the agent could already write.
-        elif ! probe_as_agent tar -cf - \
+        elif ! probe_as_agent /usr/bin/tar -cf - \
             -C "$(dirname "$probe_loc")" "$(basename "$probe_loc")" \
             > "$PROBE_STATE/pristine/$probe_slot.tar" 2>/dev/null; then
             rm -f "$PROBE_STATE/pristine/$probe_slot.tar"
@@ -872,15 +907,15 @@ probe_restore_default() {
         # implements. The archive itself is read from a descriptor THIS shell opened, so $PROBE_STATE
         # stays unreadable to the agent; that also keeps tar off the caller's stdin, which the loops in
         # probe_restore_known and probe_pristine_id are reading the index from.
-        probe_as_agent rm -rf "$probe_rloc"
-        probe_as_agent mkdir -p "$(dirname "$probe_rloc")"
-        if ! probe_as_agent tar -xf - -C "$(dirname "$probe_rloc")" \
+        probe_as_agent /usr/bin/rm -rf "$probe_rloc"
+        probe_as_agent /usr/bin/mkdir -p "$(dirname "$probe_rloc")"
+        if ! probe_as_agent /usr/bin/tar -xf - -C "$(dirname "$probe_rloc")" \
             < "$PROBE_STATE/pristine/$probe_rn.tar"; then
             echo "probe: could not restore $probe_rloc from its pristine copy" >&2
             probe_fail "restore-$probe_rn" 1
         fi
     elif [ -f "$PROBE_STATE/pristine/$probe_rn.absent" ]; then
-        probe_as_agent rm -rf "$probe_rloc"
+        probe_as_agent /usr/bin/rm -rf "$probe_rloc"
     else
         echo "probe: no pristine copy of $probe_rloc; leaving it as it is" >&2
     fi

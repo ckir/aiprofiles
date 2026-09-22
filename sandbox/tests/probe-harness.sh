@@ -581,13 +581,14 @@ for fn in $crossing_fns; do
     printf '%s\n' "$split_block" | grep -qE "$fn([^A-Za-z0-9_]|\$)" || unlisted="$unlisted $fn"
 done
 check "every function that crosses the privilege boundary is named in the enumeration" "$unlisted" ""
-# The control: a collector that found nothing would pass the check above without a word. The thirteen are
+# The control: a collector that found nothing would pass the check above without a word. The fourteen are
 # probe_make_target, probe_record, probe_npm_install, probe_uv_install, probe_script_install,
-# probe_version, probe_help, probe_strings, probe_pristine, probe_prepare_target, probe_restore_default,
-# probe_apply, probe_as_agent — the last one not because it CALLS probe_as_agent/probe_record_agent, but
-# because its own body is the `sudo -n -u "$PROBE_AGENT_USER" -- env` invocation the other twelve wrap.
+# probe_version, probe_help, probe_strings, probe_pristine, probe_snapshot, probe_prepare_target,
+# probe_restore_default, probe_apply, probe_as_agent — the last one not because it CALLS
+# probe_as_agent/probe_record_agent, but because its own body is the
+# `sudo -n -u "$PROBE_AGENT_USER" -- env` invocation the other thirteen wrap.
 check "and the enumeration is checked against a non-empty list of them" \
-    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "13"
+    "$(printf '%s\n' "$crossing_fns" | grep -c .)" "14"
 
 # R6-1: NAME-membership is blind to a crossing added INSIDE a function that already crosses. Wrapping
 # `probe_as_agent` onto probe_strings' `find` — which common.sh calls "the single most attractive mistake
@@ -649,6 +650,7 @@ probe_pristine 1
 probe_record 1
 probe_restore_default 4
 probe_script_install 1
+probe_snapshot 4
 probe_strings 1
 probe_uv_install 1
 probe_version 1
@@ -799,6 +801,48 @@ check "and that default is not the harness's own home" \
     "$([ "$(cat "$PROBE_OUT_DIR/agent-home")" = "$HOME" ] && echo harness-home || echo distinct)" "distinct"
 
 # --- probe_behaviour ------------------------------------------------------------------------------
+
+# THE CONTAINERFILE'S TRUSTED-BINARY LIST IS TIED TO THE CODE, not maintained beside it. The absolute
+# paths below are only a defence while the binaries they name are ones the agent cannot replace, and the
+# image build asserts exactly that. A hand-maintained list in a different file from the thing it protects
+# is the shape that rotted the privilege-split enumeration three times, so the list is derived here and
+# compared, and a sixth absolute path added to `common.sh` without updating the build turns this red.
+#
+# It reads the SOURCE, not a running container: this suite has no container, and what it is checking is
+# an agreement between two files in the repository.
+trusted_used=$(grep -oE 'probe_as_agent /usr/bin/[a-z]+' "$root/sandbox/probes/common.sh" \
+    | sed 's|.*/||' | LC_ALL=C sort -u | tr '\n' ' ')
+trusted_asserted=$(grep -oE '^    for probe_bin in [a-z ]+; do' "$root/sandbox/Containerfile" \
+    | sed -E 's/^    for probe_bin in //; s/; do$//' | tr ' ' '\n' | grep -v '^$' \
+    | LC_ALL=C sort -u | tr '\n' ' ')
+check "the image asserts exactly the binaries the harness invokes by absolute path" \
+    "$trusted_asserted" "$trusted_used"
+# The control: two empty strings compare equal, so a regex that matched nothing on BOTH sides would pass
+# the check above while proving nothing at all -- and either spelling could drift out from under it.
+check "and that comparison was made against a non-empty set" \
+    "$(printf '%s' "$trusted_used" | wc -w | tr -d ' ')" "5"
+
+# THE SNAPSHOT MUST NOT BE HIJACKABLE BY THE MEASURED PARTY. `probe_snapshot` reads as the agent, because
+# a shared group does not survive mode 0700 and a harness-side read of such a directory silently reports
+# it as empty. Reading as the agent is only safe while the BINARY doing the reading is one the agent
+# cannot replace: `probe_as_agent` hands the command a PATH whose first element is
+# `$PROBE_AGENT_HOME/.local/bin`, which the agent owns because NPM_CONFIG_PREFIX points npm's global
+# installs there. MEASURED in a container: a `find` planted there IS executed by that idiom.
+#
+# So this plants a `find` on the PATH the probe runs with and asserts the snapshot is unaffected. If the
+# call ever loses its absolute path, the planted binary answers instead and the measured party gets to
+# decide what the measurement says — which is the whole threat the two-uid split exists to prevent.
+stage find 'echo "HIJACKED"'
+run_staged 'mkdir -p "$PROBE_OUT/watched" && echo real > "$PROBE_OUT/watched/evidence.txt"
+probe_snapshot hijack "$PROBE_OUT/watched"'
+check "a find planted on the agent PATH does not supply the snapshot" \
+    "$(grep -c HIJACKED "$PROBE_OUT_DIR/hijack.txt" || true)" "0"
+check "and the real find still recorded the file it was supposed to see" \
+    "$(grep -c 'evidence.txt$' "$PROBE_OUT_DIR/hijack.txt" || true)" "1"
+# The control: without it, a snapshot that silently recorded NOTHING would satisfy the check above just as
+# well as one that correctly used /usr/bin/find, and the test would pass over a broken measurement.
+check "and that fixture really did stage a hijacking find on the PATH" \
+    "$(PATH="$PROBE_OUT_DIR/bin:$PATH" find "$PROBE_OUT_DIR/watched" 2>/dev/null | grep -c HIJACKED || true)" "1"
 
 # probe_behaviour must baseline the target as well as the default location: agent-profile and the probe
 # itself create files there, and counting them as the agent's would read as isolation that did not happen.
