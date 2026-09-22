@@ -33,8 +33,21 @@ probe_strings amp AMP_API_KEY AMP_URL AMP_SETTINGS_FILE
 probe_pristine $default
 # `logout` RATHER THAN THE DEFAULT `--version`. Measured per launch in a container: `--version` writes
 # nothing anywhere, so the mechanism delta is empty whatever the flag does. `logout` exits 0 on a machine
-# that was never logged in ("Already logged out."), needs no credentials, and is the cheapest command
-# found that makes the agent write -- it creates `device-id.json`. `threads list` writes the same file but
-# exits 1 without an API key, which would put a row in `failures` for a measurement that succeeded.
+# that was never logged in ("Already logged out."), needs no credentials, and was the cheapest command
+# found that makes the agent write. `threads list` writes the same file but exits 1 without an API key,
+# which would put a row in `failures` for a measurement that succeeded.
+#
+# UNDER THIS HARNESS IT WRITES NOTHING, and that is unexplained rather than understood. This comment used
+# to end "it creates `device-id.json`" as a flat statement; three consecutive probe runs of the committed
+# harness contradict it -- the delta is empty, the `after` snapshot records both watched locations
+# `(absent)`, and a whole-container diff finds no `device-id.json` anywhere. Run BY HAND in the same
+# image, as the same user, through the same `sudo … env … timeout` wrapper, and in the same order
+# (`--version`, `--help`, delete the watched locations, `logout`), it writes the file every time: 8 of 8.
+#
+# Ruled out by measurement, so that the next person does not re-test them: NPM_CONFIG_PREFIX, the working
+# directory, the `timeout` wrapper, the privilege switch itself, a warm versus cold `~/.cache/amp`, agent
+# build drift (identical build both ways), and non-determinism. What remains untested is inside the
+# harness sequence itself. The launch is left as it is BECAUSE the cause is unknown: an empty delta
+# recorded as empty states no falsehood, whereas swapping the command on a guess would.
 probe_behaviour amp "$default" flagfile:--settings-file "{}" logout
 probe_candidates amp flagfile:--settings-file @none "" "{}"
