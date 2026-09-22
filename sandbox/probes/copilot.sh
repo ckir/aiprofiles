@@ -12,13 +12,30 @@ probe_npm_install @github/copilot
 probe_version copilot
 probe_help copilot
 probe_strings copilot COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN COPILOT_HOME
-# `plugin list` RATHER THAN THE DEFAULT `--version`, which was measured to write nothing at all -- an
-# empty delta that says nothing about COPILOT_HOME. `plugin list` exits 0, needs no credentials, and
-# writes into the target. `init` writes more (a session-state tree as well as logs) but exits 1 without
-# authentication, so it would record a failure for a measurement that worked.
+# NO LAUNCH OVERRIDE, and the empty delta it produces is the honest measurement rather than a gap. This
+# file previously launched `plugin list` and claimed it "writes into the target". THAT CLAIM WAS FALSE,
+# and the way it became false is worth keeping, because it can be made again by anyone measuring an agent
+# outside this harness.
 #
-# The default-location watch stays `~/.copilot` deliberately. Every launch also extracts a runtime
-# package into `$PROBE_AGENT_HOME/.cache/copilot` -- measured at 283 paths, and COPILOT_HOME does not
-# move it -- but that is a cache keyed by version and platform, not configuration or credentials, and
-# watching it would bury the delta that matters. Same call as opencode's `.cache` directory.
-probe_behaviour copilot "$PROBE_AGENT_HOME/.copilot" env:COPILOT_HOME @none plugin list
+# The original measurement wiped the home directory before each launch. copilot extracts a runtime
+# package into `$PROBE_AGENT_HOME/.cache/copilot` on first use -- it announces it, "Package extraction
+# took ..." -- and THE EXTRACTION writes a log into COPILOT_HOME. With a wiped home every launch is a
+# first use, so every command appeared to write, and `plugin list` got the credit. Under this harness the
+# cache survives from the `version` and `help` steps above, nothing is extracted, and `plugin list`
+# writes nothing at all. Re-measured against the real harness: `plugin list` and `mcp list` both leave
+# the target empty.
+#
+# So the general rule, which cost two agents a wrong launch command: WIPING THE HOME DIRECTORY BETWEEN
+# MEASUREMENTS CONFLATES "what this command writes" WITH "what first-run initialisation writes". A
+# discovery run that wipes gives an upper bound on the delta, never the delta.
+#
+# `init` IS NOT THE ANSWER EITHER, though it does write a log to COPILOT_HOME. Its actual job is to write
+# `.github/` into the CURRENT WORKING DIRECTORY, and this harness runs the agent with the HARNESS's cwd,
+# which the agent cannot write: it exits 1 with `EACCES ... mkdir '/home/probe/.github'`. Declaring that
+# code with PROBE_EXPECT would bake a fact about this harness's cwd into a measurement that is supposed
+# to be about the agent -- the exact confusion PROBE_EXPECT's own comment warns against.
+#
+# The default-location watch stays `~/.copilot`. `$PROBE_AGENT_HOME/.cache/copilot` holds the extracted
+# runtime -- measured at 283 paths, and COPILOT_HOME does not move it -- but that is a cache keyed by
+# version and platform, not configuration or credentials. Same call as opencode's `.cache` directory.
+probe_behaviour copilot "$PROBE_AGENT_HOME/.copilot" env:COPILOT_HOME @none
