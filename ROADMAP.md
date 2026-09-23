@@ -41,4 +41,42 @@ tell which is the intended convention, and the newer Evidence job inherited the 
 neighbour. Not urgent: every job that runs untrusted code already holds `contents: read` and no secret, and
 the repository is public. Settle it before SP5 adds more workflows.
 
+**`docs/evidence/` is never swept for orphaned transcripts, though its README says it is.**
+`docs/evidence/README.md` states that the gates fail if an orphan is left behind. Nothing sweeps: the
+Evidence job feeds `verify-transcripts.sh` the output of `git diff --name-only "$BASE" "$HEAD" --
+docs/evidence/`, so it examines only the files a pull request CHANGES, and no directory walk over that
+path exists in `crates/` or in the workflows. A refresh that adds `<id>-<new>.md` and forgets to delete
+`<id>-<old>.md` leaves two live transcripts for one adapter — the state that same paragraph says cannot
+arise. Either sweep the directory or correct the README, and do it before SP4b: the nine adapters are
+written against whatever sits there.
+
+**`field()` in `sandbox/verify-transcripts.sh` reads the whole transcript, not the header its comment
+claims.** The comment says "the value of a `label: value` line, from the header only"; the implementation
+takes the first match anywhere in the file. What actually holds agent-authored body text out of a header
+field is the two-space indent the assembler applies — measured: an agent `--version` line spelled
+`version-extracted: 9.9.9` is excluded by that indent and by nothing else. The verifier's safety rests on
+an undocumented coupling to `transcript.sh`. Scope `field()` to the header, or state the coupling where
+both files can see it.
+
+**A second `probe_candidates` sweep in one probe script would silently destroy the first.** The function
+opens by resetting its counter and truncating `candidates.txt`, so a second call restarts step ids at
+`candidate-1` and overwrites the first sweep's `.cmd`, `.exit-code` and `.txt`. Not reachable today —
+exactly three scripts sweep (aider, amp, continue) and each sweeps once — but SP4b adds nine adapters. It
+cannot be closed by a test: asserting accumulation asserts behaviour the code does not have, and pinning
+today's behaviour codifies the defect. The function has to accumulate or refuse, which is a source change
+that invalidates the capstone over that delta. Deferred by the owner at the SP4a test audit, 2026-09-21.
+
+**The three shell suites leak a temporary directory per fixture.** Measured on the maintainer host:
+16,537 `tmp*` entries in `TEMP` on 2026-09-21 and 22,136 on 2026-09-22, growing by roughly one per
+fixture per run. `transcript.sh` and `verify-transcripts.sh` call `mktemp` and contain no `trap` and no
+`rm -rf` at all; `probe-harness.sh` cleans some and still leaks. A `trap`-based cleanup in each is the
+fix.
+
+**Both `probe-tests` suites exceed a two-minute foreground budget, and only one of them is known for
+it.** `sandbox/tests/verify-transcripts.sh` builds a git repository per fixture and commits into it, so
+its cost scales with the fixture count exactly as `probe-harness.sh` does — yet only `probe-harness.sh`
+is treated as the slow one, and a contributor who runs the other in the foreground loses the run to a
+timeout. The mechanism is verified by reading; the wall-clock figure is not measured. A comment on the
+`probe-tests` recipe naming both would close it.
+
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
