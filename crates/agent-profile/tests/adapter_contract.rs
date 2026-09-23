@@ -932,6 +932,145 @@ fn gate_a_rejects_an_empty_upstream_version() {
     );
 }
 
+/// What `docs/evidence/` may hold, per Gate A's last clause (SP4 design §5): "every file in
+/// docs/evidence/ is exactly one of: README.md; the `<id>-<upstream_version>.md` of a registered
+/// adapter; or a `<id>-<version>-credentials.md` whose `<id>` is a registered adapter and whose custody
+/// is `off-ci`".
+///
+/// An allow-list rather than "every matching file is referenced by exactly one adapter", because the
+/// credentials transcript of §6 is a SECOND file naming the same adapter and an exactly-one rule would
+/// reject it.
+#[derive(Debug, PartialEq, Eq)]
+enum EvidenceEntry {
+    Readme,
+    /// The live CI transcript, pinned to the adapter's CURRENT `upstream_version`.
+    Transcript,
+    /// A credentials transcript. Its custody must be `off-ci`, which the NAME cannot show — the caller
+    /// reads the header. Note the spec pins this one to `<version>` and not to `<upstream_version>`:
+    /// an authenticated measurement answers a different question and is not superseded by a refresh.
+    Credentials,
+    Orphan,
+}
+
+/// THE FILENAME IS NEVER SPLIT INTO `<id>` AND `<version>`, and that is the whole reason this takes the
+/// registry rather than parsing. `upstream_version` permits `-` (§5), so `cursor-1.0.0-beta.1.md` splits
+/// two ways and the wrong split would clear the wrong file. Every permitted name is BUILT from a registry
+/// row and compared whole.
+fn classify_evidence_file(name: &str, registry: &[(&str, &str)]) -> EvidenceEntry {
+    if name == "README.md" {
+        return EvidenceEntry::Readme;
+    }
+    if registry.iter().any(|(id, version)| name == format!("{id}-{version}.md")) {
+        return EvidenceEntry::Transcript;
+    }
+    if let Some(stem) = name.strip_suffix("-credentials.md") {
+        // Only the id is matched; the version is deliberately unconstrained. `rest.len() > 1` keeps
+        // `<id>-credentials.md` — a credentials file naming no version at all — out of the allow-list.
+        let registered = registry.iter().any(|(id, _)| {
+            stem.strip_prefix(id).is_some_and(|rest| rest.starts_with('-') && rest.len() > 1)
+        });
+        if registered {
+            return EvidenceEntry::Credentials;
+        }
+    }
+    EvidenceEntry::Orphan
+}
+
+/// The `custody:` value from a transcript's HEADER — the block before the first `---` line.
+///
+/// Scoped to the header on purpose. `sandbox/verify-transcripts.sh`'s `field()` takes the first match
+/// anywhere in the file, which holds only because the assembler indents body text by two spaces; that
+/// coupling is undocumented and is tracked debt. Nothing here should inherit it.
+fn custody_in_header(body: &str) -> Option<&str> {
+    body.lines().take_while(|line| *line != "---").find_map(|line| line.strip_prefix("custody: "))
+}
+
+fn registry_rows() -> Vec<(&'static str, &'static str)> {
+    adapter::REAL_ADAPTERS
+        .iter()
+        .map(|adapter| {
+            let metadata = adapter.metadata();
+            (metadata.id, metadata.evidence.upstream_version)
+        })
+        .collect()
+}
+
+/// The clause against the REAL directory. It passes vacuously while `docs/evidence/` holds only its
+/// README — the transcripts land after the probe run — so the fixture tests below carry the proof that
+/// the rule bites. This one is what makes the rule true of the repository.
+#[test]
+fn every_file_in_docs_evidence_is_on_the_allow_list() {
+    let registry = registry_rows();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/evidence");
+    for entry in fs::read_dir(&dir).expect("docs/evidence must exist") {
+        let entry = entry.unwrap();
+        let name =
+            entry.file_name().into_string().expect("a non-UTF-8 name is not on the allow-list");
+        match classify_evidence_file(&name, &registry) {
+            EvidenceEntry::Readme | EvidenceEntry::Transcript => {}
+            EvidenceEntry::Credentials => {
+                let body = fs::read_to_string(entry.path()).unwrap();
+                assert_eq!(
+                    custody_in_header(&body),
+                    Some("off-ci"),
+                    "{name}: a credentials transcript must declare custody off-ci"
+                );
+            }
+            EvidenceEntry::Orphan => panic!(
+                "{name}: no registry row permits this file. A refresh replaces the transcript it \
+                 supersedes; git history holds the old one (docs/evidence/README.md)"
+            ),
+        }
+    }
+}
+
+#[test]
+fn gate_a_rejects_an_orphaned_evidence_file() {
+    // The superseded transcript of a refresh that bumped the registry but left the old file behind.
+    let registry = [("example", "2.0.0")];
+    assert_eq!(classify_evidence_file("example-2.0.0.md", &registry), EvidenceEntry::Transcript);
+    assert_eq!(classify_evidence_file("example-1.0.0.md", &registry), EvidenceEntry::Orphan);
+}
+
+#[test]
+fn gate_a_rejects_a_file_not_matching_the_pattern() {
+    let registry = [("example", "1.0.0")];
+    assert_eq!(classify_evidence_file("notes.md", &registry), EvidenceEntry::Orphan);
+    assert_eq!(classify_evidence_file("README.md", &registry), EvidenceEntry::Readme);
+}
+
+#[test]
+fn gate_a_permits_a_credentials_transcript_at_a_superseded_version() {
+    // §5's credentials arm is pinned to `<version>`, NOT to `<upstream_version>`: it answers a different
+    // question and a refresh of the CI transcript does not supersede it.
+    let registry = [("example", "2.0.0")];
+    assert_eq!(
+        classify_evidence_file("example-1.0.0-credentials.md", &registry),
+        EvidenceEntry::Credentials
+    );
+}
+
+#[test]
+fn gate_a_rejects_a_credentials_transcript_for_an_unregistered_adapter() {
+    let registry = [("example", "1.0.0")];
+    assert_eq!(
+        classify_evidence_file("stranger-1.0.0-credentials.md", &registry),
+        EvidenceEntry::Orphan
+    );
+    // `<id>-credentials.md` names no version and is not the exempted shape either.
+    assert_eq!(classify_evidence_file("example-credentials.md", &registry), EvidenceEntry::Orphan);
+}
+
+#[test]
+fn a_credentials_transcript_claiming_ci_custody_is_refused() {
+    // The exemption exists because an authenticated measurement cannot run in CI. A file taking the
+    // exemption while declaring `custody: ci` would skip the whole of §5.3.
+    assert_eq!(custody_in_header("custody: off-ci\nrun-id: 1\n---\nbody\n"), Some("off-ci"));
+    assert_eq!(custody_in_header("custody: ci\nrun-id: 1\n---\nbody\n"), Some("ci"));
+    // Body text cannot supply the field: the header stops at the first `---`.
+    assert_eq!(custody_in_header("run-id: 1\n---\ncustody: off-ci\n"), None);
+}
+
 #[test]
 fn gate_a_rejects_a_source_url_that_is_neither_a_url_nor_measured() {
     let mut metadata = sound_metadata();
