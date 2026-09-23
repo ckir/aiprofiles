@@ -41,15 +41,6 @@ tell which is the intended convention, and the newer Evidence job inherited the 
 neighbour. Not urgent: every job that runs untrusted code already holds `contents: read` and no secret, and
 the repository is public. Settle it before SP5 adds more workflows.
 
-**`docs/evidence/` is never swept for orphaned transcripts, though its README says it is.**
-`docs/evidence/README.md` states that the gates fail if an orphan is left behind. Nothing sweeps: the
-Evidence job feeds `verify-transcripts.sh` the output of `git diff --name-only "$BASE" "$HEAD" --
-docs/evidence/`, so it examines only the files a pull request CHANGES, and no directory walk over that
-path exists in `crates/` or in the workflows. A refresh that adds `<id>-<new>.md` and forgets to delete
-`<id>-<old>.md` leaves two live transcripts for one adapter — the state that same paragraph says cannot
-arise. Either sweep the directory or correct the README, and do it before SP4b: the nine adapters are
-written against whatever sits there.
-
 **`field()` in `sandbox/verify-transcripts.sh` reads the whole transcript, not the header its comment
 claims.** The comment says "the value of a `label: value` line, from the header only"; the implementation
 takes the first match anywhere in the file. What actually holds agent-authored body text out of a header
