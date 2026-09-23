@@ -1163,6 +1163,36 @@ run_staged 'probe_version fakeagent'
 check "an update-notifier banner after the version does not override it" \
     "$(cat "$PROBE_OUT_DIR/version.extracted")" "3.1.0"
 
+# THE MEASURED DEFECT, probe run 35845001948. `copilot --version` prints `GitHub Copilot CLI 1.0.88.`
+# then `Run 'copilot update' to check for updates.`, and the preference was a case-sensitive grep: the
+# capitalised name was skipped, the prose line matched, it carries no digit-bearing run, and the probe
+# recorded `unknown` — §9 outcome 2's encoding for an agent that COULD NOT BE INSTALLED, for an agent
+# that installed perfectly. This pins both halves of the fix at once: the name is matched
+# case-insensitively, and the trailing sentence period is trimmed off `1.0.88.` — a period is inside
+# Gate A's charset, so an untrimmed token would have named the evidence file `<id>-1.0.88..md`.
+stage fakeagent 'echo "FakeAgent CLI 1.0.88."
+echo "Run fakeagent update to check for updates."'
+run_staged 'probe_version fakeagent'
+check "a capitalised version line beats a prose line naming the executable" \
+    "$(cat "$PROBE_OUT_DIR/version.extracted")" "1.0.88"
+
+# Case-insensitivity ALONE would pass the check above, because the version line happens to print first.
+# The rule is that the chosen line must actually YIELD a token, so the order cannot matter. Without this
+# the fix stays one vendor's output-ordering away from recording `unknown` again, with nothing red.
+#
+# THE TRAILING LINE IS LOAD-BEARING AND THE FIXTURE IS WRONG WITHOUT IT. With only the prose line and
+# the version line, a mutant that takes the FIRST line naming the executable still passes this check —
+# the prose line yields nothing, the last-non-empty fallback then lands on the version line, and the
+# right answer arrives for the wrong reason. Measured while proving this test red. A third line that
+# names the executable and carries no version denies the fallback that rescue, so the only way to reach
+# `3.3.3` is to keep looking past a named line that yielded nothing.
+stage fakeagent 'echo "Run fakeagent update to check for updates."
+echo "FakeAgent CLI 3.3.3."
+echo "Thanks for using fakeagent!"'
+run_staged 'probe_version fakeagent'
+check "a prose line printed BEFORE the version line does not win" \
+    "$(cat "$PROBE_OUT_DIR/version.extracted")" "3.3.3"
+
 # --- probe_strings --------------------------------------------------------------------------------
 
 stage fakeagent 'echo "reads FAKE_API_KEY and FAKE_HOME"'
