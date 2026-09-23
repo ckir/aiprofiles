@@ -46,8 +46,19 @@ probe_pristine $default
 #
 # Ruled out by measurement, so that the next person does not re-test them: NPM_CONFIG_PREFIX, the working
 # directory, the `timeout` wrapper, the privilege switch itself, a warm versus cold `~/.cache/amp`, agent
-# build drift (identical build both ways), and non-determinism. What remains untested is inside the
-# harness sequence itself. The launch is left as it is BECAUSE the cause is unknown: an empty delta
-# recorded as empty states no falsehood, whereas swapping the command on a guess would.
+# build drift (identical build both ways), and non-determinism.
+#
+# A CONTROLLING TERMINAL IS RULED OUT TOO, and it is listed separately because it is the hypothesis a
+# reader is most likely to reach for: in `sandbox/run.sh`, `shell` mode launches with `eng run -it`, while
+# the probe branch launches with a bare `eng run` and redirects to `"$out/output.log"`. The harness plainly
+# runs the agent headless, and a CLI that suppresses device-id generation without a tty would explain
+# everything. It is still not the cause. The by-hand runs were not `run.sh shell`: every one of them was a
+# `podman run --rm [-i]` or a `podman exec` WITHOUT `-t`, so
+# `isatty(1)` was false on BOTH sides of the comparison. The two paths differ in what stdout IS -- a pipe
+# by hand, a regular file under the harness, which redirects to `output.log` -- and that difference, not
+# the absence of a terminal, is what remains untested.
+#
+# The launch is left as it is BECAUSE the cause is unknown: an empty delta recorded as empty states no
+# falsehood, whereas swapping the command on a guess would.
 probe_behaviour amp "$default" flagfile:--settings-file "{}" logout
 probe_candidates amp flagfile:--settings-file @none "" "{}"
