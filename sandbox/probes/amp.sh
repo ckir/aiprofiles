@@ -37,28 +37,31 @@ probe_pristine $default
 # found that makes the agent write. `threads list` writes the same file but exits 1 without an API key,
 # which would put a row in `failures` for a measurement that succeeded.
 #
-# UNDER THIS HARNESS IT WRITES NOTHING, and that is unexplained rather than understood. This comment used
-# to end "it creates `device-id.json`" as a flat statement; three consecutive probe runs of the committed
-# harness contradict it -- the delta is empty, the `after` snapshot records both watched locations
-# `(absent)`, and a whole-container diff finds no `device-id.json` anywhere. Run BY HAND in the same
-# image, as the same user, through the same `sudo … env … timeout` wrapper, and in the same order
-# (`--version`, `--help`, delete the watched locations, `logout`), it writes the file every time: 8 of 8.
+# IT WRITES `device-id.json`, AND THE THREE RUNS THAT SAID OTHERWISE WERE THE HARNESS GOING BLIND. This
+# comment twice argued an unexplained divergence: the same sequence run by hand wrote the file 8 times
+# out of 8, while three consecutive probe runs recorded an empty delta and both watched locations
+# `(absent)`. Ruled out along the way, by measurement: NPM_CONFIG_PREFIX, the working directory, the
+# `timeout` wrapper, the privilege switch, a warm versus cold `~/.cache/amp`, agent build drift, and
+# non-determinism. A controlling terminal was proposed later and ruled out too — every by-hand run was a
+# `podman run --rm [-i]` or a `podman exec` WITHOUT `-t`, so `isatty(1)` was false on both sides.
 #
-# Ruled out by measurement, so that the next person does not re-test them: NPM_CONFIG_PREFIX, the working
-# directory, the `timeout` wrapper, the privilege switch itself, a warm versus cold `~/.cache/amp`, agent
-# build drift (identical build both ways), and non-determinism.
+# None of it was about amp. `~/.local/share/amp` is created mode 0700, and `probe_snapshot` read the
+# agent's locations at the HARNESS's uid, where a shared supplementary group does not survive 0700:
+# `find` could not descend, the error went to `2>/dev/null`, and an empty directory was recorded where
+# there was content. The by-hand runs were right the whole time; the measurement was blind.
 #
-# A CONTROLLING TERMINAL IS RULED OUT TOO, and it is listed separately because it is the hypothesis a
-# reader is most likely to reach for: in `sandbox/run.sh`, `shell` mode launches with `eng run -it`, while
-# the probe branch launches with a bare `eng run` and redirects to `"$out/output.log"`. The harness plainly
-# runs the agent headless, and a CLI that suppresses device-id generation without a tty would explain
-# everything. It is still not the cause. The by-hand runs were not `run.sh shell`: every one of them was a
-# `podman run --rm [-i]` or a `podman exec` WITHOUT `-t`, so
-# `isatty(1)` was false on BOTH sides of the comparison. The two paths differ in what stdout IS -- a pipe
-# by hand, a regular file under the harness, which redirects to `output.log` -- and that difference, not
-# the absence of a terminal, is what remains untested.
+# The fix landed separately, as the snapshot repair that made `probe_snapshot` read AS THE AGENT through
+# absolute binary paths. MEASURED on probe run 35845001948, the first full run after it:
 #
-# The launch is left as it is BECAUSE the cause is unknown: an empty delta recorded as empty states no
-# falsehood, whereas swapping the command on a guess would.
+#     + d /home/agent/.local/share/amp
+#     + f /home/agent/.local/share/amp/device-id.json
+#
+# Every run that recorded the empty delta predates that repair.
+#
+# THE LESSON IS WORTH MORE THAN THE BUG: a harness that cannot see reports ABSENCE, and absence reads
+# exactly like a finding. The empty delta was committed to this file as a measurement and defended twice
+# against hypotheses about the agent, because nothing in the transcript distinguishes "the agent wrote
+# nothing" from "the harness could not look". When a delta is empty, confirm the harness can see a file
+# it is known to write before concluding anything about the agent.
 probe_behaviour amp "$default" flagfile:--settings-file "{}" logout
 probe_candidates amp flagfile:--settings-file @none "" "{}"

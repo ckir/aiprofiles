@@ -566,11 +566,42 @@ probe_script_install() {
 # caught it, and nine of the twelve probes are npm installs, where an `(node:NNN) ...Warning` on stderr
 # is routine — this was not a rare input.
 #
-# The line is chosen by: prefer the first line that names the executable itself (`$1`); otherwise fall
-# back to the last non-empty line. Last-line-alone was considered and rejected — it breaks on an npm
-# update-notifier banner, which prints AFTER the version line, so the executable-name preference has to
-# run first. Requiring a dotted shape (`grep -E '[0-9]+\.[0-9]'`) was also rejected — it rejects `1234`
-# but still accepts `python3.12`, so it would not have fixed the actual defect.
+# The line is chosen by: the first line that names the executable itself (`$1`) AND actually yields a
+# version token; otherwise fall back to the last non-empty line. Last-line-alone was considered and
+# rejected — it breaks on an npm update-notifier banner, which prints AFTER the version line, so the
+# executable-name preference has to run first. Requiring a dotted shape (`grep -E '[0-9]+\.[0-9]'`) was
+# also rejected — it rejects `1234` but still accepts `python3.12`, so it would not have fixed the
+# actual defect.
+#
+# NAMING THE EXECUTABLE IS NOT ENOUGH, AND THE MATCH IS CASE-INSENSITIVE. Both halves are a measured
+# defect, from probe run 35845001948. `copilot --version` prints
+#
+#     GitHub Copilot CLI 1.0.88.
+#     Run 'copilot update' to check for updates.
+#
+# and the preference was a case-sensitive `grep -F -m1`. `Copilot` is capitalised, so the real version
+# line was skipped and the match landed on the second line — which names the executable in prose and
+# carries no digit-bearing token. The extraction returned nothing and the probe recorded `unknown`, which
+# is §9 outcome 2's encoding for AN AGENT THAT COULD NOT BE INSTALLED. It installed perfectly; every exit
+# code in that run was 0. `unknown` would have forced the adapter to Experimental over a measurement that
+# never happened, and §5.3 would have refused the transcript anyway, because an `unknown` transcript
+# expects a FAILED job.
+#
+# Case-insensitivity ALONE was rejected: it happens to work here only because the version line prints
+# first, so an agent whose prose line came first would record `unknown` again with nothing going red.
+# Requiring the chosen line to yield a token removes the order dependence entirely.
+#
+# Separating stdout from stderr was weighed as the alternative — both historical defects above arrived on
+# stderr, and `probe_record`'s `2>&1` is what puts them in front of the version. It was rejected for this
+# defect: copilot's prose line is on the SAME stream as its version, so the split would not have caught
+# it, and `probe_record`'s capture is shared by every step, so changing it changes what the transcript
+# records as evidence. A narrower fix that removes the order dependence is the proportionate one.
+#
+# THE TOKEN IS TRIMMED OF TRAILING `.`, `_` AND `-`. `1.0.88.` — the trailing period is copilot's own
+# sentence punctuation — is INSIDE Gate A's charset, so nothing downstream would have rejected it and the
+# evidence file would have been `copilot-1.0.88..md`. No version string in the twelve measured carries
+# trailing punctuation as data: `0.0.1790152370-gb14497`, `2026.09.18-9a7762b` and `v2.0.15` all end
+# alphanumeric.
 #
 # It lives here rather than in a reviewer's head because Gate A resolves a path from the recorded
 # version and SP4b resolves the same path from the registry; if the two derive the token differently, the
@@ -579,19 +610,32 @@ probe_script_install() {
 #
 # The raw capture stays verbatim: it is the evidence. The extraction reads a stripped copy, because a
 # coloured banner begins `ESC[0m`, whose `0m` is a digit-bearing run that Gate A would happily accept.
+# probe_version_token <line>: the first `[A-Za-z0-9._-]` run in one line that contains a digit, with
+# trailing `.`, `_` and `-` removed. Empty when the line carries no such run — which is what lets the
+# caller keep looking instead of settling for a line that merely mentions the executable.
+probe_version_token() {
+    printf '%s\n' "$1" \
+        | tr -cs 'A-Za-z0-9._-' '\n' \
+        | grep -m1 '[0-9]' \
+        | sed 's/[._-]*$//'
+}
+
 probe_version() {
     probe_record_agent version "$1" --version
     probe_stripped=$(probe_strip_ansi < "$PROBE_OUT/version.txt")
-    probe_vline=$(printf '%s\n' "$probe_stripped" | grep -F -m1 -- "$1" || true)
-    if [ -z "$probe_vline" ]; then
+    probe_extracted=
+    # Fed by a heredoc rather than a pipe on purpose: a `while read` on the right of a pipe runs in a
+    # SUBSHELL in POSIX sh, and the token would be lost at the end of the loop.
+    while IFS= read -r probe_line; do
+        probe_extracted=$(probe_version_token "$probe_line")
+        [ -z "$probe_extracted" ] || break
+    done <<PROBE_NAMED_LINES
+$(printf '%s\n' "$probe_stripped" | grep -iF -- "$1" || true)
+PROBE_NAMED_LINES
+    if [ -z "$probe_extracted" ]; then
         probe_vline=$(printf '%s\n' "$probe_stripped" | grep -v '^[[:space:]]*$' | tail -n1 || true)
+        probe_extracted=$(probe_version_token "$probe_vline")
     fi
-    probe_extracted=$(
-        printf '%s\n' "$probe_vline" \
-            | tr -cs 'A-Za-z0-9._-' '\n' \
-            | grep -m1 '[0-9]' \
-            || true
-    )
     # No such run means the agent printed no version: a §9 outcome-2 probe. `unknown` is the encoding
     # Gate C keys on to force the adapter to Experimental, so the probe states it rather than leaving the
     # field empty for a human to fill in.
