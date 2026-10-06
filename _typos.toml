@@ -6,6 +6,18 @@ extend-exclude = [
     "Cargo.lock",
     # The V3 specification is a delivered document; do not rewrite it.
     "agent-profile-implementation-spec-v3.md",
+    # EVIDENCE TRANSCRIPTS ARE MACHINE OUTPUT AND UNEDITABLE BY CONSTRUCTION. `probe_strings` sweeps an
+    # agent's binary for variable-shaped tokens, and a binary concatenates them without separators, so
+    # the capture legitimately contains word fragments: the first committed transcript tripped typos on
+    # `ENTERPRISE_TOKENGH_ENTERPRISE_TOGITHUB_ENTERPRIS` in codex's sweep, where `ENTERPRIS` is simply
+    # where one string ended. Correcting it is not an option either -- §5.3 step 5 requires the committed
+    # file to be BYTE-IDENTICAL to the run's artifact, so any edit here fails verification. Spell-checking
+    # captured vendor bytes asks a prose question of something that is not prose.
+    #
+    # SCOPED TO THE TRANSCRIPTS, NOT THE DIRECTORY. Every transcript is `<id>-<version>.md` and so carries
+    # a hyphen; `README.md` does not. Excluding the whole directory would silently stop spell-checking
+    # that README, which IS prose and is the one file here a human writes.
+    "docs/evidence/*-*.md",
 ]
 
 [default]

@@ -20,7 +20,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     evidence: AdapterEvidence {
         mechanism_id: "claude-config-dir-v1",
         verified_at: "2026-09-15",
-        upstream_version: "2.1.270",
+        upstream_version: "2.1.292",
         source_url: "https://code.claude.com/docs/en/authentication",
         notes: "CLAUDE_CONFIG_DIR relocates .credentials.json and keys the macOS Keychain entry per directory; \
                 ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_OAUTH_REFRESH_TOKEN, \

@@ -24,7 +24,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     evidence: AdapterEvidence {
         mechanism_id: "codex-home-v1",
         verified_at: "2026-09-15",
-        upstream_version: "0.153.4",
+        upstream_version: "0.160.1",
         source_url: "measured",
         notes: "codex --help: -p/--profile layers $CODEX_HOME/<name>.config.toml; binary strings OPENAI_API_KEY, \
                 CODEX_API_KEY, CODEX_ACCESS_TOKEN, CODEX_SQLITE_HOME; CODEX_HOME semantics per the Codex CLI \
@@ -40,13 +40,14 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
             state: CapabilityState::Conditional,
-            basis: "measured: OPENAI_API_KEY, CODEX_API_KEY and CODEX_ACCESS_TOKEN bypass it; auth.json \
-                    and the keyring key follow CODEX_HOME",
+            basis: "measured: OPENAI_API_KEY, CODEX_API_KEY and CODEX_ACCESS_TOKEN bypass it; that \
+                    auth.json and the keyring key follow CODEX_HOME is cited, not measured",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
             state: CapabilityState::Conditional,
-            basis: "measured: CODEX_SQLITE_HOME relocates the state database",
+            basis: "cited: CODEX_SQLITE_HOME relocates the state database; the variable is present in \
+                    the binary but the probe sets only CODEX_HOME, so the relocation is not measured",
         },
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
