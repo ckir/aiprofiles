@@ -22,7 +22,7 @@ This table is generated from `.claude/recommended-tools.json` by `scripts/gen-to
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
 | `actionlint` | — | — | workflow linting before pushing `.github/` changes |
 | `shellcheck` | — | `shellcheck` | `just check`, CI Shellcheck; also lets actionlint lint the shell inside workflow `run:` steps |
-| `Sandboxie-Plus` | — | — | manual — CONTRIBUTING.md "Measuring agent behaviour" (Windows adapter-evidence refresh) |
+| `disposable agent sandbox` | — | — | manual — CONTRIBUTING.md "Measuring agent behaviour" (adapter-evidence refresh) |
 | `podman` | `sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/` | `sandbox-test`, `probe <agent>`, `sandbox-shell` | on demand; `.github/workflows/sandbox.yml` runs the same on a GitHub runner with **podman** (probes by hand; `test` on PRs that change the harness) |
 | `rustup / rustc / cargo` | `rust-toolchain.toml` (`stable`, with rustfmt + clippy) | `build` | everything |
 | `rustfmt` | `rustfmt.toml` (edition 2024, width 100) | `fmt`, `fmt-check` | `just check`, pre-push, CI Format |
