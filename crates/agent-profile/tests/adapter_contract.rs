@@ -995,9 +995,111 @@ fn registry_rows() -> Vec<(&'static str, &'static str)> {
         .collect()
 }
 
-/// The clause against the REAL directory. It passes vacuously while `docs/evidence/` holds only its
-/// README — the transcripts land after the probe run — so the fixture tests below carry the proof that
-/// the rule bites. This one is what makes the rule true of the repository.
+fn evidence_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/evidence")
+}
+
+/// The mechanism token Gate A binds to the transcript (SP4 design §5.4): the variable name or flag
+/// spelling the adapter's own `Mechanism` carries. Taken from the variant's payload rather than from any
+/// hand-written string, because §5.4 exists to stop an adapter declaring one name and planning with
+/// another — `mechanism_id` is an opaque slug no agent prints, and free text could drift.
+///
+/// WHAT THIS BINDS, AND WHAT IT DOES NOT. For a flag mechanism the token reaches the transcript only
+/// through labels the HARNESS writes from the mechanism string its probe script was given
+/// (`behaviour-flagfile---config`, `baseline-…`, `delta-…`); aider's `--config` appears nowhere in the
+/// agent's own output. So this clause binds the adapter's declared mechanism to the mechanism the probe
+/// USED — it would catch a transcript produced under a different flag, or another agent's transcript
+/// committed by mistake — and it does NOT bind the mechanism to the agent's behaviour. The delta does
+/// that, and no assertion can.
+fn mechanism_token(mechanism: &Mechanism) -> &'static str {
+    match mechanism {
+        Mechanism::Env(name) | Mechanism::EnvFile(name) => name,
+        Mechanism::FlagDir(option) | Mechanism::FlagFile(option) => option.spelling(),
+    }
+}
+
+/// §9 outcome 2's exemption: a probe that could not install the agent records `unknown`, and a
+/// transcript of a run that never observed anything cannot be asked to contain an observation. Matched
+/// case-insensitively for the same reason Gate C is.
+fn token_required(version: &str) -> bool {
+    !version.eq_ignore_ascii_case(gate::UNKNOWN_VERSION)
+}
+
+/// Gate A's first transcript clause (SP4 design §5): the file the adapter's own `upstream_version`
+/// resolves to has to exist. Together with the allow-list below this closes the directory in both
+/// directions — every adapter has its transcript, and every file is some adapter's.
+#[test]
+fn gate_a_every_adapter_has_the_transcript_its_version_resolves_to() {
+    for (id, version) in registry_rows() {
+        let path = evidence_dir().join(format!("{id}-{version}.md"));
+        assert!(
+            path.is_file(),
+            "{id} declares upstream_version {version}, so docs/evidence/{id}-{version}.md must exist \
+             (produce it with the Sandbox workflow; see docs/evidence/README.md \"Producing one\")"
+        );
+    }
+}
+
+/// Gate A's second transcript clause: the transcript names the mechanism the adapter plans with.
+#[test]
+fn gate_a_every_transcript_contains_its_adapter_mechanism_token() {
+    for adapter in adapter::REAL_ADAPTERS {
+        let metadata = adapter.metadata();
+        let version = metadata.evidence.upstream_version;
+        if !token_required(version) {
+            continue;
+        }
+        let token = mechanism_token(&metadata.mechanism);
+        let path = evidence_dir().join(format!("{}-{version}.md", metadata.id));
+        let body = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        assert!(
+            body.contains(token),
+            "{}'s transcript does not contain its mechanism token {token:?} — the committed evidence \
+             was produced under a different mechanism than the adapter plans with",
+            metadata.id
+        );
+    }
+}
+
+/// Gate A's third transcript clause: configuration and state isolation rest on CI custody. An `off-ci`
+/// credentials transcript (§6, §7.4.1) answers a different question and sits alongside this one; it can
+/// never be the only backing for a configuration or state claim, which is why this checks the PRIMARY
+/// transcript rather than every file naming the adapter.
+#[test]
+fn gate_a_a_transcript_backing_isolation_declares_ci_custody() {
+    for adapter in adapter::REAL_ADAPTERS {
+        let metadata = adapter.metadata();
+        let isolation = metadata.capabilities.iter().any(|claim| {
+            matches!(claim.capability, Capability::ConfigIsolation | Capability::StateIsolation)
+        });
+        if !isolation {
+            continue;
+        }
+        let version = metadata.evidence.upstream_version;
+        let path = evidence_dir().join(format!("{}-{version}.md", metadata.id));
+        let body = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        assert_eq!(
+            custody_in_header(&body),
+            Some("ci"),
+            "{} claims configuration or state isolation, so its transcript must carry custody: ci",
+            metadata.id
+        );
+    }
+}
+
+#[test]
+fn gate_a_exempts_an_unknown_version_from_the_token_requirement() {
+    // §9 outcome 2: the probe could not install the agent, so there is no observation to demand. Matched
+    // case-insensitively, exactly as Gate C matches it.
+    assert!(!token_required("unknown"));
+    assert!(!token_required("UNKNOWN"));
+    assert!(!token_required("Unknown"));
+    assert!(token_required("2.1.292"));
+}
+
+/// The allow-list clause against the REAL directory. It no longer passes vacuously: the fold commit put
+/// three transcripts here, so this walks them. The fixture tests below still carry the proof that the
+/// rule BITES, because a directory that happens to be correct cannot demonstrate a rule that rejects.
 #[test]
 fn every_file_in_docs_evidence_is_on_the_allow_list() {
     let registry = registry_rows();
