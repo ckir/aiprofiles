@@ -753,6 +753,7 @@ common.sh  probe_fail "pristine-$probe_slot" 1
 common.sh  probe_fail "restore-$probe_rn" 1
 common.sh  probe_fail harness-privilege 1
 common.sh  probe_fail harness-version-refused 2
+common.sh  probe_fail strings 1
 common.sh  probe_fail strings 127
 common.sh  probe_fail() {
 CALLS
@@ -1205,6 +1206,67 @@ check "a documented variable that is absent is recorded" \
 check "an undocumented variable is still found" \
     "$(grep -c '^FAKE_HOME$' "$PROBE_OUT_DIR/strings.txt")" "1"
 
+# THE RESOLVED EXECUTABLE CAN BE A LOADER, AND THE STRINGS LIVE SOMEWHERE ELSE. `@openai/codex` installs
+# `bin/codex.js`, a Node shim that delegates to a 284529848-byte binary in a SEPARATE npm package nested
+# beneath the first, six levels down; `@github/copilot` ships the same shape as `npm-loader.js`. Scanning
+# the resolved file's own directory read an 8790-byte launcher and recorded every documented variable
+# ABSENT -- MEASURED on probe run 35961840864, which contradicted `codex.rs`'s own `measured:` basis. The
+# scan is rooted at the nearest `package.json` instead, so this fixture is the npm shape exactly: a
+# symlink on PATH into a package whose payload is deeper than the entry point.
+# NO SYMLINK IN THE FIXTURE, though npm's real shape has one. This suite also runs on the maintainer's
+# Windows host, where MSYS `ln -s` silently produces a COPY: measured, `readlink -f` returned the link
+# path unchanged, so a symlink-based fixture passes on the Linux runner and fails locally for a reason
+# that has nothing to do with the code. What is under test is the ROOT WALK, which does not depend on how
+# the entry point was linked, so the fixture puts the entry point in the package directly.
+# PROBE_AGENT_PATH, not PATH: the resolution runs through the sudo stub under `env -i`, and the suite
+# pins PROBE_AGENT_PATH before sourcing common.sh, so a later PATH change cannot reach it.
+run_probe 'mkdir -p "$PROBE_OUT/pkg/bin" "$PROBE_OUT/pkg/node_modules/inner/vendor"
+printf "{}
+" > "$PROBE_OUT/pkg/package.json"
+printf "#!/bin/sh
+exec true
+" > "$PROBE_OUT/pkg/bin/loader"
+chmod +x "$PROBE_OUT/pkg/bin/loader"
+printf "%s
+" "LOADER_SECRET_KEY LOADER_CONFIG_HOME" > "$PROBE_OUT/pkg/node_modules/inner/vendor/payload"
+PROBE_AGENT_PATH="$PROBE_OUT/pkg/bin:$PROBE_AGENT_PATH"
+probe_strings loader LOADER_SECRET_KEY'
+check "a variable in the payload a loader delegates to is found"     "$(grep -c '^documented LOADER_SECRET_KEY: present$' "$PROBE_OUT_DIR/strings.txt")" "1"
+check "and the undocumented sweep reaches it too"     "$(grep -c '^LOADER_CONFIG_HOME$' "$PROBE_OUT_DIR/strings.txt")" "1"
+# The scanned extent is RECORDED, so a reader can see "1 file, 8790 bytes" and distinguish a scan that
+# found nothing from a scan that read nothing. That distinction is the one this step kept getting wrong.
+check "the scanned extent is recorded in the transcript"     "$(grep -c '^# scanned [0-9]* file(s), [0-9]* byte(s) under ' "$PROBE_OUT_DIR/strings.txt")" "1"
+
+# A uv/venv TOOL INSTALL IS THE SECOND SHAPE, and the npm marker alone does not cover it. aider resolves
+# into `~/.local/share/uv/tools/aider-chat/bin/`, where NO ancestor up to `/home` carries a
+# `package.json`: MEASURED, the walk fell through to the fallback and scanned 36 files of venv `activate`
+# scripts, recording OPENAI_API_KEY, ANTHROPIC_API_KEY and AIDER_MODEL all ABSENT for an agent whose
+# site-packages contain every one of them. `pyvenv.cfg` marks that root the way `package.json` marks an
+# npm package.
+run_probe 'mkdir -p "$PROBE_OUT/venv/bin" "$PROBE_OUT/venv/lib/python3.12/site-packages/tool"
+printf "home = /usr
+" > "$PROBE_OUT/venv/pyvenv.cfg"
+printf "#!/bin/sh
+exec true
+" > "$PROBE_OUT/venv/bin/venvagent"
+chmod +x "$PROBE_OUT/venv/bin/venvagent"
+printf "%s
+" "VENV_SECRET_KEY VENV_CONFIG_HOME" > "$PROBE_OUT/venv/lib/python3.12/site-packages/tool/api.py"
+PROBE_AGENT_PATH="$PROBE_OUT/venv/bin:$PROBE_AGENT_PATH"
+probe_strings venvagent VENV_SECRET_KEY'
+check "a variable in a venv's site-packages is found"     "$(grep -c '^documented VENV_SECRET_KEY: present$' "$PROBE_OUT_DIR/strings.txt")" "1"
+check "and the venv sweep reaches it too"     "$(grep -c '^VENV_CONFIG_HOME$' "$PROBE_OUT_DIR/strings.txt")" "1"
+
+# A SCAN THAT FINDS NO TOKEN AT ALL IS A FAILED STEP, NOT A FINDING. Three separate defects have shipped
+# whose symptom was `ABSENT` for everything -- opencode's size cap, amp's mode-0700 directory, codex's
+# loader -- and in each the transcript was indistinguishable from an honest negative. Every real payload
+# carries variable-shaped tokens: measured across the twelve, a scan that reached one yielded 72 to 194,
+# and the five that missed yielded 0, 0, 2, 3 and 4.
+stage quietagent 'exit 0'
+run_staged 'probe_strings quietagent SOME_DOCUMENTED_KEY'
+check "a scan that finds no token at all fails the step" "$probe_status" "1"
+check "and records the failure against strings"     "$(cat "$PROBE_OUT_DIR/strings.exit-code")" "1"
+
 # A LARGE SINGLE BINARY IS STILL SCANNED. `probe_strings` caps the files it reads at 64M so a vendored
 # toolchain beside the entry point cannot turn this step into the job's time limit, and that cap used to
 # apply to the resolved executable as well. MEASURED against `@opencode/cli`, which ships one 200529376-byte
@@ -1226,6 +1288,31 @@ check "a resolved executable larger than the scan cap is still read" \
 # is the one way this test could certify the exemption while proving nothing about it.
 check "and that fixture really was over the cap" \
     "$(find "$PROBE_OUT_DIR/bin" -maxdepth 1 -type f -name bigagent -size -64M | wc -l)" "0"
+
+# A LARGE PAYLOAD THAT IS NOT THE RESOLVED FILE IS STILL READ. This is codex's shape: an 8790-byte
+# loader resolves, and the 284529848-byte binary carrying its variables sits in a nested package. The
+# scan once applied a 64M size cap that exempted only `$probe_real`, so BOTH halves excluded that binary
+# and the transcript said ABSENT for variables `codex.rs` claims are measured. The cap is gone -- it
+# excluded nothing that a plain scan would not, since every over-cap file across the four largest
+# installs is executable, and it cost a `stat` per file -- so this pins that no size filter comes back.
+#
+# No `chmod +x` here on purpose: the maintainer's Windows host does not keep the bit (`stat` reports
+# `-rw-r--r--` after `chmod +x`), so a fixture depending on it passes in CI and fails locally.
+run_probe 'mkdir -p "$PROBE_OUT/big/bin" "$PROBE_OUT/big/node_modules/inner"
+printf "{}
+" > "$PROBE_OUT/big/package.json"
+printf "#!/bin/sh
+exec true
+" > "$PROBE_OUT/big/bin/bigloader"
+chmod +x "$PROBE_OUT/big/bin/bigloader"
+printf "%s
+" "NESTED_BIG_KEY" > "$PROBE_OUT/big/node_modules/inner/payload"
+truncate -s 65M "$PROBE_OUT/big/node_modules/inner/payload"
+PROBE_AGENT_PATH="$PROBE_OUT/big/bin:$PROBE_AGENT_PATH"
+probe_strings bigloader NESTED_BIG_KEY'
+check "a large payload that is not the resolved file is still read"     "$(grep -c '^documented NESTED_BIG_KEY: present$' "$PROBE_OUT_DIR/strings.txt")" "1"
+# The control: without it this passes for a fixture that was never large, certifying nothing.
+check "and that nested fixture really was over the old cap"     "$(find "$PROBE_OUT_DIR/big/node_modules/inner" -type f -name payload -size -64M | wc -l)" "0"
 
 # The undocumented sweep's filter is eleven alternatives
 # (KEY|TOKEN|SECRET|CREDENTIAL|PASSWORD|AUTH|HOME|CONFIG|DATA_DIR|PROFILE|SETTINGS), and until now only
