@@ -2,7 +2,7 @@
   {
     "name": "cargo-nextest",
     "why": "Test runner used by CI (`cargo nextest run --workspace`). Runs each test in its own process, which matters here because agent-profile tests spawn the binary and the fake-agent fixture and set per-process environment. Does NOT run doctests — pair with `cargo test --doc`.",
-    "install": "cargo binstall -y cargo-nextest",
+    "install": "cargo binstall -y cargo-nextest  (any platform)",
     "in_path": "cargo-nextest",
     "config": "—",
     "just": "`test`, `test-verbose` (`cargo nextest run --workspace --no-tests=pass` + `cargo test --doc --workspace`)",
@@ -10,8 +10,8 @@
   },
   {
     "name": "just",
-    "why": "Task runner and the single entry point for the local gate. `just check` = fmt-check + clippy + typos + test. Configured by the root justfile.",
-    "install": "cargo binstall -y just",
+    "why": "Task runner and the single entry point for the local gate. `just check` = fmt-check + clippy + typos + shellcheck + line-citations + test + probe-tests + tools-doc-check + doc-check. Configured by the root justfile.",
+    "install": "cargo binstall -y just  (any platform; Ubuntu also has `sudo snap install --classic just`)",
     "in_path": "just",
     "config": "`justfile`",
     "just": "—",
@@ -20,7 +20,7 @@
   {
     "name": "lefthook",
     "why": "Git hooks. pre-push runs `just fmt-check`, `just clippy` and `just typos` in parallel; there is no pre-commit hook, so commits stay fast. Routing through just keeps the hook and CI from drifting apart. Configured by lefthook.yml; needs `lefthook install` once per clone.",
-    "install": "cargo binstall -y lefthook",
+    "install": "NOT ON crates.io — `cargo binstall lefthook` fails with \"lefthook is not found\", and the crates.io API returns \"crate `lefthook` does not exist\" (verified 2026-10-07). Linux: download the `.deb`/`.rpm`/`.apk` from github.com/evilmartians/lefthook/releases (e.g. `curl -sSL -o /tmp/lefthook.deb .../lefthook_<ver>_amd64.deb && sudo dpkg -i /tmp/lefthook.deb`) · macOS: `brew install lefthook` · Windows: `scoop install lefthook`, or the release binary. Then `lefthook install` once per clone.",
     "in_path": "lefthook",
     "config": "`lefthook.yml` (pre-push: fmt-check, clippy, typos in parallel; no pre-commit)",
     "just": "`hooks`",
@@ -29,7 +29,7 @@
   {
     "name": "cargo-deny",
     "why": "Advisory, licence, ban and source auditing across the dependency graph. Configured by deny.toml, which pins the allow-listed licences, bans openssl-sys (V3 spec §36: no hidden network activity) and lists the per-platform target triples.",
-    "install": "cargo binstall -y cargo-deny",
+    "install": "cargo binstall -y cargo-deny  (any platform)",
     "in_path": "cargo-deny",
     "config": "`deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples)",
     "just": "`deny`",
@@ -38,7 +38,7 @@
   {
     "name": "typos",
     "why": "Spell-checks source and prose; runs as its own CI job and in `just check`. Configured by _typos.toml, which excludes the delivered V3 spec.",
-    "install": "cargo binstall -y typos-cli",
+    "install": "cargo binstall -y typos-cli  (any platform)",
     "in_path": "typos",
     "config": "`_typos.toml` (excludes the V3 spec)",
     "just": "`typos`",
@@ -47,7 +47,7 @@
   {
     "name": "bacon",
     "why": "Background check/clippy/test watcher during development (`just watch`). Configured by bacon.toml; default job is check-all.",
-    "install": "cargo binstall -y bacon",
+    "install": "cargo binstall -y bacon  (any platform)",
     "in_path": "bacon",
     "config": "`bacon.toml` (default job `check-all`)",
     "just": "`watch`",
@@ -56,7 +56,7 @@
   {
     "name": "cargo-mutants",
     "why": "Mutation testing (`just mutants`) for the invariant-heavy library: profile-name validation, resolution precedence, config atomicity. .gitignore already excludes mutants.out*.",
-    "install": "cargo binstall -y cargo-mutants",
+    "install": "cargo binstall -y cargo-mutants  (any platform)",
     "in_path": "cargo-mutants",
     "config": "—",
     "just": "`mutants` (`--package agent-profile`)",
@@ -65,7 +65,7 @@
   {
     "name": "actionlint",
     "why": "Lints the GitHub Actions workflows. Runs the shell in each `run:` step through shellcheck when shellcheck is on PATH; without it that check is silently skipped (visible only with `actionlint -verbose`).",
-    "install": "winget install rhysd.actionlint",
+    "install": "Linux: `go install github.com/rhysd/actionlint/cmd/actionlint@latest`, or download the release binary to ~/.local/bin · Windows: `winget install rhysd.actionlint`",
     "in_path": "actionlint",
     "config": "—",
     "just": "—",
@@ -73,26 +73,32 @@
   },
   {
     "name": "shellcheck",
-    "why": "Lets actionlint check the shell inside workflow `run:` steps; actionlint disables that rule when shellcheck is not on PATH.",
-    "install": "winget install koalaman.shellcheck",
+    "why": "Lints every `.sh` under sandbox/ and scripts/ as its own gate recipe, and lets actionlint check the shell inside workflow `run:` steps — actionlint disables that rule when shellcheck is not on PATH. Version matters: `ubuntu-latest` carries an older build than a current local install, and the two disagree on SC2317 versus SC2329, so `sandbox/run.sh` carries both codes.",
+    "install": "Linux: `sudo apt install shellcheck` · Windows: `winget install koalaman.shellcheck`",
     "in_path": "shellcheck",
     "config": "—",
     "just": "`shellcheck`",
     "gates": "`just check`, CI Shellcheck; also lets actionlint lint the shell inside workflow `run:` steps"
   },
   {
-    "name": "Sandboxie-Plus",
-    "why": "The Windows sandbox for measuring real coding agents (CONTRIBUTING.md \"Measuring agent behaviour\"): adapter evidence is refreshed only inside a disposable box, never by installing agents on the host. Windows only; Linux and macOS contributors use the Podman/Bubblewrap or Tart/OrbStack recipes in CONTRIBUTING.md, and this check has no platform guard, so it lists Sandboxie-Plus as missing there.",
-    "install": "winget install Sandboxie.Plus",
-    "file_exists": "C:/Program Files/Sandboxie-Plus/Start.exe",
+    "name": "disposable agent sandbox",
+    "why": "Coding agents are NEVER installed on the host (CONTRIBUTING.md \"Measuring agent behaviour\"): adapter evidence is refreshed only inside a disposable box. The box differs by platform, which is why this entry is satisfied by ANY of them — Sandboxie-Plus on Windows, Podman or Bubblewrap on Linux, Tart or OrbStack on macOS. It used to name Sandboxie-Plus alone with a Windows-only path, so it reported missing on every Linux and macOS clone; the paths below are checked with ANY semantics, so whichever box this platform uses satisfies it.",
+    "install": "Linux: `sudo apt install podman` (or `bubblewrap`) · Windows: `winget install Sandboxie.Plus` · macOS: `brew install tart` (see CONTRIBUTING.md)",
+    "file_exists": [
+      "C:/Program Files/Sandboxie-Plus/Start.exe",
+      "/usr/bin/podman",
+      "/usr/local/bin/podman",
+      "/usr/bin/bwrap",
+      "/opt/homebrew/bin/tart"
+    ],
     "config": "—",
     "just": "—",
-    "gates": "manual — CONTRIBUTING.md \"Measuring agent behaviour\" (Windows adapter-evidence refresh)"
+    "gates": "manual — CONTRIBUTING.md \"Measuring agent behaviour\" (adapter-evidence refresh)"
   },
   {
     "name": "podman",
-    "why": "The container engine `sandbox/run.sh` runs the probe harness in, and the one CI uses (`AGENT_PROFILE_SANDBOX_ENGINE: podman` in both sandbox.yml jobs). Docker is an accepted fallback and run.sh selects it automatically when podman is absent, but the two are NOT equivalent for this repo: run.sh:85-87 sets `--userns=keep-id:uid=1000,gid=1000` ONLY under podman, so anything about uid mapping across the /out bind mount is unreproducible under Docker. That matters for the two-user privilege boundary, where a second uid writing the mount is the specific hazard. On Windows podman needs its own VM (`podman machine`), which is still not the Linux runner CI uses — so prefer dispatching the Actions Sandbox workflow for uid-mapping questions, and install podman locally when you would otherwise be iterating by re-pushing to CI.",
-    "install": "winget install RedHat.Podman",
+    "why": "The container engine `sandbox/run.sh` runs the probe harness in, and the one CI uses (`AGENT_PROFILE_SANDBOX_ENGINE: podman` in both sandbox.yml jobs). Docker is an accepted fallback and run.sh selects it automatically when podman is absent, but the two are NOT equivalent here: run.sh passes `--userns=keep-id:uid=1000,gid=1000` ONLY under podman, so anything about uid mapping across the /out bind mount is unreproducible under Docker. That matters for the two-user privilege boundary, where a second uid writing the mount is the specific hazard. ON WINDOWS, `sandbox/run.sh` CANNOT COMPLETE FROM GIT BASH AT ALL — measured 2026-09-23 with podman 5.8.3 and a warm cache: without `MSYS_NO_PATHCONV` the image builds and `eng run` dies on `--volume \"$root:/src:ro\"` because MSYS rewrites the container-side `/src`, and with `MSYS_NO_PATHCONV=1` the build dies first on a mangled context path. Both settings fail, in different places, so on Windows use the Actions Sandbox workflow instead. On Linux it runs natively and local probing is the fast path.",
+    "install": "Linux: `sudo apt install podman` · Windows: `winget install RedHat.Podman` then `podman machine init && podman machine start` (and see the Git Bash limitation above)",
     "in_path": "podman",
     "config": "`sandbox/Containerfile`, `sandbox/run.sh`, `sandbox/probes/`",
     "just": "`sandbox-test`, `probe <agent>`, `sandbox-shell`",
@@ -101,7 +107,7 @@
   {
     "name": "rustup / rustc / cargo",
     "why": "Installs and manages the Rust toolchain pinned by rust-toolchain.toml (stable, with rustfmt + clippy); every other tool here builds or runs through it.",
-    "install": "winget install Rustlang.Rustup",
+    "install": "Linux/macOS: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` · Windows: `winget install Rustlang.Rustup`",
     "in_path": "rustc",
     "config": "`rust-toolchain.toml` (`stable`, with rustfmt + clippy)",
     "just": "`build`",
@@ -110,7 +116,7 @@
   {
     "name": "rustfmt",
     "why": "Formats Rust source. Ships as a rustup component; enforced in the local gate, the pre-push hook and CI.",
-    "install": "rustup component add rustfmt",
+    "install": "rustup component add rustfmt  (any platform)",
     "in_path": "cargo-fmt",
     "config": "`rustfmt.toml` (edition 2024, width 100)",
     "just": "`fmt`, `fmt-check`",
@@ -119,7 +125,7 @@
   {
     "name": "clippy",
     "why": "Lints Rust source with warnings promoted to errors. Ships as a rustup component; enforced in the local gate, the pre-push hook and CI.",
-    "install": "rustup component add clippy",
+    "install": "rustup component add clippy  (any platform)",
     "in_path": "cargo-clippy",
     "config": "`clippy.toml` (msrv 1.98)",
     "just": "`clippy` (`--workspace --all-targets -- -D warnings`)",
@@ -128,7 +134,7 @@
   {
     "name": "cargo-binstall",
     "why": "Installs the other cargo-based tools here (cargo-nextest, just, lefthook, cargo-deny, typos-cli, bacon, cargo-mutants) from prebuilt binaries instead of compiling each from source.",
-    "install": "cargo install cargo-binstall",
+    "install": "cargo install cargo-binstall  (any platform)",
     "in_path": "cargo-binstall",
     "config": "—",
     "just": "—",

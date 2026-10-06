@@ -682,28 +682,69 @@ probe_strings() {
     fi
     probe_real=$(readlink -f "$probe_resolved")
     probe_dir=$(dirname "$probe_real")
-    printf '# %s -> %s\n' "$probe_resolved" "$probe_real" > "$probe_out_file"
 
-    # The resolved file and its siblings. An npm package's bundle sits beside its entry point and a
-    # script-installed agent is one binary, so one directory covers both shapes. `-size -64M` keeps a
-    # vendored toolchain from turning this step into the job's time limit.
+    # THE RESOLVED EXECUTABLE IS OFTEN A LOADER, NOT THE THING THAT HOLDS THE STRINGS. `@openai/codex`
+    # installs `bin/codex.js`, a Node shim that delegates to a 284529848-byte binary in a SEPARATE npm
+    # package nested under the first -- `node_modules/@openai/codex-linux-x64/vendor/<triple>/bin/codex`,
+    # six levels down. Scanning the shim's own directory read an 8790-byte launcher and recorded every
+    # documented variable ABSENT: MEASURED on probe run 35961840864, `documented OPENAI_API_KEY: ABSENT`
+    # for an agent whose binary contains it, contradicting `codex.rs`'s own `measured:` basis. `copilot`
+    # ships the same shape (`npm-loader.js`), and cline and pi resolve into `dist/` bundles the same way.
     #
-    # THE RESOLVED EXECUTABLE IS EXEMPT FROM THAT CAP, and the exemption is the whole point rather than a
-    # nicety. The cap exists to skip files this step never needed to read; the resolved binary is the one
-    # file it exists to read, so a cap that excludes it does not trade completeness for time -- it deletes
-    # the measurement and reports the deletion as a finding. MEASURED: `@opencode/cli` ships a single
-    # 200529376-byte executable and nothing else in its `bin` directory, so the unexempted scan matched no
-    # file at all and recorded every documented variable as ABSENT, including ones a control proved are in
-    # the binary. That is the exact shape of the error this repository keeps rediscovering -- a scan that
-    # read nothing reporting as a scan that found nothing -- and an agent shipping a large single binary is
-    # a normal packaging choice, not an exotic one, so nothing about it would have looked wrong in review.
-    # The cap still governs every OTHER file in the directory.
+    # So the scan is rooted at the INSTALLED PACKAGE, found by walking up to the nearest marker, and
+    # recurses. There are two markers because this image installs from two packaging systems and no
+    # others: `package.json` for npm, `pyvenv.cfg` for a uv/venv tool install. An agent installed as one
+    # binary by a vendor script has neither above it and keeps the old behaviour -- its own directory.
+    #
+    # `pyvenv.cfg` is not a guess at a second case; it is aider, MEASURED. aider resolves to
+    # `~/.local/share/uv/tools/aider-chat/bin/aider`, and NO ancestor up to `/home` carries a
+    # `package.json`, so the npm marker alone left it on the fallback: 36 files and 38391 bytes of venv
+    # `activate` scripts, 4 tokens, and OPENAI_API_KEY, ANTHROPIC_API_KEY and AIDER_MODEL all ABSENT.
+    # Rooted at the venv instead -- `pyvenv.cfg` sits beside `uv-receipt.toml` at that root -- the same
+    # scan reads 9718 files and 539088074 bytes, all three are present, and the sweep yields 1106 tokens.
+    probe_root=$probe_dir
+    probe_up=$probe_dir
+    while [ -n "$probe_up" ] && [ "$probe_up" != / ]; do
+        if [ -f "$probe_up/package.json" ] || [ -f "$probe_up/pyvenv.cfg" ]; then
+            probe_root=$probe_up
+            break
+        fi
+        probe_up=$(dirname "$probe_up")
+    done
+
+    # NO SIZE CAP, and it is retired rather than widened because MEASURED it cost more than it saved
+    # while hiding the one file this step exists to read.
+    #
+    # There was a 64M cap, introduced when the scan was a single directory, to stop a vendored toolchain
+    # turning this step into the job's time limit. It did real work then: `@opencode/cli` ships one
+    # 200529376-byte executable, and an unexempted cap recorded every documented variable ABSENT for it.
+    # Rooted at the package the arithmetic changes. The exemption keyed on `$probe_real`, which for a
+    # loader is the 8790-byte shim and not the binary beside it, so BOTH halves of the filter excluded
+    # codex's payload. Exempting executables instead fixes that on Linux but cannot be pinned by a test
+    # on the maintainer's Windows host, where `chmod +x` does not survive -- measured, `stat` reports
+    # `-rw-r--r--` afterwards, so `-perm -u+x` matches nothing there and a fixture built on it passes in
+    # CI while failing locally.
+    #
+    # And the cap was not buying time. Across the four largest installs -- codex, cline, copilot, aider --
+    # every file over 64M is executable and none is vendored data, so the filter excluded nothing a plain
+    # scan would add. Removing it is FASTER, because the expression cost a `stat` per file: cline's five
+    # documented variables plus the token sweep run in 17 seconds over its 27958 files without the
+    # filter, against 58 seconds with it. Each agent is its own matrix job, so that is spent once per
+    # agent rather than once per run.
+    #
+    # What bounds the work now is the ROOT, not a file size, and the extent is recorded below so a scan
+    # that read too much or too little is visible in the transcript rather than inferred.
+    probe_files=$(find "$probe_root" -type f -printf '%s\n' 2>/dev/null \
+        | awk '{ n += 1; b += $1 } END { printf "%d %d", n, b }')
+    printf '# %s -> %s\n' "$probe_resolved" "$probe_real" > "$probe_out_file"
+    printf '# scanned %s file(s), %s byte(s) under %s\n' \
+        "${probe_files% *}" "${probe_files#* }" "$probe_root" >> "$probe_out_file"
+
     for probe_var in "$@"; do
         # Tested by what grep PRINTS, not by find's exit status. `-exec ... +` batches, and it reports
         # failure when ANY batch's grep found nothing — so a variable present in the first of two batches
         # would be recorded ABSENT, which is the answer that ends an investigation early.
-        if find "$probe_dir" -maxdepth 1 -type f \( -size -64M -o -path "$probe_real" \) \
-            -exec grep -aFl -e "$probe_var" {} + 2>/dev/null | grep -q .; then
+        if find "$probe_root" -type f -exec grep -aFl -e "$probe_var" {} + 2>/dev/null | grep -q .; then
             printf 'documented %s: present\n' "$probe_var" >> "$probe_out_file"
         else
             printf 'documented %s: ABSENT\n' "$probe_var" >> "$probe_out_file"
@@ -712,11 +753,23 @@ probe_strings() {
 
     printf '#\n# variable-shaped tokens that name a credential or a location, documented or not\n' \
         >> "$probe_out_file"
-    find "$probe_dir" -maxdepth 1 -type f \( -size -64M -o -path "$probe_real" \) \
-        -exec grep -aohE '[A-Z][A-Z0-9_]{3,}' {} + 2>/dev/null \
-        | grep -E '(KEY|TOKEN|SECRET|CREDENTIAL|PASSWORD|AUTH|HOME|CONFIG|DATA_DIR|PROFILE|SETTINGS)' \
-        | LC_ALL=C sort -u \
-        | probe_excerpt 200 >> "$probe_out_file"
+    probe_tokens=$(
+        find "$probe_root" -type f -exec grep -aohE '[A-Z][A-Z0-9_]{3,}' {} + 2>/dev/null \
+            | grep -E '(KEY|TOKEN|SECRET|CREDENTIAL|PASSWORD|AUTH|HOME|CONFIG|DATA_DIR|PROFILE|SETTINGS)' \
+            | LC_ALL=C sort -u || true
+    )
+    printf '%s\n' "$probe_tokens" | probe_excerpt 200 >> "$probe_out_file"
+
+    # A SCAN THAT FOUND NO TOKEN AT ALL READ NOTHING, AND MUST NOT PASS AS A FINDING. This is the third
+    # time this repository has shipped a scan whose silence was mistaken for evidence -- opencode's size
+    # cap, amp's mode-0700 directory, codex's loader -- and in every one `ABSENT` was indistinguishable
+    # from `never looked at`. Every real agent payload carries uppercase variable-shaped tokens: MEASURED
+    # across the twelve on probe run 35961840864, a scan that reached the payload yielded 72 to 194 of
+    # them (the sweep is capped at 200) while the five that missed it yielded 0, 0, 2, 3 and 4. Zero is
+    # the only bound that needs no judgement, so zero is what fails.
+    if [ -z "$probe_tokens" ]; then
+        probe_fail strings 1
+    fi
 }
 
 # --- Steps 5 and 6: baseline and behaviour --------------------------------------------------------
