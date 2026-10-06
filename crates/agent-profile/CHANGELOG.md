@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4](https://github.com/ckir/aiprofiles/compare/v0.0.3...v0.0.4) - 2026-10-06
+
+### Added
+
+- *(evidence)* commit the first transcripts and Gate A's transcript clauses ([#39](https://github.com/ckir/aiprofiles/pull/39))
+
+### Tests
+
+- *(evidence)* enforce Gate A's allow-list on docs/evidence/ ([#34](https://github.com/ckir/aiprofiles/pull/34))
+
 ## [0.0.3](https://github.com/ckir/aiprofiles/compare/v0.0.2...v0.0.3) - 2026-09-21
 
 ### Added
