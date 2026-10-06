@@ -20,7 +20,7 @@
   {
     "name": "lefthook",
     "why": "Git hooks. pre-push runs `just fmt-check`, `just clippy` and `just typos` in parallel; there is no pre-commit hook, so commits stay fast. Routing through just keeps the hook and CI from drifting apart. Configured by lefthook.yml; needs `lefthook install` once per clone.",
-    "install": "cargo binstall -y lefthook  (any platform), then `lefthook install` in the clone",
+    "install": "NOT ON crates.io — `cargo binstall lefthook` fails with \"lefthook is not found\", and the crates.io API returns \"crate `lefthook` does not exist\" (verified 2026-10-07). Linux: download the `.deb`/`.rpm`/`.apk` from github.com/evilmartians/lefthook/releases (e.g. `curl -sSL -o /tmp/lefthook.deb .../lefthook_<ver>_amd64.deb && sudo dpkg -i /tmp/lefthook.deb`) · macOS: `brew install lefthook` · Windows: `scoop install lefthook`, or the release binary. Then `lefthook install` once per clone.",
     "in_path": "lefthook",
     "config": "`lefthook.yml` (pre-push: fmt-check, clippy, typos in parallel; no pre-commit)",
     "just": "`hooks`",
