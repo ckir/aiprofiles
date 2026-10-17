@@ -90,6 +90,7 @@ capability states are never hidden behind a flag for this reason.
 | Gemini CLI 0.64.0 (`gemini`) | `GEMINI_CLI_HOME` | Proven | Supported (`GEMINI_CLI_HOME` names a directory *containing* `.gemini`; the agent creates the nested directory itself) | Unknown (requires a vendor session; `GEMINI_API_KEY`, `GOOGLE_API_KEY` and `GOOGLE_APPLICATION_CREDENTIALS` are the bypass variables) | Supported (history and tmp state moved into the target's `.gemini`) |
 | GitHub Copilot CLI 1.0.98 (`copilot`) | `COPILOT_HOME` | Experimental | Unknown (the measured delta was empty at both watched locations, so the variable's effect is undetermined) | Unknown (storage not located; `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` are the documented bypass variables) | Unknown (nothing separated: the measured delta was empty at both the target and the default `~/.copilot`) |
 | OpenCode v2.0.32 (`opencode`) | `OPENCODE_CONFIG_DIR` | Proven | Supported (`service.json` followed the variable into the target; `OPENCODE_CONFIG` names a config *file* to read, not the directory the adapter sets) | Unknown (`auth.json` was never written by these unauthenticated launches, so where stored credentials live was not established; `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are the bypass variables) | NotSupported (`opencode.db`, `shell/` and `opencode.log` stayed at `.local/share/opencode` under both mechanisms; no data-directory variable exists) |
+| Pi 1.3.0 (`pi`) | `PI_CODING_AGENT_DIR` | Proven | Supported (`auth.json` and `models-store.json` moved into the target with no `.pi/agent` prefix — the variable names the config directory itself) | NotSupported (stored credentials are `auth.json` inside the config directory, which is exactly what the variable moves, so they travel with it and no separate credential store exists; `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` bypass the file entirely) | Supported (`sessions/` and `models-store.json` appeared under the mechanism, with nothing left at the default `.pi/agent`) |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
 and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
@@ -108,7 +109,6 @@ from first-party documentation and none is yet measured; where a probe contradic
 | Agent | Primary mechanism | Intended semantic tier |
 |---|---|---|
 | Cline CLI | `--config`, `--data-dir` | Config/state selection |
-| Pi | `PI_CODING_AGENT_DIR` | Agent home/state isolation |
 | Kiro CLI | `KIRO_HOME` | Independent home/profile |
 | Cursor Agent CLI | `CURSOR_CONFIG_DIR` | Configuration selection |
 | Continue CLI | `--config` | Configuration selection |
