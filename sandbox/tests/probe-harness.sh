@@ -975,6 +975,25 @@ check "while the sweep's refusal is still in the step log" \
     "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" \
     "candidate-1 0,candidate-2 2,behaviour-flagfile---config 2,"
 
+# THE SECOND SWEEP, and ROADMAP's "Tracked debt" entry this closes: probe_candidates opened every call
+# by resetting its counter and truncating candidates.txt, so a probe that sweeps twice — and SP4b's nine
+# adapters each may — silently overwrote the first sweep's index and restarted its step ids at
+# candidate-1, destroying the first sweep's .cmd/.exit-code/.txt. Asserted behaviourally, after TWO
+# sweeps of one probe: both sweeps' index lines in order, and the second sweep's launches continuing the
+# id sequence rather than reusing the first ones' names.
+stage picky 'test -s "$2" || exit 2; grep -q "{}" "$2" || exit 2'
+run_staged 'probe_candidates picky flagfile:--config @none ""
+probe_candidates picky flagfile:--config "# nothing" "{}"'
+check "a second sweep appends to the index instead of truncating it" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/candidates.txt")" \
+    "1: @none,2: ,3: # nothing,4: {},"
+check "the second sweep's launches continue the step-id sequence" \
+    "$(tr "\n" "," < "$PROBE_OUT_DIR/steps")" \
+    "candidate-1 2,candidate-2 2,candidate-3 2,candidate-4 0,"
+check "and the first sweep's artefacts survive under their own ids" \
+    "$(cat "$PROBE_OUT_DIR/candidate-1.exit-code") $(cat "$PROBE_OUT_DIR/candidate-2.exit-code") $(cat "$PROBE_OUT_DIR/candidate-3.exit-code") $(cat "$PROBE_OUT_DIR/candidate-4.exit-code")" \
+    "2 2 2 0"
+
 # --- PROBE_EXPECT ---------------------------------------------------------------------------------
 #
 # For some agents the ONLY command that initialises is one that fails. Measured: `pi` writes nothing at

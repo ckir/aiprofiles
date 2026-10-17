@@ -287,6 +287,12 @@ PROBE_SOFT=
 # NOT read from the environment, for PROBE_SOFT's reason: a variable that decides whether a failed step
 # counts is one an install script must not be able to preset.
 PROBE_EXPECT=
+# `probe_candidates`' candidate counter, and its step-id source: candidate `N` is launched as step
+# `candidate-N`. ONE ACROSS EVERY SWEEP, initialized only here and by nobody: a probe script may sweep
+# several times (SP4b's nine adapters will, one mechanism each after the first), and a counter reset per
+# call would restart the ids at `candidate-1` and overwrite the first sweep's `.cmd`/`.exit-code`/`.txt`
+# — ROADMAP's "Tracked debt" entry, now closed here rather than when the ninth script finds it.
+probe_n=0
 # Whether the command `probe_record` is about to run belongs to the measured party. Empty means the
 # harness, which is every step's default; `probe_record_agent` sets it for the length of one call.
 #
@@ -1140,12 +1146,14 @@ probe_behaviour() {
 #
 # One exit code per candidate, plus an index naming what each one held, because the transcript has to say
 # which content the exit code belongs to.
+#
+# REPEATABLE within one probe script, and each call APPENDS: `probe_n` keeps counting — its one
+# initialization is the global above, not here — and the index is never truncated, so a second sweep's
+# artefacts are `candidate-3`... beside the first sweep's, not over them.
 probe_candidates() {
     probe_exe=$1
     probe_mech=$2
     shift 2
-    probe_n=0
-    : > "$PROBE_OUT/candidates.txt"
     for probe_cand in "$@"; do
         probe_n=$((probe_n + 1))
         # Each candidate is its own launch, and each launch initialises the agent's default location.
