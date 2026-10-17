@@ -40,13 +40,13 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         },
         CapabilityClaim {
             capability: Capability::CredentialIsolation,
-            state: CapabilityState::NotSupported,
-            basis: "measured: `auth.json` lives under `XDG_DATA_HOME` (default \
-                    `~/.local/share/opencode`, §8.2) — a directory neither mechanism moves (both \
-                    deltas left the data tree in place and the strings scan contains no \
-                    `OPENCODE_DATA*`/`OPENCODE_HOME` token) — so stored credentials sit outside \
-                    the directory the config variable relocates; `ANTHROPIC_API_KEY` and \
-                    `OPENAI_API_KEY` (strings measured) are the documented bypass variables",
+            state: CapabilityState::Unknown,
+            basis: "unmeasured: `auth.json` was never observed anywhere in the deltas — \
+                    unauthenticated launches never write it — so where stored credentials live was \
+                    not established and §6's 'probe establishes where credentials are stored' \
+                    exception is not met; `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` (strings \
+                    measured) are the documented bypass variables, and no stored-credential \
+                    observation was made",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
