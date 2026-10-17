@@ -39,6 +39,7 @@ fn env_dir_agents_receive_their_home_argv_cwd_and_exit_code() {
         ("copilot", "copilot", "COPILOT_HOME"),
         ("opencode", "opencode", "OPENCODE_CONFIG_DIR"),
         ("pi", "pi", "PI_CODING_AGENT_DIR"),
+        ("kiro", "kiro-cli", "KIRO_HOME"),
     ] {
         let root = Root::empty();
         let bin = bin_with(executable);
