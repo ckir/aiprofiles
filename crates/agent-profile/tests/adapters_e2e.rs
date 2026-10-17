@@ -36,6 +36,7 @@ fn env_dir_agents_receive_their_home_argv_cwd_and_exit_code() {
         ("claude", "claude", "CLAUDE_CONFIG_DIR"),
         ("codex", "codex", "CODEX_HOME"),
         ("gemini", "gemini", "GEMINI_CLI_HOME"),
+        ("copilot", "copilot", "COPILOT_HOME"),
     ] {
         let root = Root::empty();
         let bin = bin_with(executable);

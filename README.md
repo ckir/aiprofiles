@@ -88,6 +88,7 @@ capability states are never hidden behind a flag for this reason.
 | Codex CLI 0.153.4 (`codex`) | `CODEX_HOME` | Proven | Supported (project-level configuration layering is not measured) | Conditional (`OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` bypass it) | Conditional (`CODEX_SQLITE_HOME`) |
 | Aider 0.86.2 (`aider`) | `--config <profile>/.aider.conf.yml` | Proven | NotGuaranteed (home, repository and working-directory `.aider.conf.yml`, `.env` and `AIDER_*` still apply) | NotSupported | NotSupported |
 | Gemini CLI 0.64.0 (`gemini`) | `GEMINI_CLI_HOME` | Proven | Supported (`GEMINI_CLI_HOME` names a directory *containing* `.gemini`; the agent creates the nested directory itself) | Unknown (requires a vendor session; `GEMINI_API_KEY`, `GOOGLE_API_KEY` and `GOOGLE_APPLICATION_CREDENTIALS` are the bypass variables) | Supported (history and tmp state moved into the target's `.gemini`) |
+| GitHub Copilot CLI 1.0.98 (`copilot`) | `COPILOT_HOME` | Experimental | Unknown (the measured delta was empty at both watched locations, so the variable's effect is undetermined) | Unknown (storage not located; `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` are the documented bypass variables) | Unknown (nothing separated: the measured delta was empty at both the target and the default `~/.copilot`) |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
 and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
@@ -105,7 +106,6 @@ from first-party documentation and none is yet measured; where a probe contradic
 
 | Agent | Primary mechanism | Intended semantic tier |
 |---|---|---|
-| GitHub Copilot CLI | `COPILOT_HOME` | Home/config isolation |
 | OpenCode | `OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG` | Config/home isolation |
 | Cline CLI | `--config`, `--data-dir` | Config/state selection |
 | Pi | `PI_CODING_AGENT_DIR` | Agent home/state isolation |
