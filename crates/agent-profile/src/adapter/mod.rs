@@ -10,6 +10,7 @@ pub mod metadata;
 mod aider;
 mod claude;
 mod codex;
+mod r#continue;
 mod copilot;
 mod cursor;
 #[cfg(debug_assertions)]
@@ -33,6 +34,7 @@ use crate::name::ProfileName;
 pub use aider::Aider;
 pub use claude::Claude;
 pub use codex::Codex;
+pub use r#continue::Continue;
 pub use copilot::Copilot;
 pub use cursor::Cursor;
 #[cfg(debug_assertions)]
@@ -123,7 +125,7 @@ pub struct PlannedLaunch {
 
 /// The real adapters, in every build (SP2 design §4.2).
 pub const REAL_ADAPTERS: &[&dyn Adapter] =
-    &[&Claude, &Codex, &Aider, &Gemini, &Copilot, &Opencode, &Pi, &Kiro, &Cursor];
+    &[&Claude, &Codex, &Aider, &Gemini, &Copilot, &Opencode, &Pi, &Kiro, &Cursor, &Continue];
 
 /// The adapters this build knows: the real ones, plus `fake` when debug assertions are on.
 pub fn registry() -> Vec<&'static dyn Adapter> {

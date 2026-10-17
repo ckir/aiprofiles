@@ -92,6 +92,51 @@ fn aider_receives_its_config_file_first_and_the_file_is_created() {
 }
 
 #[test]
+fn continue_receives_its_config_file_first_and_the_file_is_created() {
+    let root = Root::empty();
+    let bin = bin_with("cn");
+    let cwd = tempfile::tempdir().unwrap();
+    let output = root
+        .agent_profile(["continue", "work", "--", "--model", "x"])
+        .env("PATH", bin.path())
+        .env("FAKE_AGENT_EXIT", "5")
+        .current_dir(cwd.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5), "{}", stderr(&output));
+    let file = profile_dir(&root, "continue").join("config.yaml");
+    let report = support::report(&output.stdout);
+    assert_eq!(
+        report["argv"],
+        serde_json::json!(["--config", file.to_str().unwrap(), "--model", "x"])
+    );
+    assert_eq!(canonical(Path::new(report["cwd"].as_str().unwrap())), canonical(cwd.path()));
+    // The agent accepts an empty file (candidate sweep, all exit 0); the smallest accepted content
+    // that sets no option is the zero-byte file, so that is what ships.
+    assert_eq!(fs::read(&file).unwrap(), b"");
+}
+
+#[test]
+fn continue_conflict_is_refused_before_anything_launches_or_is_created() {
+    let root = Root::empty();
+    let bin = bin_with("cn");
+    let output = root
+        .agent_profile(["continue", "work", "--", "--config", "f"])
+        .env("PATH", bin.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(output.stdout.is_empty(), "the agent must not run");
+    assert!(
+        stderr(&output)
+            .contains("`--config` conflicts with how agent-profile selects the continue profile"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!profile_dir(&root, "continue").exists());
+}
+
+#[test]
 fn aider_concurrent_first_launches_all_succeed() {
     let root = Root::empty();
     let bin = bin_with("aider");

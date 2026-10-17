@@ -136,6 +136,33 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
                 ],
             }
         }
+        "continue" => {
+            let file = dir.join("config.yaml");
+            let mut planned_args = vec![OsString::from("--config"), file.clone().into_os_string()];
+            planned_args.extend(opaque.clone());
+            PlannedLaunch {
+                plan: LaunchPlan {
+                    executable: fixture.exe.clone(),
+                    args: planned_args,
+                    env: Vec::new(),
+                    cwd: None,
+                },
+                profile: profile("work"),
+                profile_dir: dir.clone(),
+                paths: vec![
+                    ProfilePath { path: dir.clone(), kind: PathKind::Dir, existed: false },
+                    ProfilePath {
+                        path: file.clone(),
+                        kind: PathKind::File { contents: b"" },
+                        existed: false,
+                    },
+                ],
+                executable_origin: agent_profile::exe::Origin::Configured,
+                mechanism: format!("argument --config {}", file.display()),
+                sensitive_env: Vec::new(),
+                notes: Vec::new(),
+            }
+        }
         other => panic!("no contract row for adapter `{other}`; add one to this suite"),
     }
 }
@@ -306,6 +333,10 @@ fn conflict_contract() {
                 ],
                 &[&["--co"], &["--code-theme", "x"], &["--", "--config", "f"]],
             ),
+            "continue" => (
+                &[&["--config", "f"], &["--config=f"]],
+                &[&["--", "--config", "f"], &["-p", "hi"], &["--model", "x"]],
+            ),
             "codex" => (&[], &[&["-p", "personal"], &["--profile", "personal"]]),
             "claude" => (&[], &[&["--settings", "s"]]),
             "gemini" => (&[], &[&["-m", "pro"], &["--model", "pro"]]),
@@ -428,7 +459,8 @@ fn metadata_invariants() {
             ("opencode", SupportLevel::Proven),
             ("pi", SupportLevel::Proven),
             ("kiro", SupportLevel::Proven),
-            ("cursor", SupportLevel::Experimental)
+            ("cursor", SupportLevel::Experimental),
+            ("continue", SupportLevel::Experimental)
         ]
     );
 }
