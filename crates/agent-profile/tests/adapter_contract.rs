@@ -101,6 +101,7 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
         ),
         "gemini" => env_dir("GEMINI_CLI_HOME", Vec::new()),
         "copilot" => env_dir("COPILOT_HOME", Vec::new()),
+        "opencode" => env_dir("OPENCODE_CONFIG_DIR", Vec::new()),
         "fake" => env_dir("FAKE_AGENT_HOME", Vec::new()),
         "aider" => {
             let file = dir.join(".aider.conf.yml");
@@ -306,6 +307,7 @@ fn conflict_contract() {
             "claude" => (&[], &[&["--settings", "s"]]),
             "gemini" => (&[], &[&["-m", "pro"], &["--model", "pro"]]),
             "copilot" => (&[], &[&["--log-dir", "d"], &["--prompt", "hi"]]),
+            "opencode" => (&[], &[&["-c"], &["--prompt", "hi"]]),
             "fake" => (&[&["--fake-profile", "x"]], &[&["--", "--fake-profile", "x"]]),
             other => panic!("no conflict row for adapter `{other}`"),
         };
@@ -416,7 +418,8 @@ fn metadata_invariants() {
             ("codex", SupportLevel::Proven),
             ("aider", SupportLevel::Proven),
             ("gemini", SupportLevel::Proven),
-            ("copilot", SupportLevel::Experimental)
+            ("copilot", SupportLevel::Experimental),
+            ("opencode", SupportLevel::Proven)
         ]
     );
 }

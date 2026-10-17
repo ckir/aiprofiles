@@ -14,6 +14,7 @@ mod copilot;
 #[cfg(debug_assertions)]
 mod fake;
 mod gemini;
+mod opencode;
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -37,6 +38,7 @@ pub use metadata::{
     AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState, ConflictOption,
     EnvOverride, Mechanism, ProfilePresence, SupportLevel,
 };
+pub use opencode::Opencode;
 
 /// One supported coding agent (SP2 design §4.2).
 pub trait Adapter: Sync {
@@ -114,7 +116,7 @@ pub struct PlannedLaunch {
 }
 
 /// The real adapters, in every build (SP2 design §4.2).
-pub const REAL_ADAPTERS: &[&dyn Adapter] = &[&Claude, &Codex, &Aider, &Gemini, &Copilot];
+pub const REAL_ADAPTERS: &[&dyn Adapter] = &[&Claude, &Codex, &Aider, &Gemini, &Copilot, &Opencode];
 
 /// The adapters this build knows: the real ones, plus `fake` when debug assertions are on.
 pub fn registry() -> Vec<&'static dyn Adapter> {
