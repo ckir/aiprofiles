@@ -92,6 +92,7 @@ capability states are never hidden behind a flag for this reason.
 | OpenCode v2.0.32 (`opencode`) | `OPENCODE_CONFIG_DIR` | Proven | Supported (`service.json` followed the variable into the target; `OPENCODE_CONFIG` names a config *file* to read, not the directory the adapter sets) | Unknown (`auth.json` was never written by these unauthenticated launches, so where stored credentials live was not established; `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are the bypass variables) | NotSupported (`opencode.db`, `shell/` and `opencode.log` stayed at `.local/share/opencode` under both mechanisms; no data-directory variable exists) |
 | Pi 1.3.0 (`pi`) | `PI_CODING_AGENT_DIR` | Proven | Supported (`auth.json` and `models-store.json` moved into the target with no `.pi/agent` prefix — the variable names the config directory itself) | NotSupported (stored credentials are `auth.json` inside the config directory, which is exactly what the variable moves, so they travel with it and no separate credential store exists; `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` bypass the file entirely) | Supported (`sessions/` and `models-store.json` appeared under the mechanism, with nothing left at the default `.pi/agent`) |
 | Kiro CLI 2.32.0 (`kiro`) | `KIRO_HOME` (launches `kiro-cli`) | Proven | Supported (`settings/cli.json` moved into the target; `~/.kiro` and `.local/share/kiro-cli` were absent at baseline) | Unknown (no credential file appeared in the delta; `KIRO_API_KEY` is the documented bypass variable, and `AWS_ACCESS_KEY_ID`/`AWS_PROFILE` are also read) | NotGuaranteed (the data subsystem ignores the variable: `data.sqlite3`, `run-receipts/` and `telemetry-export-drops.lock` were written under `.local/share/kiro-cli` anyway) |
+| Cursor Agent CLI 2026.10.16-e3cb207 (`cursor`) | `CURSOR_CONFIG_DIR` (launches `cursor-agent`) | Experimental | Supported (`cli-config.json` moved into the target; the watched XDG fallback `.config/cursor` stayed absent, so the fallback was not chosen) | Unknown (no login step ran and no credential-bearing file surfaced anywhere in the delta, so where stored credentials live was not established; `CURSOR_API_KEY` is the documented bypass variable) | Unknown (the agent wrote only `cli-config.json` before it needed network access, so no state was observable) |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
 and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
@@ -110,7 +111,6 @@ from first-party documentation and none is yet measured; where a probe contradic
 | Agent | Primary mechanism | Intended semantic tier |
 |---|---|---|
 | Cline CLI | `--config`, `--data-dir` | Config/state selection |
-| Cursor Agent CLI | `CURSOR_CONFIG_DIR` | Configuration selection |
 | Continue CLI | `--config` | Configuration selection |
 | Amp | `--settings-file` | Settings selection |
 

@@ -40,6 +40,7 @@ fn env_dir_agents_receive_their_home_argv_cwd_and_exit_code() {
         ("opencode", "opencode", "OPENCODE_CONFIG_DIR"),
         ("pi", "pi", "PI_CODING_AGENT_DIR"),
         ("kiro", "kiro-cli", "KIRO_HOME"),
+        ("cursor", "cursor-agent", "CURSOR_CONFIG_DIR"),
     ] {
         let root = Root::empty();
         let bin = bin_with(executable);

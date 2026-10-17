@@ -104,6 +104,7 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
         "opencode" => env_dir("OPENCODE_CONFIG_DIR", Vec::new()),
         "pi" => env_dir("PI_CODING_AGENT_DIR", Vec::new()),
         "kiro" => env_dir("KIRO_HOME", Vec::new()),
+        "cursor" => env_dir("CURSOR_CONFIG_DIR", Vec::new()),
         "fake" => env_dir("FAKE_AGENT_HOME", Vec::new()),
         "aider" => {
             let file = dir.join(".aider.conf.yml");
@@ -312,6 +313,7 @@ fn conflict_contract() {
             "opencode" => (&[], &[&["-c"], &["--prompt", "hi"]]),
             "pi" => (&[], &[&["-p", "hello"]]),
             "kiro" => (&[], &[&["--agent", "a"], &["settings"]]),
+            "cursor" => (&[], &[&["--print"], &["--model", "x"]]),
             "fake" => (&[&["--fake-profile", "x"]], &[&["--", "--fake-profile", "x"]]),
             other => panic!("no conflict row for adapter `{other}`"),
         };
@@ -425,7 +427,8 @@ fn metadata_invariants() {
             ("copilot", SupportLevel::Experimental),
             ("opencode", SupportLevel::Proven),
             ("pi", SupportLevel::Proven),
-            ("kiro", SupportLevel::Proven)
+            ("kiro", SupportLevel::Proven),
+            ("cursor", SupportLevel::Experimental)
         ]
     );
 }
