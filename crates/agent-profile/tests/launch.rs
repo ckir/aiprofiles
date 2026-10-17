@@ -243,7 +243,7 @@ fn behaviour_table_rows_with_non_zero_exits() {
             &["zzz", "work"],
             2,
             "unknown agent `zzz` (known agents: `claude`, `codex`, `aider`, `gemini`, `copilot`, \
-             `opencode`, `pi`, `kiro`, `cursor`, `continue`, `fake`)",
+             `opencode`, `pi`, `kiro`, `cursor`, `continue`, `amp`, `fake`)",
         ),
         (&["Fake", "work"], 2, "unknown agent `Fake`"),
         (&["fake", "work", "--bogus"], 2, "unknown option"),

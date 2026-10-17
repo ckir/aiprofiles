@@ -94,6 +94,7 @@ capability states are never hidden behind a flag for this reason.
 | Kiro CLI 2.32.0 (`kiro`) | `KIRO_HOME` (launches `kiro-cli`) | Proven | Supported (`settings/cli.json` moved into the target; `~/.kiro` and `.local/share/kiro-cli` were absent at baseline) | Unknown (no credential file appeared in the delta; `KIRO_API_KEY` is the documented bypass variable, and `AWS_ACCESS_KEY_ID`/`AWS_PROFILE` are also read) | NotGuaranteed (the data subsystem ignores the variable: `data.sqlite3`, `run-receipts/` and `telemetry-export-drops.lock` were written under `.local/share/kiro-cli` anyway) |
 | Cursor Agent CLI 2026.10.16-e3cb207 (`cursor`) | `CURSOR_CONFIG_DIR` (launches `cursor-agent`) | Experimental | Supported (`cli-config.json` moved into the target; the watched XDG fallback `.config/cursor` stayed absent, so the fallback was not chosen) | Unknown (no login step ran and no credential-bearing file surfaced anywhere in the delta, so where stored credentials live was not established; `CURSOR_API_KEY` is the documented bypass variable) | Unknown (the agent wrote only `cli-config.json` before it needed network access, so no state was observable) |
 | Continue CLI 1.5.47 (`continue`, launches `cn`) | `--config <profile>/config.yaml` | Experimental | Unknown (the measured delta at both watched locations was `(no change)` — the agent writes nothing before it needs the network — so whether the agent's own config writes would follow the configured file was not observed) | Unknown (no login step ran and no credential-bearing file surfaced anywhere in the delta; `CONTINUE_API_KEY`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are the documented bypass variables) | Unknown (the same empty delta: the only pre-network write, `logs/cn.log` under the default `~/.continue`, predated the launch) |
+| Amp 0.0.1792224035-gabd4f6 (`amp`) | `--settings-file <profile>/settings.json` | Proven | NotGuaranteed (the flag was accepted, but the agent's own writes did not follow it: `device-id.json` was written at the default `.local/share/amp`, the only observed write target, and `.config/amp` was absent at baseline and stayed so) | Unknown (no credential file was observed anywhere in the delta and no login step ran; `AMP_API_KEY` is the documented bypass variable) | NotGuaranteed (`accounts.json` and `device-id.json` were written at the default `.local/share/amp` while pointed at the flag's target — the device identity and account store do not move with `--settings-file`) |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
 and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
@@ -112,7 +113,6 @@ from first-party documentation and none is yet measured; where a probe contradic
 | Agent | Primary mechanism | Intended semantic tier |
 |---|---|---|
 | Cline CLI | `--config`, `--data-dir` | Config/state selection |
-| Amp | `--settings-file` | Settings selection |
 
 ## Agents that cannot be isolated
 

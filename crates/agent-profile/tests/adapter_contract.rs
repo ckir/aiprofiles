@@ -163,6 +163,38 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
                 notes: Vec::new(),
             }
         }
+        "amp" => {
+            let file = dir.join("settings.json");
+            let mut planned_args =
+                vec![OsString::from("--settings-file"), file.clone().into_os_string()];
+            planned_args.extend(opaque.clone());
+            PlannedLaunch {
+                plan: LaunchPlan {
+                    executable: fixture.exe.clone(),
+                    args: planned_args,
+                    env: Vec::new(),
+                    cwd: None,
+                },
+                profile: profile("work"),
+                profile_dir: dir.clone(),
+                paths: vec![
+                    ProfilePath { path: dir.clone(), kind: PathKind::Dir, existed: false },
+                    ProfilePath {
+                        path: file.clone(),
+                        kind: PathKind::File { contents: b"" },
+                        existed: false,
+                    },
+                ],
+                executable_origin: agent_profile::exe::Origin::Configured,
+                mechanism: format!("argument --settings-file {}", file.display()),
+                sensitive_env: Vec::new(),
+                notes: vec![
+                    "--settings-file selects the user settings file, which workspace settings override \
+                     and managed settings override both"
+                        .to_owned(),
+                ],
+            }
+        }
         other => panic!("no contract row for adapter `{other}`; add one to this suite"),
     }
 }
@@ -337,6 +369,10 @@ fn conflict_contract() {
                 &[&["--config", "f"], &["--config=f"]],
                 &[&["--", "--config", "f"], &["-p", "hi"], &["--model", "x"]],
             ),
+            "amp" => (
+                &[&["--settings-file", "f"], &["--settings-file=f"]],
+                &[&["--", "--settings-file", "f"], &["--model", "x"]],
+            ),
             "codex" => (&[], &[&["-p", "personal"], &["--profile", "personal"]]),
             "claude" => (&[], &[&["--settings", "s"]]),
             "gemini" => (&[], &[&["-m", "pro"], &["--model", "pro"]]),
@@ -460,7 +496,8 @@ fn metadata_invariants() {
             ("pi", SupportLevel::Proven),
             ("kiro", SupportLevel::Proven),
             ("cursor", SupportLevel::Experimental),
-            ("continue", SupportLevel::Experimental)
+            ("continue", SupportLevel::Experimental),
+            ("amp", SupportLevel::Proven)
         ]
     );
 }

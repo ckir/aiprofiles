@@ -117,6 +117,51 @@ fn continue_receives_its_config_file_first_and_the_file_is_created() {
 }
 
 #[test]
+fn amp_receives_its_settings_file_first_and_the_file_is_created() {
+    let root = Root::empty();
+    let bin = bin_with("amp");
+    let cwd = tempfile::tempdir().unwrap();
+    let output = root
+        .agent_profile(["amp", "work", "--", "--model", "x"])
+        .env("PATH", bin.path())
+        .env("FAKE_AGENT_EXIT", "5")
+        .current_dir(cwd.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5), "{}", stderr(&output));
+    let file = profile_dir(&root, "amp").join("settings.json");
+    let report = support::report(&output.stdout);
+    assert_eq!(
+        report["argv"],
+        serde_json::json!(["--settings-file", file.to_str().unwrap(), "--model", "x"])
+    );
+    assert_eq!(canonical(Path::new(report["cwd"].as_str().unwrap())), canonical(cwd.path()));
+    // The agent accepts an empty file (candidate sweep, all exit 0); the smallest accepted content
+    // that sets no option is the zero-byte file, so that is what ships.
+    assert_eq!(fs::read(&file).unwrap(), b"");
+}
+
+#[test]
+fn amp_conflict_is_refused_before_anything_launches_or_is_created() {
+    let root = Root::empty();
+    let bin = bin_with("amp");
+    let output = root
+        .agent_profile(["amp", "work", "--", "--settings-file", "f"])
+        .env("PATH", bin.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(output.stdout.is_empty(), "the agent must not run");
+    assert!(
+        stderr(&output)
+            .contains("`--settings-file` conflicts with how agent-profile selects the amp profile"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!profile_dir(&root, "amp").exists());
+}
+
+#[test]
 fn continue_conflict_is_refused_before_anything_launches_or_is_created() {
     let root = Root::empty();
     let bin = bin_with("cn");
