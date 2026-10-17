@@ -41,6 +41,7 @@ fn env_dir_agents_receive_their_home_argv_cwd_and_exit_code() {
         ("pi", "pi", "PI_CODING_AGENT_DIR"),
         ("kiro", "kiro-cli", "KIRO_HOME"),
         ("cursor", "cursor-agent", "CURSOR_CONFIG_DIR"),
+        ("cline", "cline", "CLINE_DATA_DIR"),
     ] {
         let root = Root::empty();
         let bin = bin_with(executable);
