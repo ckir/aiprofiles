@@ -99,6 +99,7 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
             "CODEX_HOME",
             vec!["new profile starts logged out; run codex login with this profile".to_owned()],
         ),
+        "gemini" => env_dir("GEMINI_CLI_HOME", Vec::new()),
         "fake" => env_dir("FAKE_AGENT_HOME", Vec::new()),
         "aider" => {
             let file = dir.join(".aider.conf.yml");
@@ -302,6 +303,7 @@ fn conflict_contract() {
             ),
             "codex" => (&[], &[&["-p", "personal"], &["--profile", "personal"]]),
             "claude" => (&[], &[&["--settings", "s"]]),
+            "gemini" => (&[], &[&["-m", "pro"], &["--model", "pro"]]),
             "fake" => (&[&["--fake-profile", "x"]], &[&["--", "--fake-profile", "x"]]),
             other => panic!("no conflict row for adapter `{other}`"),
         };
@@ -410,7 +412,8 @@ fn metadata_invariants() {
         [
             ("claude", SupportLevel::Proven),
             ("codex", SupportLevel::Proven),
-            ("aider", SupportLevel::Proven)
+            ("aider", SupportLevel::Proven),
+            ("gemini", SupportLevel::Proven)
         ]
     );
 }

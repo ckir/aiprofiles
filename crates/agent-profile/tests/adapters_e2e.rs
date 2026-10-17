@@ -32,9 +32,13 @@ fn canonical(path: &Path) -> PathBuf {
 
 #[test]
 fn env_dir_agents_receive_their_home_argv_cwd_and_exit_code() {
-    for (agent, var) in [("claude", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME")] {
+    for (agent, executable, var) in [
+        ("claude", "claude", "CLAUDE_CONFIG_DIR"),
+        ("codex", "codex", "CODEX_HOME"),
+        ("gemini", "gemini", "GEMINI_CLI_HOME"),
+    ] {
         let root = Root::empty();
-        let bin = bin_with(agent);
+        let bin = bin_with(executable);
         let cwd = tempfile::tempdir().unwrap();
         let output = root
             .agent_profile([agent, "work", "--", "--flag", "a b"])

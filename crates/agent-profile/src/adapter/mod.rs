@@ -12,6 +12,7 @@ mod claude;
 mod codex;
 #[cfg(debug_assertions)]
 mod fake;
+mod gemini;
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -29,6 +30,7 @@ pub use claude::Claude;
 pub use codex::Codex;
 #[cfg(debug_assertions)]
 pub use fake::Fake;
+pub use gemini::Gemini;
 pub use metadata::{
     AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState, ConflictOption,
     EnvOverride, Mechanism, ProfilePresence, SupportLevel,
@@ -110,7 +112,7 @@ pub struct PlannedLaunch {
 }
 
 /// The real adapters, in every build (SP2 design §4.2).
-pub const REAL_ADAPTERS: &[&dyn Adapter] = &[&Claude, &Codex, &Aider];
+pub const REAL_ADAPTERS: &[&dyn Adapter] = &[&Claude, &Codex, &Aider, &Gemini];
 
 /// The adapters this build knows: the real ones, plus `fake` when debug assertions are on.
 pub fn registry() -> Vec<&'static dyn Adapter> {
