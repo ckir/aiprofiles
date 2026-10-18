@@ -84,8 +84,8 @@ capability states are never hidden behind a flag for this reason.
 
 | Agent | Mechanism | Support | Config isolation | Credential isolation | State isolation |
 |---|---|---|---|---|---|
-| Claude Code 2.1.270 (`claude`) | `CLAUDE_CONFIG_DIR` | Proven | Supported (project `.claude/` settings still layer on top) | Conditional (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and similar variables bypass it) | NotGuaranteed (history and project state moving with the directory is community-sourced only) |
-| Codex CLI 0.153.4 (`codex`) | `CODEX_HOME` | Proven | Supported (project-level configuration layering is not measured) | Conditional (`OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` bypass it) | Conditional (`CODEX_SQLITE_HOME`) |
+| Claude Code 2.1.292 (`claude`) | `CLAUDE_CONFIG_DIR` | Proven | Supported (project `.claude/` settings still layer on top) | Conditional (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and similar variables bypass it) | NotGuaranteed (history and project state moving with the directory is community-sourced only) |
+| Codex CLI 0.160.1 (`codex`) | `CODEX_HOME` | Proven | Supported (project-level configuration layering is not measured) | Conditional (`OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` bypass it) | Conditional (`CODEX_SQLITE_HOME`) |
 | Aider 0.86.2 (`aider`) | `--config <profile>/.aider.conf.yml` | Proven | NotGuaranteed (home, repository and working-directory `.aider.conf.yml`, `.env` and `AIDER_*` still apply) | NotSupported | NotSupported |
 | Gemini CLI 0.64.0 (`gemini`) | `GEMINI_CLI_HOME` | Proven | Supported (`GEMINI_CLI_HOME` names a directory *containing* `.gemini`; the agent creates the nested directory itself) | Unknown (requires a vendor session; `GEMINI_API_KEY`, `GOOGLE_API_KEY` and `GOOGLE_APPLICATION_CREDENTIALS` are the bypass variables) | Supported (history and tmp state moved into the target's `.gemini`) |
 | GitHub Copilot CLI 1.0.98 (`copilot`) | `COPILOT_HOME` | Experimental | Unknown (the measured delta was empty at both watched locations, so the variable's effect is undetermined) | Unknown (storage not located; `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` are the documented bypass variables) | Unknown (nothing separated: the measured delta was empty at both the target and the default `~/.copilot`) |
@@ -95,6 +95,7 @@ capability states are never hidden behind a flag for this reason.
 | Cursor Agent CLI 2026.10.16-e3cb207 (`cursor`) | `CURSOR_CONFIG_DIR` (launches `cursor-agent`) | Experimental | Supported (`cli-config.json` moved into the target; the watched XDG fallback `.config/cursor` stayed absent, so the fallback was not chosen) | Unknown (no login step ran and no credential-bearing file surfaced anywhere in the delta, so where stored credentials live was not established; `CURSOR_API_KEY` is the documented bypass variable) | Unknown (the agent wrote only `cli-config.json` before it needed network access, so no state was observable) |
 | Continue CLI 1.5.47 (`continue`, launches `cn`) | `--config <profile>/config.yaml` | Experimental | Unknown (the measured delta at both watched locations was `(no change)` — the agent writes nothing before it needs the network — so whether the agent's own config writes would follow the configured file was not observed) | Unknown (no login step ran and no credential-bearing file surfaced anywhere in the delta; `CONTINUE_API_KEY`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are the documented bypass variables) | Unknown (the same empty delta: the only pre-network write, `logs/cn.log` under the default `~/.continue`, predated the launch) |
 | Amp 0.0.1792224035-gabd4f6 (`amp`) | `--settings-file <profile>/settings.json` | Proven | NotGuaranteed (the flag was accepted, but the agent's own writes did not follow it: `device-id.json` was written at the default `.local/share/amp`, the only observed write target, and `.config/amp` was absent at baseline and stayed so) | Unknown (no credential file was observed anywhere in the delta and no login step ran; `AMP_API_KEY` is the documented bypass variable) | NotGuaranteed (`accounts.json` and `device-id.json` were written at the default `.local/share/amp` while pointed at the flag's target — the device identity and account store do not move with `--settings-file`) |
+| Cline CLI 3.0.73 (`cline`) | `CLINE_DATA_DIR` | Experimental | Unknown (the probe's delta at both watched locations — the target and the default `~/.cline` — was `(no change)`, so whether the agent's own config writes would follow the variable was not observable while it writes nothing before it needs the network) | Unknown (no login step ran and no credential-bearing file surfaced anywhere in the delta; `CLINE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `OPENROUTER_API_KEY` are the documented bypass variables) | Unknown (the only pre-network write, `cli-node-extra-ca-certs.pem`, predated the launch, and the measured delta was `(no change)`, so no state write was observable to place) |
 
 A new Codex profile starts logged out. Arguments that select the same mechanism (Aider's `-c`, `--config`
 and its abbreviations) are refused before launch. On Windows an agent must be a native executable (`.exe`, or a configured `.com`): an npm or pnpm
@@ -110,9 +111,7 @@ is hidden by the other: an agent can be both refused by default on Windows *and*
 The mechanisms below are the specification's starting point, not a claim about isolation. Each is cited
 from first-party documentation and none is yet measured; where a probe contradicts a row, the probe wins.
 
-| Agent | Primary mechanism | Intended semantic tier |
-|---|---|---|
-| Cline CLI | `--config`, `--data-dir` | Config/state selection |
+_No adapters are currently planned: SP4b measured and registered the nine candidates from the design's §8 table, and every one landed._
 
 ## Agents that cannot be isolated
 

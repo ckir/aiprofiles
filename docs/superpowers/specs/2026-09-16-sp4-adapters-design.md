@@ -690,14 +690,14 @@ contradicts a row, the probe wins and this table is corrected rather than the ad
 | Agent | id | Executable | Install | Mechanism (claimed) | Shape | Documented credential bypass |
 |---|---|---|---|---|---|---|
 | Gemini CLI | `gemini` | `gemini` | npm | `GEMINI_CLI_HOME` | env dir | `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS` |
-| GitHub Copilot CLI | `copilot` | `copilot` | npm | `COPILOT_HOME` | env dir | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` |
-| OpenCode | `opencode` | `opencode` | npm or install script | `OPENCODE_CONFIG_DIR`, and `OPENCODE_CONFIG` for a file | env dir | provider API keys; credentials live outside the config directory (§8.2) |
-| Cline CLI | `cline` | `cline` | npm | `--config` and `--data-dir`, or `CLINE_DATA_DIR` | undecided (§8.3) | `ANTHROPIC_API_KEY` |
+| GitHub Copilot CLI | `copilot` | `copilot` | npm (`npm install --global @github/copilot`, install exit 0 — 2026-10-17) | `COPILOT_HOME` | env dir | `GH_TOKEN`, `GITHUB_TOKEN` — **corrected 2026-10-17:** the strings scan found `COPILOT_GITHUB_TOKEN` **ABSENT**; only these two were present |
+| OpenCode | `opencode` | `opencode` | npm — **corrected 2026-10-17:** the 2.x line measured is the package `@opencode/cli` (`opencode-ai` 1.x is a parallel line, not what the probe ran) | `OPENCODE_CONFIG_DIR`, and `OPENCODE_CONFIG` for a file | env dir | provider API keys; credentials live outside the config directory (§8.2) |
+| Cline CLI | `cline` | `cline` | npm | `--config` and `--data-dir`, or `CLINE_DATA_DIR` | **undecided — still open 2026-10-17** (Q1 unanswered; help confirms `--config` = "Configuration directory" and `--data-dir` = "Use isolated local state at this directory path", but all three mechanism deltas were `(no change)`, so no shape is selected) | `ANTHROPIC_API_KEY`, `CLINE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` |
 | Pi | `pi` | `pi` | npm or install script | `PI_CODING_AGENT_DIR` | env dir | provider keys, unless `auth.json` is present |
-| Kiro CLI | `kiro` | `kiro-cli` | install script or `.deb` | `KIRO_HOME` | env dir | `KIRO_API_KEY` |
+| Kiro CLI | `kiro` | `kiro-cli` | install script — **corrected 2026-10-17:** `sh -c curl … | bash` measured exit 0; the `.deb` is confirmed unused (the IDE's, not the CLI's) | `KIRO_HOME` | env dir | `KIRO_API_KEY` |
 | Cursor Agent CLI | `cursor` | `cursor-agent` | install script | `CURSOR_CONFIG_DIR` | env dir | `CURSOR_API_KEY` |
 | Continue CLI | `continue` | `cn` | npm or install script | `--config <file>` | config file arg | `CONTINUE_API_KEY`; secrets live in a separate `.env` |
-| Amp | `amp` | `amp` | npm or install script | `--settings-file <file>` | config file arg | `AMP_API_KEY`; workspace and managed settings override |
+| Amp | `amp` | `amp` | npm (`@ampcode/cli`) or install script | `--settings-file <file>` | config file arg | `AMP_API_KEY`; workspace and managed settings override. **Corrected 2026-10-17:** the strings scan also found the env equivalents `AMP_SETTINGS_FILE` and `AMP_HOME`, which this row did not list; and `--settings-file` does **not** move the measured default-shaped writes (`device-id.json`, `accounts.json` under `.local/share/amp`), since `settings.json` under `.config/amp` was never written by any command the probe ran without credentials. The flag is accepted (exit 0 with `""` and `{}` contents). |
 
 Agent ids are what a user types (`agent-profile gemini work`) and must satisfy `AgentId::parse`
 (`adapter_contract.rs:247-250`). Executable names are the binary the adapter discovers, and differ from
@@ -737,6 +737,17 @@ variable, the adapter sets `OPENCODE_CONFIG_DIR` alone and declares `CredentialI
 `StateIsolation` `NotSupported`, each with a basis naming the directory that does not move. Note the
 consequence under D6: two non-`Unknown` negative claims do not block `Proven`, so OpenCode can be `Proven`
 *and* honestly state that it isolates configuration only.
+
+**Measured 2026-10-17 — the credential half of this paragraph did not survive the probe.** The
+`StateIsolation: NotSupported` claim is as written: `opencode.db`, `shell/` and `opencode.log` stayed
+under `.local/share/opencode` under both mechanisms, and no OpenCode-specific data variable exists
+(Q2 answered). The `CredentialIsolation` claim did **not** land as `NotSupported`. §6's wider
+exception requires a probe to *establish where credentials are stored*; this probe never observed
+`auth.json` anywhere in the delta — the unauthenticated launches never wrote it — so the exception was
+not met, and D7 makes `NotSupported` a positive negative claim that needs proof of absence. The adapter
+ships `CredentialIsolation: Unknown` with an `unmeasured:` basis, and the tension between this
+paragraph and §6's exception is owner-visible in the SP4b ledger. This paragraph is left as written,
+with this note, rather than the adapter bent to a claim its transcript does not carry.
 
 ### 8.3 Cline's mechanism is undecided by design
 
@@ -780,6 +791,15 @@ no contents are written into the spec.
 `NotGuaranteed` exists for; combined with an `Unknown` credential claim that is one `Unknown`, so D6 still
 permits `Proven` — the matrix, not the support level, is what tells the user the mechanism leaks. Kiro CLI
 is the rebrand of Amazon Q Developer CLI; the executable is `kiro-cli`.
+
+**Measured 2026-10-17, and the prediction's shape was wrong.** The probe did reproduce a leak — but not
+through `~/.kiro`. `settings/cli.json` moved into the target, so `ConfigIsolation` is `Supported`; the
+leak is the data subsystem, which wrote `data.sqlite3`, `run-receipts/` and
+`telemetry-export-drops.lock` under `.local/share/kiro-cli` regardless of `KIRO_HOME`. The adapter
+therefore ships `StateIsolation: NotGuaranteed` (basis quoting the `.local/share/kiro-cli` tree), not
+the `ConfigIsolation: NotGuaranteed` this section predicted, with `CredentialIsolation: Unknown` —
+one `Unknown`, so `Proven` still holds. The correction is recorded here rather than the adapter bent to
+the prediction.
 
 ## 9. The probe run
 

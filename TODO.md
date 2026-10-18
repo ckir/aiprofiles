@@ -77,10 +77,23 @@ without its capability row beside it. Three consequences bind everything after S
 - [ ] Any future surface that names a support level must name the capabilities too. The draft README broke
       this rule while §6.1 was being written, which is why it is recorded here rather than assumed.
 
-Also open after SP4:
+Also open after SP4 (design §11). No adapter was dropped under outcome 3, and no adapter carries
+`upstream_version: "unknown"`; every `Unknown` below is settled by an authenticated measurement, not new
+code — a metadata edit plus an `off-ci` transcript:
 
-- [ ] Credential isolation is unproven for every adapter that has not had an authenticated measurement.
-      Each one is a metadata edit plus an `off-ci` transcript, not new code.
+- [ ] `CredentialIsolation: Unknown` on **eight of the nine SP4b adapters** (`gemini`, `copilot`,
+      `opencode`, `cursor`, `continue`, `amp`, `cline`, `kiro`). Proving that stored credentials
+      separate requires logging in to each vendor; the documented bypass variable is what would be
+      tested. `pi` is the exception: its `auth.json` sits inside the config directory and moved with
+      it, so its credential claim is `NotSupported` with a measured basis.
+- [ ] `ConfigIsolation: Unknown` on `copilot`, `continue` and `cline` — the mechanism's config write was
+      not observable before the agent needed the network, so whether the agent's own config writes would
+      follow the mechanism is unmeasured.
+- [ ] `StateIsolation: Unknown` on `copilot`, `cursor`, `continue` and `cline` — same reason: no state
+      write was observable in the probe's delta.
+- [ ] Q6 (accepted abbreviations) is **unanswered for all nine**: no abbreviated-flag candidates were
+      found in any of the nine transcripts, so the conflict scan's abbreviation handling was not
+      exercised against these agents.
 - [ ] The launch hedge cannot be suppressed. Deferred to SP5 deliberately: its frequency is unmeasured
       until the probe run, and the strict configuration schema makes a new key a compatibility break.
 - [ ] The hedge can be erased by the agent it warns about — it is written to stderr immediately before
