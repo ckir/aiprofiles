@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5](https://github.com/ckir/aiprofiles/compare/v0.0.4...v0.0.5) - 2026-10-18
+
+### Added
+
+- *(adapter)* register the nine remaining adapters, each backed by a measured CI transcript ([#42](https://github.com/ckir/aiprofiles/pull/42))
+
 ## [0.0.4](https://github.com/ckir/aiprofiles/compare/v0.0.3...v0.0.4) - 2026-10-06
 
 ### Added
