@@ -10,12 +10,14 @@ green on Linux, macOS and Windows.
 | SP1 | Core + explicit launch — profile-name validation, application root, TOML configuration with locked atomic writes, structured errors, `LaunchPlan`, Unix `exec` / Windows child launcher, passthrough, environment overrides, dry run, exit codes | 1, 3 | done (#8) |
 | SP2 | Architecture gate — adapter model, capability and evidence metadata, common contract suite, Claude Code, Codex CLI, Aider | 4A | done (#11) |
 | SP3 | Repository resolution — discovery, canonical identity, mapping storage, precedence, `resolve`, `current`, `status`, `link`, `unlink` | 2 + part of 5 | done (#19) |
-| SP4 | Remaining adapters — Gemini CLI, GitHub Copilot CLI, OpenCode, Cline CLI, Pi, Kiro CLI, Cursor Agent CLI, Continue CLI, Amp | 4B | **next** |
-| SP5 | Lifecycle and quality — `create`, `list`, `delete`, `repositories`, `doctor`, JSON output, shell completions, docs | rest of 5, 6 | not started |
+| SP4 | Remaining adapters — Gemini CLI, GitHub Copilot CLI, OpenCode, Cline CLI, Pi, Kiro CLI, Cursor Agent CLI, Continue CLI, Amp | 4B | done (branch `sp4b-adapters`) |
+| SP5 | Lifecycle and quality — `create`, `list`, `delete`, `repositories`, `doctor`, JSON output, shell completions, docs | rest of 5, 6 | next |
 
 `link`/`unlink` land with resolution (SP3), earlier than §35's Phase 5, so resolution never ships
-without a way to create the mappings it resolves. The remaining adapters (SP4) build on the SP2
-adapter model and contract suite.
+without a way to create the mappings it resolves. SP4 is done: the nine adapters named above are
+registered on branch `sp4b-adapters`, each backed by a `custody: ci` transcript committed byte-for-byte
+and measured in the Sandbox workflow (run 39024332187), so the repository carries twelve adapters, each
+with a checkable transcript. SP5 picks up lifecycle and quality.
 
 `ProfilePresence::Known` was settled in SP4: it is **reserved, not dead**. Spec §8 defines a profile as
 *known* when it can be identified from the adapter's documented profile mechanism rather than a
@@ -48,14 +50,6 @@ field is the two-space indent the assembler applies — measured: an agent `--ve
 `version-extracted: 9.9.9` is excluded by that indent and by nothing else. The verifier's safety rests on
 an undocumented coupling to `transcript.sh`. Scope `field()` to the header, or state the coupling where
 both files can see it.
-
-**A second `probe_candidates` sweep in one probe script would silently destroy the first.** The function
-opens by resetting its counter and truncating `candidates.txt`, so a second call restarts step ids at
-`candidate-1` and overwrites the first sweep's `.cmd`, `.exit-code` and `.txt`. Not reachable today —
-exactly three scripts sweep (aider, amp, continue) and each sweeps once — but SP4b adds nine adapters. It
-cannot be closed by a test: asserting accumulation asserts behaviour the code does not have, and pinning
-today's behaviour codifies the defect. The function has to accumulate or refuse, which is a source change
-that invalidates the capstone over that delta. Deferred by the owner at the SP4a test audit, 2026-09-21.
 
 **The three shell suites leak a temporary directory per fixture.** Measured on the maintainer host:
 16,537 `tmp*` entries in `TEMP` on 2026-09-21 and 22,136 on 2026-09-22, growing by roughly one per

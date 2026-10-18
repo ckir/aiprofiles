@@ -99,6 +99,13 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
             "CODEX_HOME",
             vec!["new profile starts logged out; run codex login with this profile".to_owned()],
         ),
+        "gemini" => env_dir("GEMINI_CLI_HOME", Vec::new()),
+        "copilot" => env_dir("COPILOT_HOME", Vec::new()),
+        "opencode" => env_dir("OPENCODE_CONFIG_DIR", Vec::new()),
+        "pi" => env_dir("PI_CODING_AGENT_DIR", Vec::new()),
+        "kiro" => env_dir("KIRO_HOME", Vec::new()),
+        "cursor" => env_dir("CURSOR_CONFIG_DIR", Vec::new()),
+        "cline" => env_dir("CLINE_DATA_DIR", Vec::new()),
         "fake" => env_dir("FAKE_AGENT_HOME", Vec::new()),
         "aider" => {
             let file = dir.join(".aider.conf.yml");
@@ -126,6 +133,65 @@ fn expected(fixture: &Fixture, id: &str) -> PlannedLaunch {
                 sensitive_env: Vec::new(),
                 notes: vec![
                     "--config is layered over .aider.conf.yml in the working directory, git root and home"
+                        .to_owned(),
+                ],
+            }
+        }
+        "continue" => {
+            let file = dir.join("config.yaml");
+            let mut planned_args = vec![OsString::from("--config"), file.clone().into_os_string()];
+            planned_args.extend(opaque.clone());
+            PlannedLaunch {
+                plan: LaunchPlan {
+                    executable: fixture.exe.clone(),
+                    args: planned_args,
+                    env: Vec::new(),
+                    cwd: None,
+                },
+                profile: profile("work"),
+                profile_dir: dir.clone(),
+                paths: vec![
+                    ProfilePath { path: dir.clone(), kind: PathKind::Dir, existed: false },
+                    ProfilePath {
+                        path: file.clone(),
+                        kind: PathKind::File { contents: b"" },
+                        existed: false,
+                    },
+                ],
+                executable_origin: agent_profile::exe::Origin::Configured,
+                mechanism: format!("argument --config {}", file.display()),
+                sensitive_env: Vec::new(),
+                notes: Vec::new(),
+            }
+        }
+        "amp" => {
+            let file = dir.join("settings.json");
+            let mut planned_args =
+                vec![OsString::from("--settings-file"), file.clone().into_os_string()];
+            planned_args.extend(opaque.clone());
+            PlannedLaunch {
+                plan: LaunchPlan {
+                    executable: fixture.exe.clone(),
+                    args: planned_args,
+                    env: Vec::new(),
+                    cwd: None,
+                },
+                profile: profile("work"),
+                profile_dir: dir.clone(),
+                paths: vec![
+                    ProfilePath { path: dir.clone(), kind: PathKind::Dir, existed: false },
+                    ProfilePath {
+                        path: file.clone(),
+                        kind: PathKind::File { contents: b"" },
+                        existed: false,
+                    },
+                ],
+                executable_origin: agent_profile::exe::Origin::Configured,
+                mechanism: format!("argument --settings-file {}", file.display()),
+                sensitive_env: Vec::new(),
+                notes: vec![
+                    "--settings-file selects the user settings file, which workspace settings override \
+                     and managed settings override both"
                         .to_owned(),
                 ],
             }
@@ -300,8 +366,23 @@ fn conflict_contract() {
                 ],
                 &[&["--co"], &["--code-theme", "x"], &["--", "--config", "f"]],
             ),
+            "continue" => (
+                &[&["--config", "f"], &["--config=f"]],
+                &[&["--", "--config", "f"], &["-p", "hi"], &["--model", "x"]],
+            ),
+            "amp" => (
+                &[&["--settings-file", "f"], &["--settings-file=f"]],
+                &[&["--", "--settings-file", "f"], &["--model", "x"]],
+            ),
             "codex" => (&[], &[&["-p", "personal"], &["--profile", "personal"]]),
             "claude" => (&[], &[&["--settings", "s"]]),
+            "gemini" => (&[], &[&["-m", "pro"], &["--model", "pro"]]),
+            "copilot" => (&[], &[&["--log-dir", "d"], &["--prompt", "hi"]]),
+            "opencode" => (&[], &[&["-c"], &["--prompt", "hi"]]),
+            "pi" => (&[], &[&["-p", "hello"]]),
+            "kiro" => (&[], &[&["--agent", "a"], &["settings"]]),
+            "cursor" => (&[], &[&["--print"], &["--model", "x"]]),
+            "cline" => (&[], &[]),
             "fake" => (&[&["--fake-profile", "x"]], &[&["--", "--fake-profile", "x"]]),
             other => panic!("no conflict row for adapter `{other}`"),
         };
@@ -410,7 +491,16 @@ fn metadata_invariants() {
         [
             ("claude", SupportLevel::Proven),
             ("codex", SupportLevel::Proven),
-            ("aider", SupportLevel::Proven)
+            ("aider", SupportLevel::Proven),
+            ("gemini", SupportLevel::Proven),
+            ("copilot", SupportLevel::Experimental),
+            ("opencode", SupportLevel::Proven),
+            ("pi", SupportLevel::Proven),
+            ("kiro", SupportLevel::Proven),
+            ("cursor", SupportLevel::Experimental),
+            ("continue", SupportLevel::Experimental),
+            ("amp", SupportLevel::Proven),
+            ("cline", SupportLevel::Experimental),
         ]
     );
 }

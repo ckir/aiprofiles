@@ -8,10 +8,19 @@ pub mod gate;
 pub mod metadata;
 
 mod aider;
+mod amp;
 mod claude;
+mod cline;
 mod codex;
+mod r#continue;
+mod copilot;
+mod cursor;
 #[cfg(debug_assertions)]
 mod fake;
+mod gemini;
+mod kiro;
+mod opencode;
+mod pi;
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -25,14 +34,23 @@ use crate::launch::LaunchPlan;
 use crate::name::ProfileName;
 
 pub use aider::Aider;
+pub use amp::Amp;
 pub use claude::Claude;
+pub use cline::Cline;
 pub use codex::Codex;
+pub use r#continue::Continue;
+pub use copilot::Copilot;
+pub use cursor::Cursor;
 #[cfg(debug_assertions)]
 pub use fake::Fake;
+pub use gemini::Gemini;
+pub use kiro::Kiro;
 pub use metadata::{
     AdapterEvidence, AdapterMetadata, Capability, CapabilityClaim, CapabilityState, ConflictOption,
     EnvOverride, Mechanism, ProfilePresence, SupportLevel,
 };
+pub use opencode::Opencode;
+pub use pi::Pi;
 
 /// One supported coding agent (SP2 design §4.2).
 pub trait Adapter: Sync {
@@ -110,7 +128,10 @@ pub struct PlannedLaunch {
 }
 
 /// The real adapters, in every build (SP2 design §4.2).
-pub const REAL_ADAPTERS: &[&dyn Adapter] = &[&Claude, &Codex, &Aider];
+pub const REAL_ADAPTERS: &[&dyn Adapter] = &[
+    &Claude, &Codex, &Aider, &Gemini, &Copilot, &Opencode, &Pi, &Kiro, &Cursor, &Continue, &Amp,
+    &Cline,
+];
 
 /// The adapters this build knows: the real ones, plus `fake` when debug assertions are on.
 pub fn registry() -> Vec<&'static dyn Adapter> {
