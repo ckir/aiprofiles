@@ -300,9 +300,11 @@ agents:       claude=personal
      on Unix, or on Windows a Unix-form key such as `/srv/acme`, which would otherwise be read relative to
      the current drive). Never discovered; never applies on this host; kept so a synced configuration keeps
      working (SP3 design §6.1). The filesystem is not consulted.
-  1a. `unreadable` with the reason `device path refused`, on Windows only, when the key's first path
-     component is a prefix other than a drive (`Prefix::Disk`, `VerbatimDisk`) or a share (`UNC`,
-     `VerbatimUNC`): a `\\.\pipe\…` or `\\.\COM1` device namespace passes `is_absolute_key` (it starts
+  1a. `unreadable` with the reason `device path refused`, on Windows only, unless the key's first path
+     component IS a `Component::Prefix` of kind `Disk`, `VerbatimDisk`, `UNC` or `VerbatimUNC` (an
+     allow-list, as `repo::prefix_allowed` is written: a key whose first component is anything else, a
+     device prefix or no prefix at all, is refused; panel round 2, S2-2): a `\\.\pipe\…` or `\\.\COM1`
+     device namespace passes `is_absolute_key` (it starts
      with `\\`, `config.rs:236`) and a `fs::metadata` on it can block or reach a driver. The same
      allow-list `repo::target_allowed` applies to `gitdir` targets (`repo.rs:61-98`); the report applies it
      to the key itself before touching the filesystem (panel round 1, S5-1). Unix has no such prefix: a
@@ -326,11 +328,14 @@ agents:       claude=personal
   `<app root>/profiles/<name>` (`AppRoot::profiles_dir()`, never the repository) is not a directory.
   `agents:` lists `id=profile` pairs in key order or `none`; a pair gains ` (no profile directory)` under
   the same rule and ` (unknown agent)` when this build's registry does not know the id (SP3 known limit:
-  such a mapping is removable only by editing `config.toml`).
+  such a mapping is removable only by editing `config.toml`); when both apply, `(no profile directory)`
+  comes first, then `(unknown agent)` (panel round 2, S6-1).
 - An entry with neither a `profile` nor an `agents` field (valid under SP3 design §6.1, reachable by hand
-  editing) maps nothing; its block gains `note:         maps nothing; remove it with agent-profile unlink
-  --repo <key>` (the key shell-quoted as `unlink`'s notes do). The document needs no member for it: a
-  consumer reads `"profile": null` with `"agents": {}` (panel round 1, Q2).
+  editing) maps nothing; its block gains `note:         maps nothing; remove it by editing config.toml`.
+  Not `unlink --repo <key>`: `config::unlink` removes a field it finds mapped (`mapped`, `config.rs:584`,
+  reads `profile` or `agents.<id>`), so on an empty table it reports nothing to remove and leaves the table
+  (panel round 2, S2-1; the same limit SP3 records for unknown-agent fields). The document needs no
+  member for it: a consumer reads `"profile": null` with `"agents": {}` (panel round 1, Q2).
 - No entries: the single line `no repository mappings`, exit 0.
 - Exit 0 for every content; the only failures are the usual ones before the report: usage (2), invalid
   configuration (4), root resolution (4), stdout write (1).
@@ -384,7 +389,11 @@ option exit 2, per §5).
 - Schema pinning: one test per schema asserts the exact member list of the top-level object and of each
   nested object (a sorted key list compared to a literal written by hand in the test, never derived from
   the view type or from the document under test; solo panel round 1, Mechanism Gamer), so an accidental rename or omission is red, and
-  that `schema` and `tool_version` are the first two members. Each such test runs on a fixture in which
+  that `schema` and `tool_version` are the first two members. The comparison is structural (a parsed
+  `serde_json::Value` against values built in the test), never a byte-exact golden string, so a
+  `serde_json` release that changes whitespace cannot turn the suite red while the contract holds; the
+  one textual assertion is the member order, checked on the raw stdout prefix (`{\n  "schema": …`, then
+  `"tool_version"`), because a parsed object does not keep it (panel round 2, Q3). Each such test runs on a fixture in which
   EVERY nullable member is null (`status` outside a repository with no default, `<agent> status` with
   nothing resolved, `resolve` with no profile, `profiles` on an empty root, `repositories` with an entry
   that has no `profile` field and a `detail` of `null`) and asserts the key is present with
@@ -478,6 +487,16 @@ within §5's shapes; how the component-equal compare for `active` is shared with
   empty mapping entry gets a `note:` (§4); Q3 stderr parity stands, consumers read stdout alone (§3.2).
   Q1 reopens the closed-token-set rule: see §10 call 11. Discarded by the peer, agreed: alphabetical
   `agents` order; renaming `exists`. PANEL VERDICT: two blocking folded, four debt folded; round 2 owed.
+- Panel round 2, agy escalation (2026-10-19; brief `.clavity/seams/sp5b-panel-r2.md`, reply
+  `.clavity/scratch/sp5b-panel/round2-reply.md`; seats Axiom Breaker, Cascade Analyst, State Corruptor
+  (new), Dependency Cynic (new), Protocol Pedant, Literal Implementer; four of six returned "no new
+  findings"): one blocking, verified and folded. S2-1 the empty-mapping note named a remedy that cannot
+  work (verified: `config::unlink` finds a field through `mapped`, `config.rs:584-593`, which reads
+  `profile` or `agents.<id>`, so an empty table yields `NothingToRemove`): the note now says edit
+  `config.toml` (§4). Debt folded: rule 1a phrased as an allow-list (S2-2); annotation order when both
+  apply (S6-1). Answers: Q2 no missing member for a clean-up script; Q3 structural comparison, with the
+  member-order check on raw text (§7). Discarded by the peer, agreed: `agents: null` for an empty list;
+  rewording `device path refused`. PANEL VERDICT: one blocking folded, two debt folded; round 3 owed.
 
 ## Stand-downs
 None: every agy-first and solo-panel finding was folded.
