@@ -994,18 +994,7 @@ fn run_unlink(
 
 /// The `presence:` value of `<agent> status` (SP3 design §7.5).
 fn presence(root: &AppRoot, agent: &AgentId, profile: &ProfileName) -> String {
-    if let Err(Error::ProfileCaseConflict { existing, .. }) =
-        config::check_case_twins(root, profile)
-    {
-        return format!("conflicts with {existing}");
-    }
-    let adapter = adapter::lookup(agent.as_str()).expect("known agents have an adapter");
-    match adapter.presence(root, profile) {
-        ProfilePresence::Materialized => "materialized",
-        ProfilePresence::Known => "known",
-        ProfilePresence::Absent => "absent",
-    }
-    .to_owned()
+    lifecycle::presence(root, agent, profile).label()
 }
 
 fn write_lines(lines: &[String]) -> Result<()> {

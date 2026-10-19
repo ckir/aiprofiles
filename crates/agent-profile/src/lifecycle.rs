@@ -318,6 +318,53 @@ fn unrecognized_children(
     Ok(count)
 }
 
+/// What `<agent> status` and the `status` document report for a profile (SP3 design §7.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Presence {
+    Materialized,
+    Known,
+    Absent,
+    /// A profile whose name differs only by case exists; `existing` is its spelling.
+    Conflict {
+        existing: String,
+    },
+}
+
+impl Presence {
+    /// The human label printed by `status`.
+    pub fn label(&self) -> String {
+        match self {
+            Presence::Materialized => "materialized".to_owned(),
+            Presence::Known => "known".to_owned(),
+            Presence::Absent => "absent".to_owned(),
+            Presence::Conflict { existing } => format!("conflicts with {existing}"),
+        }
+    }
+
+    /// The closed token used in JSON documents.
+    pub fn token(&self) -> &'static str {
+        match self {
+            Presence::Materialized => "materialized",
+            Presence::Known => "known",
+            Presence::Absent => "absent",
+            Presence::Conflict { .. } => "conflict",
+        }
+    }
+}
+
+/// The presence of `profile` for `agent`; a case-only twin is reported before the adapter is asked.
+pub fn presence(root: &AppRoot, agent: &AgentId, profile: &ProfileName) -> Presence {
+    if let Err(Error::ProfileCaseConflict { existing, .. }) = check_case_twins(root, profile) {
+        return Presence::Conflict { existing };
+    }
+    let adapter = adapter::lookup(agent.as_str()).expect("known agents have an adapter");
+    match adapter.presence(root, profile) {
+        ProfilePresence::Materialized => Presence::Materialized,
+        ProfilePresence::Known => Presence::Known,
+        ProfilePresence::Absent => Presence::Absent,
+    }
+}
+
 #[cfg(all(test, debug_assertions))]
 mod tests {
     use super::*;
@@ -326,6 +373,20 @@ mod tests {
 
     fn profile(name: &str) -> ProfileName {
         ProfileName::parse(name, Platform::host()).unwrap()
+    }
+
+    #[test]
+    fn presence_labels_and_tokens_cover_every_variant() {
+        let cases = [
+            (Presence::Materialized, "materialized", "materialized"),
+            (Presence::Known, "known", "known"),
+            (Presence::Absent, "absent", "absent"),
+            (Presence::Conflict { existing: "Mine".into() }, "conflicts with Mine", "conflict"),
+        ];
+        for (presence, label, token) in cases {
+            assert_eq!(presence.label(), label);
+            assert_eq!(presence.token(), token);
+        }
     }
 
     /// The outcome reads presence before any write: absent → `Created`, materialized → `AlreadyExists`,

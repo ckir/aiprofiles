@@ -256,7 +256,7 @@ fn shell_word(path: &Path) -> String {
     if shown.contains(char::is_whitespace) { format!("\"{shown}\"") } else { shown }
 }
 
-fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
+pub(crate) fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
     path.starts_with(key) && key != path
 }
 
