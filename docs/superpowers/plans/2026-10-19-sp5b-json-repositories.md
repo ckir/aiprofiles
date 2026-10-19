@@ -31,7 +31,10 @@ sets). V3 `agent-profile-implementation-spec-v3.md` §27, §32, §33, §36 win o
 - Linux, macOS, Windows green; the `just check` gate (fmt, clippy `-D warnings`, typos, shellcheck, nextest, docs)
   passes at every commit. New dependency: `serde` only. Commit trailer: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Every new test is proven non-vacuous by a logic mutant that turns exactly that test red (repository discipline;
-  the test-audit will re-run them). Each task's last verification step names the mutant.
+  the test-audit will re-run them). Each task's last verification step names the mutant. The implementer
+  appends each mutant run's nextest summary and failing-test line to
+  `.clavity/scratch/sp5b-mutants/task-<N>.log` (gitignored runtime state) before restoring, so a reviewer can
+  check the proof without re-running it (plan panel round 3, Q3).
 
 ## Review Focus
 
@@ -766,6 +769,14 @@ a `moved` key; all three are stated in the spec's §4.
   unnoticed. Q3 the six-task grain confirmed. Discarded by the peer, agreed: a hyphenation slip (fixed
   anyway); runner parameter order. PANEL VERDICT: one blocking folded, one debt folded, one guard added;
   round 3 owed.
+- Round 3, agy escalation (2026-10-19; brief `.clavity/seams/sp5b-plan-panel-r3.md`, reply
+  `.clavity/scratch/sp5b-plan-panel/round3-reply.md`; seats Axiom Breaker, Cascade Analyst, Cold Executor
+  (bespoke, new), Literal Implementer, Mechanism Gamer): GREEN, no finding. The Cascade Analyst walked all
+  six commits and found each green under `just check`; the Cold Executor found Tasks 2 and 5 executable
+  from their own text. Q1 named the single-write constraint as the line no test would miss if deleted (it
+  stays, and the spec pins it). Q2: no design requirement without a task. Q3 folded: mutant proofs are logged
+  under `.clavity/scratch/sp5b-mutants/` (Global Constraints). Discarded by the peer, agreed: `use`
+  boilerplate; checklist phrasing. PANEL VERDICT: GREEN; no live challenge.
 
 ## Stand-downs
 None.
