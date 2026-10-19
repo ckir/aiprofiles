@@ -243,6 +243,12 @@ fn is_absolute_key(root: &str) -> bool {
     root.starts_with('/') || root.starts_with(r"\\") || drive
 }
 
+/// Whether a stored key is in this host's own absolute form: `/…` on Unix, anything but `/…` on Windows (SP5b
+/// design §4). The other platform's keys are `foreign`.
+pub fn is_host_form_key(root: &str) -> bool {
+    if cfg!(windows) { !root.starts_with('/') } else { root.starts_with('/') }
+}
+
 fn validate_repositories(
     path: &Path,
     key: &str,

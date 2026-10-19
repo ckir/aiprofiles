@@ -17,6 +17,7 @@ use crate::lifecycle;
 use crate::name::{AgentId, Platform, ProfileName, RESERVED_WORDS, is_reserved_word};
 use crate::output::{self, ReportMode};
 use crate::repo::{self, Discovery};
+use crate::repositories;
 use crate::resolve;
 
 const LAUNCH_USAGE: &str = "\
@@ -38,6 +39,7 @@ Repository commands:
   agent-profile [<agent>] status [--repo <path>] [--json]
   agent-profile [<agent>] link <profile> [--repo <path>]
   agent-profile [<agent>] unlink [--repo <path>]
+  agent-profile repositories
 
 Profile commands:
   agent-profile <agent> create <profile>
@@ -70,8 +72,6 @@ enum Command {
     /// Not yet implemented.
     Doctor(Rest),
     /// Not yet implemented.
-    Repositories(Rest),
-    /// Not yet implemented.
     Completions(Rest),
     #[command(external_subcommand)]
     Agent(Vec<OsString>),
@@ -88,7 +88,6 @@ impl Command {
     fn reserved_name(&self) -> Option<&'static str> {
         Some(match self {
             Command::Doctor(_) => "doctor",
-            Command::Repositories(_) => "repositories",
             Command::Completions(_) => "completions",
             Command::Agent(_) => return None,
         })
@@ -108,6 +107,7 @@ enum CommandWord {
     List,
     Agents,
     Profiles,
+    Repositories,
 }
 
 impl CommandWord {
@@ -124,6 +124,7 @@ impl CommandWord {
             "list" => CommandWord::List,
             "agents" => CommandWord::Agents,
             "profiles" => CommandWord::Profiles,
+            "repositories" => CommandWord::Repositories,
             _ => return None,
         })
     }
@@ -140,6 +141,7 @@ impl CommandWord {
             CommandWord::List => "list",
             CommandWord::Agents => "agents",
             CommandWord::Profiles => "profiles",
+            CommandWord::Repositories => "repositories",
         }
     }
 
@@ -197,6 +199,10 @@ impl CommandWord {
                 "Usage: agent-profile profiles [--json]\n\
                  List the profiles that exist, with the agents that have one.\n\n  \
                  --json  Print a JSON document instead of the report\n"
+            }
+            CommandWord::Repositories => {
+                "Usage: agent-profile repositories\n\
+                 Show every stored repository mapping and whether it still applies.\n"
             }
         }
     }
@@ -476,8 +482,10 @@ fn validate_command(
     if has_cut {
         return Err(usage(format!("`{name}` takes no agent arguments; remove `--`")));
     }
-    // `agents` and `profiles` are top-level only (SP5a design §5).
-    if matches!(command, CommandWord::Agents | CommandWord::Profiles) && agent.is_some() {
+    // `agents`, `profiles` and `repositories` are top-level only (SP5a design §5, SP5b design §4).
+    if matches!(command, CommandWord::Agents | CommandWord::Profiles | CommandWord::Repositories)
+        && agent.is_some()
+    {
         return Err(usage(format!("`{name}` takes no agent: agent-profile {name}")));
     }
     let repos: Vec<&OsString> = tokens
@@ -495,6 +503,7 @@ fn validate_command(
             | CommandWord::List
             | CommandWord::Agents
             | CommandWord::Profiles
+            | CommandWord::Repositories
     ) && !repos.is_empty()
     {
         return Err(usage(format!("unknown option \"--repo\" for `{name}`")));
@@ -506,7 +515,10 @@ fn validate_command(
         return Err(usage("`--repo` needs a non-empty path"));
     }
     let json_count = options(tokens).filter(|option| **option == "--json").count();
-    if matches!(command, CommandWord::Create | CommandWord::Delete) && json_count > 0 {
+    // `repositories --json` joins them until its document is built.
+    if matches!(command, CommandWord::Create | CommandWord::Delete | CommandWord::Repositories)
+        && json_count > 0
+    {
         return Err(Error::NotYetImplemented { command: "--json".to_owned() });
     }
     let json_accepted = matches!(
@@ -724,6 +736,9 @@ fn run_command(
     if command == CommandWord::Agents {
         return run_agents(&root, &config, json);
     }
+    if command == CommandWord::Repositories {
+        return run_repositories(&root, &config);
+    }
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
     if matches!(command, CommandWord::List | CommandWord::Profiles) {
@@ -843,7 +858,8 @@ fn run_command(
         | CommandWord::Delete
         | CommandWord::List
         | CommandWord::Agents
-        | CommandWord::Profiles => unreachable!("lifecycle commands returned above"),
+        | CommandWord::Profiles
+        | CommandWord::Repositories => unreachable!("lifecycle commands returned above"),
     };
     write_lines(&lines)?;
     Ok(0)
@@ -879,6 +895,14 @@ fn run_profiles(root: &AppRoot, agent: Option<&AgentId>, json: bool) -> Result<i
     {
         let _ = writeln!(io::stderr(), "agent-profile: no profiles for {agent}");
     }
+    Ok(0)
+}
+
+/// `repositories` (SP5b design §4): every stored mapping with its classification. Read-only, takes no lock,
+/// and always exits 0: an entry that cannot be examined is reported, not raised.
+fn run_repositories(root: &AppRoot, config: &Config) -> Result<i32> {
+    let entries = repositories::report(root, config);
+    write_lines(&output::repositories_lines(&entries))?;
     Ok(0)
 }
 
@@ -1436,6 +1460,19 @@ mod tests {
             Ok(Invocation::Command { json: true, .. })
         ));
         assert!(matches!(top(&["agents", "--json"]), Ok(Invocation::Command { json: true, .. })));
+    }
+
+    #[test]
+    fn repositories_is_a_top_level_command_without_agent_arguments_or_json() {
+        assert!(matches!(
+            top(&["repositories"]),
+            Ok(Invocation::Command { command: CommandWord::Repositories, json: false, .. })
+        ));
+        assert_eq!(
+            usage_message(Err(split_err(&["fake", "repositories"]))),
+            "`repositories` takes no agent: agent-profile repositories"
+        );
+        assert!(matches!(top(&["repositories", "--json"]), Err(Error::NotYetImplemented { .. })));
     }
 
     #[test]

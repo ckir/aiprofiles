@@ -18,4 +18,5 @@ pub mod lifecycle;
 pub mod name;
 pub mod output;
 pub mod repo;
+pub mod repositories;
 pub mod resolve;
