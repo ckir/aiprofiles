@@ -722,12 +722,12 @@ fn run_command(
     let root = AppRoot::resolve()?;
     let config = Config::load(&root)?;
     if command == CommandWord::Agents {
-        return run_agents(&root, &config);
+        return run_agents(&root, &config, json);
     }
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
     if matches!(command, CommandWord::List | CommandWord::Profiles) {
-        return run_profiles(&root, agent.as_ref());
+        return run_profiles(&root, agent.as_ref(), json);
     }
     // The load above refuses an invalid configuration but creates nothing, so it runs before anything
     // is touched (V3 §17). Neither lifecycle command needs repository discovery, so both return before
@@ -853,14 +853,20 @@ fn run_command(
 /// created — `run_command` has already loaded the configuration (V3 §17) but no root, no `config.toml`
 /// and no lock is written here — and every outcome exits 0: an empty listing is the answer, not an
 /// error, and unrecognized on-disk entries are a stderr note rather than a failure.
-fn run_profiles(root: &AppRoot, agent: Option<&AgentId>) -> Result<i32> {
+fn run_profiles(root: &AppRoot, agent: Option<&AgentId>, json: bool) -> Result<i32> {
     let adapters = adapter::registry();
     let listing = lifecycle::list_profiles(root, &adapters)?;
-    let lines = match agent {
-        Some(agent) => output::list_lines(&listing, agent.as_str()),
-        None => output::profiles_lines(&listing),
-    };
-    write_lines(&lines)?;
+    let document = json::profiles(&listing, agent);
+    let no_rows = document.is_empty();
+    if json {
+        write_out(&json::render(&document))?;
+    } else {
+        let lines = match agent {
+            Some(agent) => output::list_lines(&listing, agent.as_str()),
+            None => output::profiles_lines(&listing),
+        };
+        write_lines(&lines)?;
+    }
     if listing.ignored > 0 {
         let _ = writeln!(
             io::stderr(),
@@ -869,7 +875,7 @@ fn run_profiles(root: &AppRoot, agent: Option<&AgentId>) -> Result<i32> {
         );
     }
     if let Some(agent) = agent
-        && lines.is_empty()
+        && no_rows
     {
         let _ = writeln!(io::stderr(), "agent-profile: no profiles for {agent}");
     }
@@ -880,7 +886,7 @@ fn run_profiles(root: &AppRoot, agent: Option<&AgentId>) -> Result<i32> {
 /// `run_command` refuses an invalid configuration but nothing is created here (V3 §17) — and it always
 /// exits 0: a missing or unusable executable is listed as a fact, not an error, while any discovery error
 /// that is not one of those facts propagates.
-fn run_agents(root: &AppRoot, config: &Config) -> Result<i32> {
+fn run_agents(root: &AppRoot, config: &Config, json: bool) -> Result<i32> {
     let path_var = std::env::var_os("PATH");
     let mut entries = Vec::new();
     for adapter in adapter::registry() {
@@ -907,7 +913,11 @@ fn run_agents(root: &AppRoot, config: &Config) -> Result<i32> {
         };
         entries.push((metadata, status));
     }
-    write_lines(&output::agents_lines(&entries))?;
+    if json {
+        write_out(&json::render(&json::agents(&entries)))?;
+    } else {
+        write_lines(&output::agents_lines(&entries))?;
+    }
     Ok(0)
 }
 

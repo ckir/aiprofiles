@@ -7,10 +7,12 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::adapter::{AdapterMetadata, Capability, CapabilityState};
 use crate::config::Config;
-use crate::lifecycle::Presence;
+use crate::exe::Origin;
+use crate::lifecycle::{Listing, Presence};
 use crate::name::AgentId;
-use crate::output::is_proper_ancestor;
+use crate::output::{ExecutableStatus, capability_label, is_proper_ancestor, support_label};
 use crate::repo::Discovery;
 use crate::resolve::{Resolution, ResolutionSource};
 
@@ -144,6 +146,172 @@ pub fn status(
     }
 }
 
+/// The closed JSON token for a capability state.
+pub fn state_token(state: CapabilityState) -> &'static str {
+    match state {
+        CapabilityState::Supported => "supported",
+        CapabilityState::NotSupported => "not_supported",
+        CapabilityState::NotGuaranteed => "not_guaranteed",
+        CapabilityState::Conditional => "conditional",
+        CapabilityState::Unknown => "unknown",
+    }
+}
+
+/// An agent's executable evidence.
+#[derive(Debug, Serialize)]
+pub struct ExecutableView {
+    state: &'static str,
+    path: Option<String>,
+    origin: Option<&'static str>,
+}
+
+/// How the agent is pointed at the profile.
+#[derive(Debug, Serialize)]
+pub struct MechanismView {
+    id: &'static str,
+    description: String,
+}
+
+/// The evidence the adapter's claims rest on.
+#[derive(Debug, Serialize)]
+pub struct EvidenceView {
+    upstream_version: &'static str,
+    verified_at: &'static str,
+    source_url: &'static str,
+    notes: &'static str,
+}
+
+/// One capability claim.
+#[derive(Debug, Serialize)]
+pub struct CapabilityView {
+    capability: &'static str,
+    state: &'static str,
+    basis: &'static str,
+}
+
+/// One registry entry of the `agents` document.
+#[derive(Debug, Serialize)]
+pub struct AgentView {
+    agent: &'static str,
+    executable: ExecutableView,
+    mechanism: MechanismView,
+    support: &'static str,
+    evidence: EvidenceView,
+    capabilities: Vec<CapabilityView>,
+}
+
+/// The `agents` document.
+#[derive(Debug, Serialize)]
+pub struct AgentsDocument {
+    schema: &'static str,
+    tool_version: &'static str,
+    agents: Vec<AgentView>,
+}
+
+/// Builds the `agents` document from registry metadata and each agent's executable status.
+pub fn agents(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> AgentsDocument {
+    let agents = entries
+        .iter()
+        .map(|(metadata, status)| {
+            let executable = match status {
+                ExecutableStatus::Found(found) => ExecutableView {
+                    state: "found",
+                    path: Some(found.path.display().to_string()),
+                    origin: Some(match found.origin {
+                        Origin::Configured => "configured",
+                        Origin::Path => "path",
+                    }),
+                },
+                ExecutableStatus::NotOnPath => {
+                    ExecutableView { state: "not_on_path", path: None, origin: None }
+                }
+                ExecutableStatus::ConfiguredMissing(path) => ExecutableView {
+                    state: "configured_missing",
+                    path: Some(path.display().to_string()),
+                    origin: None,
+                },
+                ExecutableStatus::Unsupported(path) => ExecutableView {
+                    state: "unsupported",
+                    path: Some(path.display().to_string()),
+                    origin: None,
+                },
+            };
+            let capabilities = Capability::ALL
+                .into_iter()
+                .map(|capability| {
+                    let claim = metadata
+                        .capabilities
+                        .iter()
+                        .find(|claim| claim.capability == capability)
+                        .expect("registry adapters declare every capability");
+                    CapabilityView {
+                        capability: capability_label(capability),
+                        state: state_token(claim.state),
+                        basis: claim.basis,
+                    }
+                })
+                .collect();
+            AgentView {
+                agent: metadata.id,
+                executable,
+                mechanism: MechanismView {
+                    id: metadata.evidence.mechanism_id,
+                    description: metadata.mechanism.to_string(),
+                },
+                support: support_label(metadata.support),
+                evidence: EvidenceView {
+                    upstream_version: metadata.evidence.upstream_version,
+                    verified_at: metadata.evidence.verified_at,
+                    source_url: metadata.evidence.source_url,
+                    notes: metadata.evidence.notes,
+                },
+                capabilities,
+            }
+        })
+        .collect();
+    AgentsDocument { schema: "agent-profile/agents/1", tool_version: TOOL_VERSION, agents }
+}
+
+/// One profile and the agents materialized for it.
+#[derive(Debug, Serialize)]
+pub struct ProfileView {
+    name: String,
+    agents: Vec<String>,
+}
+
+/// The `profiles` (and `list`) document.
+#[derive(Debug, Serialize)]
+pub struct ProfilesDocument {
+    schema: &'static str,
+    tool_version: &'static str,
+    agent: Option<String>,
+    profiles: Vec<ProfileView>,
+    ignored_entries: usize,
+}
+
+impl ProfilesDocument {
+    /// Whether no profile row survived the agent filter.
+    pub fn is_empty(&self) -> bool {
+        self.profiles.is_empty()
+    }
+}
+
+/// Builds the `profiles` document; with an agent, only rows that materialize it, each row unchanged.
+pub fn profiles(listing: &Listing, agent: Option<&AgentId>) -> ProfilesDocument {
+    ProfilesDocument {
+        schema: "agent-profile/profiles/1",
+        tool_version: TOOL_VERSION,
+        agent: agent.map(ToString::to_string),
+        profiles: listing
+            .rows
+            .iter()
+            .filter(|(_, ids)| agent.is_none_or(|agent| ids.iter().any(|id| id == agent.as_str())))
+            .map(|(name, ids)| ProfileView { name: name.to_string(), agents: ids.clone() })
+            .collect(),
+        ignored_entries: listing.ignored,
+    }
+}
+
 #[cfg(all(test, debug_assertions))]
 mod tests {
     use super::*;
@@ -273,6 +441,93 @@ mod tests {
         assert_eq!(
             value["inapplicable_mappings"],
             serde_json::json!([outer.display().to_string()])
+        );
+    }
+
+    #[test]
+    fn agents_document_renders_each_executable_state_and_the_full_matrix() {
+        use crate::adapter::{self, Capability};
+        use crate::exe::{Found, Origin};
+        use crate::output::ExecutableStatus;
+        use std::path::PathBuf;
+
+        let metadata = adapter::lookup("fake").unwrap().metadata();
+        let entries = [
+            (
+                metadata,
+                ExecutableStatus::Found(Found {
+                    path: PathBuf::from("/bin/fake"),
+                    origin: Origin::Configured,
+                }),
+            ),
+            (metadata, ExecutableStatus::NotOnPath),
+            (metadata, ExecutableStatus::ConfiguredMissing(PathBuf::from("/gone"))),
+            (metadata, ExecutableStatus::Unsupported(PathBuf::from("/shim.cmd"))),
+        ];
+        let value = parsed(&agents(&entries));
+        assert_eq!(value["schema"], "agent-profile/agents/1");
+        let list = value["agents"].as_array().unwrap();
+        assert_eq!(list.len(), 4);
+        let expected = [
+            ("found", Some("/bin/fake"), Some("configured")),
+            ("not_on_path", None, None),
+            ("configured_missing", Some("/gone"), None),
+            ("unsupported", Some("/shim.cmd"), None),
+        ];
+        for (element, (state, path, origin)) in list.iter().zip(expected) {
+            let executable = &element["executable"];
+            assert_eq!(executable["state"], state);
+            assert_eq!(executable["path"], serde_json::json!(path));
+            assert_eq!(executable["origin"], serde_json::json!(origin));
+            assert_eq!(keys(executable), ["origin", "path", "state"]);
+            let capabilities = element["capabilities"].as_array().unwrap();
+            assert_eq!(capabilities.len(), 3);
+            for (entry, capability) in capabilities.iter().zip(Capability::ALL) {
+                assert_eq!(entry["capability"], crate::output::capability_label(capability));
+            }
+            let order: Vec<&str> =
+                capabilities.iter().map(|c| c["capability"].as_str().unwrap()).collect();
+            assert_eq!(order, ["config", "credentials", "state"]);
+            assert!(["proven", "experimental"].contains(&element["support"].as_str().unwrap()));
+            assert_eq!(element["mechanism"]["id"], metadata.evidence.mechanism_id);
+            assert_eq!(
+                keys(&element["evidence"]),
+                ["notes", "source_url", "upstream_version", "verified_at"]
+            );
+            assert_eq!(
+                keys(element),
+                ["agent", "capabilities", "evidence", "executable", "mechanism", "support"]
+            );
+        }
+    }
+
+    #[test]
+    fn profiles_document_filters_by_agent_without_changing_rows() {
+        use crate::lifecycle::Listing;
+        let listing = Listing {
+            rows: vec![
+                (profile("personal"), vec!["claude".to_owned()]),
+                (profile("work"), vec!["claude".to_owned(), "codex".to_owned()]),
+            ],
+            ignored: 2,
+        };
+        let all = parsed(&profiles(&listing, None));
+        assert_eq!(all["schema"], "agent-profile/profiles/1");
+        assert_eq!(all["agent"], Value::Null);
+        assert_eq!(all["ignored_entries"], 2);
+        assert_eq!(
+            all["profiles"],
+            serde_json::json!([
+                {"name": "personal", "agents": ["claude"]},
+                {"name": "work", "agents": ["claude", "codex"]}
+            ])
+        );
+        let codex = AgentId::parse("codex").unwrap();
+        let some = parsed(&profiles(&listing, Some(&codex)));
+        assert_eq!(some["agent"], "codex");
+        assert_eq!(
+            some["profiles"],
+            serde_json::json!([{"name": "work", "agents": ["claude", "codex"]}])
         );
     }
 }

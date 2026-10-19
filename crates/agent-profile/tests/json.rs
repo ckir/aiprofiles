@@ -233,3 +233,118 @@ fn json_members_are_in_order_and_documents_end_with_one_newline() {
     assert!(text.ends_with("}\n"), "{text:?}");
     assert!(!text.ends_with("}\n\n"), "{text:?}");
 }
+
+#[test]
+fn agents_json_lists_every_registered_agent_with_executable_states() {
+    let root = Root::new();
+    let mut command = root.agent_profile(["agents", "--json"]);
+    command.env_remove("PATH");
+    let out = command.output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let value = document(&out);
+    assert_eq!(value["schema"], "agent-profile/agents/1");
+    let list = value["agents"].as_array().unwrap();
+    let known = adapter::known_agents();
+    assert_eq!(list.len(), known.len());
+    for (element, id) in list.iter().zip(known) {
+        assert_eq!(element["agent"], id);
+        let executable = &element["executable"];
+        if id == "fake" {
+            assert_eq!(executable["state"], "found");
+            assert_eq!(executable["origin"], "configured");
+            assert_eq!(executable["path"], env!("CARGO_BIN_EXE_fake-agent"));
+        } else {
+            assert_eq!(executable["state"], "not_on_path", "{id}");
+            assert_eq!(executable["path"], Value::Null);
+            assert_eq!(executable["origin"], Value::Null);
+        }
+    }
+
+    let root = Root::empty();
+    let shim = root.path().join("fake.cmd");
+    fs::write(&shim, "@echo off\n").unwrap();
+    root.write_config(&format!("[agents.fake]\nexecutable = {:?}\n", shim.to_str().unwrap()));
+    let out = run(&root, root.path(), &["agents", "--json"]);
+    let value = document(&out);
+    let fake = value["agents"].as_array().unwrap().iter().find(|a| a["agent"] == "fake").unwrap();
+    assert_eq!(fake["executable"]["state"], "unsupported");
+    assert_eq!(fake["executable"]["path"], shim.to_str().unwrap());
+
+    let root = Root::empty();
+    let missing =
+        if cfg!(windows) { r"C:\nonexistent\fake-agent" } else { "/nonexistent/fake-agent" };
+    root.write_config(&format!("[agents.fake]\nexecutable = {missing:?}\n"));
+    let out = run(&root, root.path(), &["agents", "--json"]);
+    let value = document(&out);
+    let fake = value["agents"].as_array().unwrap().iter().find(|a| a["agent"] == "fake").unwrap();
+    assert_eq!(fake["executable"]["state"], "configured_missing");
+    assert_eq!(fake["executable"]["path"], missing);
+    assert_eq!(fake["executable"]["origin"], Value::Null);
+}
+
+#[test]
+fn profiles_and_list_json_share_the_schema_and_keep_the_stderr_notes() {
+    let root = Root::empty();
+    for (agent, profile) in [("fake", "work"), ("aider", "work"), ("fake", "personal")] {
+        let out = run(&root, root.path(), &[agent, "create", profile]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    }
+    fs::write(root.path().join("profiles").join("notes.txt"), "x").unwrap();
+
+    let profiles = run(&root, root.path(), &["profiles", "--json"]);
+    assert_eq!(profiles.status.code(), Some(0), "{}", stderr(&profiles));
+    let value = document(&profiles);
+    assert_eq!(value["schema"], "agent-profile/profiles/1");
+    assert_eq!(value["agent"], Value::Null);
+    assert_eq!(
+        value["profiles"],
+        json!([{"name": "personal", "agents": ["fake"]}, {"name": "work", "agents": ["aider", "fake"]}])
+    );
+    assert_eq!(value["ignored_entries"], 1);
+    assert_eq!(stderr(&profiles), "agent-profile: ignored 1 unrecognized entries\n");
+
+    let list = run(&root, root.path(), &["list", "--json"]);
+    assert_eq!(stdout(&list), stdout(&profiles));
+
+    let aider = run(&root, root.path(), &["aider", "list", "--json"]);
+    let value = document(&aider);
+    assert_eq!(value["agent"], "aider");
+    assert_eq!(value["profiles"], json!([{"name": "work", "agents": ["aider", "fake"]}]));
+
+    let codex = run(&root, root.path(), &["codex", "list", "--json"]);
+    assert_eq!(codex.status.code(), Some(0), "{}", stderr(&codex));
+    assert_eq!(document(&codex)["profiles"], json!([]));
+    assert_eq!(
+        stderr(&codex),
+        "agent-profile: ignored 1 unrecognized entries\nagent-profile: no profiles for codex\n"
+    );
+
+    let empty = Root::empty();
+    let out = run(&empty, empty.path(), &["profiles", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let value = document(&out);
+    assert_eq!(value["profiles"], json!([]));
+    assert_eq!(value["ignored_entries"], 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn profiles_json_on_an_unreadable_profiles_directory_leaves_stdout_empty() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Root::empty();
+    let out = run(&root, root.path(), &["fake", "create", "work"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let profiles = root.path().join("profiles");
+    let mode =
+        |bits: u32| fs::set_permissions(&profiles, fs::Permissions::from_mode(bits)).unwrap();
+    mode(0o000);
+    if fs::read_dir(&profiles).is_ok() {
+        mode(0o755); // a privileged user is not refused: nothing to pin here
+        return;
+    }
+    let out = run(&root, root.path(), &["profiles", "--json"]);
+    mode(0o755);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert!(stderr(&out).contains("could not read the profiles directory"), "{}", stderr(&out));
+}
