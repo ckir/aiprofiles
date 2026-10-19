@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::adapter::{self, Adapter, ProfilePath, ProfilePresence};
 use crate::config::{self, AppRoot, Config, check_case_twins};
 use crate::error::{Error, Result};
-use crate::name::{AgentId, ProfileName};
+use crate::name::{AgentId, Platform, ProfileName};
 
 /// What `create` did (SP5a design §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,6 +202,109 @@ pub fn delete(root: &AppRoot, agent: &AgentId, profile: &ProfileName) -> Result<
         }
         Ok(DeleteOutcome::Deleted { path: target, parent_note })
     })
+}
+
+/// What `list` and `profiles` show (SP5a design §3): one row per valid profile directory, plus the count
+/// of entries that were skipped as unrecognized.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listing {
+    /// One row per profile directory, sorted by profile name: the profile and the ids of the agents
+    /// materialized for it, in the given `adapters` order. A row may list no agent.
+    pub rows: Vec<(ProfileName, Vec<String>)>,
+    /// Entries of the profiles directory and child directories under a listed profile that were not part
+    /// of any row: non-directories, invalid names and unknown agent directories.
+    pub ignored: usize,
+}
+
+/// Reads what exists on disk, human-readable: each valid profile directory under `<root>/profiles`
+/// becomes a row naming every `adapter` that is materialized for it, in `adapters` order. Purely
+/// read-only: nothing is created, and a missing profiles directory is simply an empty listing.
+///
+/// Entries whose name starts with `.` are skipped and not counted. Anything else that is not a
+/// directory, not valid UTF-8 or not a valid profile name for the host platform is an unrecognized
+/// entry, as is any directory below a listed profile that is not a known agent id.
+pub fn list_profiles(root: &AppRoot, adapters: &[&dyn Adapter]) -> Result<Listing> {
+    let io_context = "could not read the profiles directory".to_owned();
+    let entries = match fs::read_dir(root.profiles_dir()) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(Listing { rows: Vec::new(), ignored: 0 });
+        }
+        Err(source) => return Err(Error::Io { context: io_context, source }),
+    };
+    let mut rows: Vec<(ProfileName, Vec<String>)> = Vec::new();
+    let mut ignored = 0usize;
+    for entry in entries {
+        let entry = entry.map_err(|source| Error::Io { context: io_context.clone(), source })?;
+        let name = entry.file_name();
+        // A name starting with `.` is an editor or OS dropping (*.swp, .DS_Store): it is not part of any
+        // row, and the user did not put it in a profile either, so it is not counted at all.
+        if name.as_encoded_bytes().starts_with(b".") {
+            continue;
+        }
+        // `file_type` does not follow symlinks, so a symlinked profile entry counts as not a directory.
+        if !entry
+            .file_type()
+            .map_err(|source| Error::Io { context: io_context.clone(), source })?
+            .is_dir()
+        {
+            ignored += 1;
+            continue;
+        }
+        let profile = match name
+            .to_str()
+            .map(|name| ProfileName::parse(name, Platform::host()))
+            .transpose()
+        {
+            Ok(Some(profile)) => profile,
+            // Not valid UTF-8 (`Ok(None)`) or a reserved or otherwise invalid name, e.g. the command
+            // words: the user did not create it through this tool, so count and move on.
+            _ => {
+                ignored += 1;
+                continue;
+            }
+        };
+        // `presence` reads the filesystem only and never writes (SP5a design §3); a bare directory with
+        // no config file is not materialized for a file adapter.
+        let agents: Vec<String> = adapters
+            .iter()
+            .filter(|adapter| adapter.presence(root, &profile) == ProfilePresence::Materialized)
+            .map(|adapter| adapter.metadata().id.to_owned())
+            .collect();
+        let directory = root.profiles_dir().join(profile.as_str());
+        ignored += unrecognized_children(&directory, adapters, &io_context)?;
+        rows.push((profile, agents));
+    }
+    // `str`'s `Ord` is byte order, so rows sort by profile name bytes.
+    rows.sort_by(|(a, _), (b, _)| a.as_str().as_bytes().cmp(b.as_str().as_bytes()));
+    Ok(Listing { rows, ignored })
+}
+
+/// The child entries of a listed profile directory that are directories but not known agent ids; each
+/// one is an unrecognized entry (`ignored +1` per child).
+fn unrecognized_children(
+    directory: &Path,
+    adapters: &[&dyn Adapter],
+    io_context: &str,
+) -> Result<usize> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        // Gone between listing the profile and reading it: nothing unrecognized under a vanished dir.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(source) => return Err(Error::Io { context: io_context.to_owned(), source }),
+    };
+    let mut count = 0usize;
+    for entry in entries {
+        let entry = entry.map_err(|source| Error::Io { context: io_context.to_owned(), source })?;
+        let is_agent_dir = entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && adapters
+                .iter()
+                .any(|adapter| entry.file_name().to_str() == Some(adapter.metadata().id));
+        if !is_agent_dir {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 #[cfg(all(test, debug_assertions))]

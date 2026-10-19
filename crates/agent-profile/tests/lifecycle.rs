@@ -288,6 +288,58 @@ fn delete_removes_a_half_materialized_profile() {
 }
 
 #[test]
+fn profiles_lists_materialized_agents_per_profile_sorted() {
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    created(&root, "aider", "work");
+    created(&root, "fake", "home");
+    std::fs::create_dir_all(root.path().join("profiles").join("half").join("aider")).unwrap(); // no file: not materialized
+    let out = root.agent_profile(["profiles"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "half  (none materialized)\nhome  fake\nwork  aider, fake\n");
+    assert_eq!(stderr(&out), "");
+    let out = root.agent_profile(["list"]).output().unwrap();
+    assert_eq!(stdout(&out), "half  (none materialized)\nhome  fake\nwork  aider, fake\n");
+}
+
+#[test]
+fn profiles_on_an_empty_or_missing_root_prints_no_profiles_and_creates_nothing() {
+    let root = Root::empty();
+    let out = root.agent_profile(["profiles"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(stdout(&out), "no profiles\n");
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn profiles_counts_unrecognized_entries_on_stderr_and_ignores_dot_names() {
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    std::fs::write(root.path().join("profiles").join("notes.txt"), "x").unwrap();
+    std::fs::create_dir_all(root.path().join("profiles").join("status")).unwrap(); // reserved word
+    std::fs::create_dir_all(root.path().join("profiles").join("work").join("zzz")).unwrap(); // unknown agent
+    std::fs::write(root.path().join("profiles").join(".DS_Store"), "x").unwrap();
+    let out = root.agent_profile(["profiles"]).output().unwrap();
+    assert_eq!(stdout(&out), "work  fake\n");
+    assert_eq!(stderr(&out), "agent-profile: ignored 3 unrecognized entries\n");
+}
+
+#[test]
+fn agent_list_prints_names_only_and_says_so_when_empty() {
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    created(&root, "fake", "home");
+    created(&root, "aider", "other");
+    let out = root.agent_profile(["fake", "list"]).output().unwrap();
+    assert_eq!(stdout(&out), "home\nwork\n");
+    assert_eq!(stderr(&out), "");
+    let out = root.agent_profile(["claude", "list"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(stderr(&out), "agent-profile: no profiles for claude\n");
+}
+
+#[test]
 fn create_refuses_a_case_twin_a_reserved_name_and_an_invalid_config() {
     let root = Root::empty();
     std::fs::create_dir_all(root.profile_dir("Work")).unwrap();

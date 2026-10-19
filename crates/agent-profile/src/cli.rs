@@ -704,7 +704,7 @@ fn run_command(
     yes: bool,
 ) -> Result<i32> {
     let name = command.as_str();
-    if matches!(command, CommandWord::List | CommandWord::Agents | CommandWord::Profiles) {
+    if command == CommandWord::Agents {
         return Err(Error::NotYetImplemented {
             command: match agent {
                 Some(agent) => format!("{agent} {name}"),
@@ -717,6 +717,9 @@ fn run_command(
     let config = Config::load(&root)?;
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
+    if matches!(command, CommandWord::List | CommandWord::Profiles) {
+        return run_profiles(&root, agent.as_ref());
+    }
     // The load above refuses an invalid configuration but creates nothing, so it runs before anything
     // is touched (V3 §17). Neither lifecycle command needs repository discovery, so both return before
     // the repository work below: `create` does not use the configuration at all, while `delete` reads it
@@ -815,6 +818,33 @@ fn run_command(
         | CommandWord::Profiles => unreachable!("lifecycle commands returned above"),
     };
     write_lines(&lines)?;
+    Ok(0)
+}
+
+/// `profiles` and bare `list` and `<agent> list` (SP5a design §3): the read-only listings. Nothing is
+/// created — `run_command` has already loaded the configuration (V3 §17) but no root, no `config.toml`
+/// and no lock is written here — and every outcome exits 0: an empty listing is the answer, not an
+/// error, and unrecognized on-disk entries are a stderr note rather than a failure.
+fn run_profiles(root: &AppRoot, agent: Option<&AgentId>) -> Result<i32> {
+    let adapters = adapter::registry();
+    let listing = lifecycle::list_profiles(root, &adapters)?;
+    let lines = match agent {
+        Some(agent) => output::list_lines(&listing, agent.as_str()),
+        None => output::profiles_lines(&listing),
+    };
+    write_lines(&lines)?;
+    if listing.ignored > 0 {
+        let _ = writeln!(
+            io::stderr(),
+            "agent-profile: ignored {} unrecognized entries",
+            listing.ignored
+        );
+    }
+    if let Some(agent) = agent
+        && lines.is_empty()
+    {
+        let _ = writeln!(io::stderr(), "agent-profile: no profiles for {agent}");
+    }
     Ok(0)
 }
 

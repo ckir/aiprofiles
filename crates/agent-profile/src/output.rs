@@ -10,7 +10,7 @@ use crate::adapter::{
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
 use crate::exe::Origin;
-use crate::lifecycle::{CreateOutcome, DeleteOutcome};
+use crate::lifecycle::{CreateOutcome, DeleteOutcome, Listing};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
 use crate::resolve::Resolution;
@@ -323,6 +323,39 @@ pub fn delete_line(outcome: &DeleteOutcome, agent: &str, profile: &ProfileName) 
 /// The stdout line for a deleting command whose profile is not there.
 pub fn missing_profile_line(agent: &str, profile: &ProfileName) -> String {
     format!("profile '{profile}' for {agent} does not exist; nothing to delete")
+}
+
+/// `profiles` (SP5a design §3): one line per row, the profile name padded to the longest name so the
+/// agent columns align; an empty listing is the single line `no profiles`. A profile with no agent
+/// materialized is shown as `(none materialized)` rather than an empty column.
+pub fn profiles_lines(listing: &Listing) -> Vec<String> {
+    if listing.rows.is_empty() {
+        return vec!["no profiles".to_owned()];
+    }
+    let width = listing.rows.iter().map(|(name, _)| name.as_str().len()).max().unwrap_or(0);
+    listing
+        .rows
+        .iter()
+        .map(|(name, agents)| {
+            let agents = if agents.is_empty() {
+                "(none materialized)".to_owned()
+            } else {
+                agents.join(", ")
+            };
+            format!("{:<width$}  {}", name.as_str(), agents)
+        })
+        .collect()
+}
+
+/// `list` (SP5a design §3): only the names of the rows whose agents contain `agent`, one per line. The
+/// result may be empty; the CLI layer decides what that means for stderr.
+pub fn list_lines(listing: &Listing, agent: &str) -> Vec<String> {
+    listing
+        .rows
+        .iter()
+        .filter(|(_, agents)| agents.iter().any(|id| id == agent))
+        .map(|(name, _)| name.as_str().to_owned())
+        .collect()
 }
 
 fn is_sensitive(key: &OsStr, declared: &[std::ffi::OsString]) -> bool {
