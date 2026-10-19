@@ -10,6 +10,7 @@ use crate::adapter::{
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
 use crate::exe::Origin;
+use crate::lifecycle::CreateOutcome;
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
 use crate::resolve::Resolution;
@@ -289,6 +290,22 @@ pub fn unlink_lines(
         )));
     }
     lines
+}
+
+/// `create` (SP5a design §3).
+pub fn create_line(
+    outcome: &CreateOutcome,
+    agent: &str,
+    profile: &ProfileName,
+    path: &Path,
+) -> String {
+    let path = path.display();
+    match outcome {
+        CreateOutcome::Created => format!("created profile '{profile}' for {agent}: {path}"),
+        CreateOutcome::AlreadyExists => {
+            format!("profile '{profile}' for {agent} already exists: {path}")
+        }
+    }
 }
 
 fn is_sensitive(key: &OsStr, declared: &[std::ffi::OsString]) -> bool {
@@ -928,6 +945,20 @@ mod tests {
                 spaced.display(),
                 spaced.display()
             )
+        );
+    }
+
+    #[test]
+    fn create_line_covers_both_outcomes() {
+        let work = ProfileName::parse("work", Platform::host()).unwrap();
+        let dir = Path::new("/root/profiles/work/fake");
+        assert_eq!(
+            create_line(&CreateOutcome::Created, "fake", &work, dir),
+            format!("created profile 'work' for fake: {}", dir.display())
+        );
+        assert_eq!(
+            create_line(&CreateOutcome::AlreadyExists, "fake", &work, dir),
+            format!("profile 'work' for fake already exists: {}", dir.display())
         );
     }
 

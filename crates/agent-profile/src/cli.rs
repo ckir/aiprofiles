@@ -11,6 +11,7 @@ use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
 use crate::error::{Error, Result};
 use crate::launch::{self, LaunchOutcome};
+use crate::lifecycle;
 use crate::name::{AgentId, Platform, ProfileName, RESERVED_WORDS, is_reserved_word};
 use crate::output::{self, ReportMode};
 use crate::repo::{self, Discovery};
@@ -708,11 +709,7 @@ fn run_command(
     let name = command.as_str();
     if matches!(
         command,
-        CommandWord::Create
-            | CommandWord::Delete
-            | CommandWord::List
-            | CommandWord::Agents
-            | CommandWord::Profiles
+        CommandWord::Delete | CommandWord::List | CommandWord::Agents | CommandWord::Profiles
     ) {
         return Err(Error::NotYetImplemented {
             command: match agent {
@@ -726,6 +723,16 @@ fn run_command(
     let config = Config::load(&root)?;
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
+    // The load above refuses an invalid configuration but creates nothing. The configuration is not
+    // used further, and no repository discovery is needed, so `create` runs before the repository work
+    // below (V3 §17).
+    if command == CommandWord::Create {
+        return run_create(
+            &root,
+            agent.as_ref().expect("`create` has an agent"),
+            profile.as_ref().expect("`create` has a profile"),
+        );
+    }
     let cwd = base_dir(repo.as_deref())?;
     if command == CommandWord::Unlink {
         return run_unlink(&root, &config, agent.as_ref(), &cwd, repo.as_deref());
@@ -804,6 +811,16 @@ fn run_command(
         | CommandWord::Profiles => unreachable!("lifecycle commands returned above"),
     };
     write_lines(&lines)?;
+    Ok(0)
+}
+
+/// `<agent> create <profile>` (SP5a design §3): materializes the adapter's paths exactly once. Both
+/// outcomes exit 0; the configuration was already refused if invalid by `run_command`'s load, and is
+/// otherwise unused.
+fn run_create(root: &AppRoot, agent: &AgentId, profile: &ProfileName) -> Result<i32> {
+    let adapter = adapter::lookup(agent.as_str()).expect("known agents have an adapter");
+    let (outcome, path) = lifecycle::create(root, adapter, profile)?;
+    write_lines(&[output::create_line(&outcome, agent.as_str(), profile, &path)])?;
     Ok(0)
 }
 
