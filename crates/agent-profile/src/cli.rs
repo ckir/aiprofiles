@@ -9,7 +9,8 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
-use crate::error::{Error, Result};
+use crate::error::{Error, NotInstalledReason, Result};
+use crate::exe;
 use crate::launch::{self, LaunchOutcome};
 use crate::lifecycle;
 use crate::name::{AgentId, Platform, ProfileName, RESERVED_WORDS, is_reserved_word};
@@ -703,18 +704,12 @@ fn run_command(
     repo: Option<OsString>,
     yes: bool,
 ) -> Result<i32> {
-    let name = command.as_str();
-    if command == CommandWord::Agents {
-        return Err(Error::NotYetImplemented {
-            command: match agent {
-                Some(agent) => format!("{agent} {name}"),
-                None => name.to_owned(),
-            },
-        });
-    }
     let profile = profile.map(parse_profile).transpose()?;
     let root = AppRoot::resolve()?;
     let config = Config::load(&root)?;
+    if command == CommandWord::Agents {
+        return run_agents(&root, &config);
+    }
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
     if matches!(command, CommandWord::List | CommandWord::Profiles) {
@@ -845,6 +840,41 @@ fn run_profiles(root: &AppRoot, agent: Option<&AgentId>) -> Result<i32> {
     {
         let _ = writeln!(io::stderr(), "agent-profile: no profiles for {agent}");
     }
+    Ok(0)
+}
+
+/// `agents` (SP5a design §3): every registry entry with its executable evidence. Read-only — the load in
+/// `run_command` refuses an invalid configuration but nothing is created here (V3 §17) — and it always
+/// exits 0: a missing or unusable executable is listed as a fact, not an error, while any discovery error
+/// that is not one of those facts propagates.
+fn run_agents(root: &AppRoot, config: &Config) -> Result<i32> {
+    let path_var = std::env::var_os("PATH");
+    let mut entries = Vec::new();
+    for adapter in adapter::registry() {
+        let metadata = adapter.metadata();
+        let status = match exe::discover(
+            metadata.id,
+            metadata.executable,
+            config.agent_executable(metadata.id),
+            path_var.as_deref(),
+            &root.config_path(),
+        ) {
+            Ok(found) => output::ExecutableStatus::Found(found),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::NotOnPath { .. }, ..
+            }) => output::ExecutableStatus::NotOnPath,
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::ExplicitMissing(path),
+                ..
+            }) => output::ExecutableStatus::ConfiguredMissing(path),
+            Err(Error::UnsupportedExecutable { path, .. }) => {
+                output::ExecutableStatus::Unsupported(path)
+            }
+            Err(error) => return Err(error),
+        };
+        entries.push((metadata, status));
+    }
+    write_lines(&output::agents_lines(&entries))?;
     Ok(0)
 }
 

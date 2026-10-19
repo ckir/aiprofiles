@@ -9,7 +9,7 @@ use crate::adapter::{
     AdapterMetadata, Capability, CapabilityState, PathKind, PlannedLaunch, SupportLevel,
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
-use crate::exe::Origin;
+use crate::exe::{Found, Origin};
 use crate::lifecycle::{CreateOutcome, DeleteOutcome, Listing};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
@@ -96,11 +96,14 @@ pub fn report_lines(
     let continuation = |value: String| format!("{:LABEL_WIDTH$}{value}", "");
     lines.push(line("agent", resolution.agent.to_string()));
     lines.push(line("profile", format!("{} ({})", planned.profile, resolution.source.label())));
-    let origin = match planned.executable_origin {
-        Origin::Configured => "configured",
-        Origin::Path => "PATH",
-    };
-    lines.push(line("executable", format!("{} ({origin})", planned.plan.executable.display())));
+    lines.push(line(
+        "executable",
+        format!(
+            "{} ({})",
+            planned.plan.executable.display(),
+            origin_word(planned.executable_origin)
+        ),
+    ));
     let repository = match &resolution.repository {
         Some(path) => path.display().to_string(),
         None => "none".to_owned(),
@@ -108,23 +111,7 @@ pub fn report_lines(
     lines.push(line("repository", repository));
     lines.push(line("mechanism", planned.mechanism.clone()));
     lines.push(line("support", support_label(metadata.support).to_owned()));
-    // Every capability in `Capability::ALL`, in that fixed order, each followed by its basis. The matrix is
-    // unconditional: SP4 design §6.1 rests on a support level never being shown without it.
-    for (index, capability) in Capability::ALL.into_iter().enumerate() {
-        let claim = metadata.capabilities.iter().find(|claim| claim.capability == capability);
-        let label = capability_label(capability);
-        let value = match claim {
-            Some(claim) => format!("{label}: {}", state_label(claim.state)),
-            // Not every caller is a registry adapter: `metadata_invariants` requires one claim per
-            // capability, but `report_lines` is reachable from a fixture that declares none. "not declared"
-            // is visibly different from "unknown", and neither panics.
-            None => format!("{label}: not declared"),
-        };
-        lines.push(if index == 0 { line("isolation", value) } else { continuation(value) });
-        if let Some(claim) = claim {
-            lines.push(continuation(format!("  {}", claim.basis)));
-        }
-    }
+    lines.extend(capability_lines(metadata));
     if planned.plan.env.is_empty() {
         lines.push(line("environment", "none".to_owned()));
     }
@@ -158,6 +145,40 @@ pub fn report_lines(
     lines.push(line("arguments", format!("[{}]", args.join(", "))));
     for note in &planned.notes {
         lines.push(line("note", note.clone()));
+    }
+    lines
+}
+
+/// Where a launch's executable came from, spelled as the report does.
+fn origin_word(origin: Origin) -> &'static str {
+    match origin {
+        Origin::Configured => "configured",
+        Origin::Path => "PATH",
+    }
+}
+
+/// The capability-matrix block of the report: every capability in `Capability::ALL`, in that fixed order,
+/// each followed by its basis. The matrix is unconditional: SP4 design §6.1 rests on a support level never
+/// being shown without it, so every block that shows a support level (`report_lines`, `agents_lines`)
+/// renders this whole, without a leading or a trailing line of its own.
+pub fn capability_lines(metadata: &AdapterMetadata) -> Vec<String> {
+    let line = |label: &str, value: String| format!("{:<LABEL_WIDTH$}{value}", format!("{label}:"));
+    let continuation = |value: String| format!("{:LABEL_WIDTH$}{value}", "");
+    let mut lines = Vec::new();
+    for (index, capability) in Capability::ALL.into_iter().enumerate() {
+        let claim = metadata.capabilities.iter().find(|claim| claim.capability == capability);
+        let label = capability_label(capability);
+        let value = match claim {
+            Some(claim) => format!("{label}: {}", state_label(claim.state)),
+            // Not every caller is a registry adapter: `metadata_invariants` requires one claim per
+            // capability, but `report_lines` is reachable from a fixture that declares none. "not declared"
+            // is visibly different from "unknown", and neither panics.
+            None => format!("{label}: not declared"),
+        };
+        lines.push(if index == 0 { line("isolation", value) } else { continuation(value) });
+        if let Some(claim) = claim {
+            lines.push(continuation(format!("  {}", claim.basis)));
+        }
     }
     lines
 }
@@ -356,6 +377,61 @@ pub fn list_lines(listing: &Listing, agent: &str) -> Vec<String> {
         .filter(|(_, agents)| agents.iter().any(|id| id == agent))
         .map(|(name, _)| name.as_str().to_owned())
         .collect()
+}
+
+/// Where `agents` resolved an agent's executable to (SP5a design §3). Each variant is a listed fact,
+/// not an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutableStatus {
+    /// `exe::discover` resolved it: the path, and whether it came from the configuration or `PATH`.
+    Found(Found),
+    /// Nothing configured, and no absolute `PATH` entry holds it.
+    NotOnPath,
+    /// The configured path is not a file.
+    ConfiguredMissing(PathBuf),
+    /// The resolved file would launch through a shell (a `.cmd`/`.bat`/`.ps1` script or shim).
+    Unsupported(PathBuf),
+}
+
+/// `agents` (SP5a design §3): a padded block per entry — the agent, the executable status, the mechanism,
+/// the support level, then the evidence entry's measured upstream version with its verification date (a
+/// probe of whatever happens to be installed would say nothing about the matrix it pairs with), and the
+/// full capability matrix without which a support level is never shown (SP4 design §6.1). An empty line
+/// separates the entries; there is none after the last.
+pub fn agents_lines(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, (metadata, status)) in entries.iter().enumerate() {
+        if index > 0 {
+            lines.push(String::new());
+        }
+        lines.push(labeled("agent", metadata.id));
+        lines.push(labeled(
+            "executable",
+            match status {
+                ExecutableStatus::Found(found) => {
+                    format!("{} ({})", found.path.display(), origin_word(found.origin))
+                }
+                ExecutableStatus::NotOnPath => "not found on PATH".to_owned(),
+                ExecutableStatus::ConfiguredMissing(path) => {
+                    format!("{} (configured, missing)", path.display())
+                }
+                ExecutableStatus::Unsupported(path) => {
+                    format!("{} (unsupported: shell script or shim)", path.display())
+                }
+            },
+        ));
+        lines.push(labeled("mechanism", metadata.mechanism.to_string()));
+        lines.push(labeled("support", support_label(metadata.support)));
+        lines.push(labeled(
+            "version",
+            format!(
+                "{} (verified {})",
+                metadata.evidence.upstream_version, metadata.evidence.verified_at
+            ),
+        ));
+        lines.extend(capability_lines(metadata));
+    }
+    lines
 }
 
 fn is_sensitive(key: &OsStr, declared: &[std::ffi::OsString]) -> bool {
@@ -1278,5 +1354,21 @@ mod tests {
         let file_line =
             lines.iter().find(|line| line.contains("FILE_VAR=")).expect("FILE_VAR line");
         assert!(!file_line.contains("(would be created)"), "{file_line}");
+    }
+
+    #[test]
+    fn report_lines_embed_capability_lines_unchanged() {
+        let lines = report_lines(
+            &planned(home_env(), vec![], false),
+            &resolution(),
+            ReportMode::DryRun,
+            &TEST_METADATA,
+        );
+        let matrix = capability_lines(&TEST_METADATA);
+        let start = lines
+            .iter()
+            .position(|line| *line == matrix[0])
+            .expect("the matrix starts in the report");
+        assert_eq!(&lines[start..start + matrix.len()], matrix.as_slice(), "{lines:?}");
     }
 }

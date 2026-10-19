@@ -354,3 +354,39 @@ fn create_refuses_a_case_twin_a_reserved_name_and_an_invalid_config() {
     assert_eq!(out.status.code(), Some(4));
     assert!(!root.profile_dir("other").exists());
 }
+
+#[test]
+fn agents_lists_every_registered_agent_with_the_full_matrix() {
+    let root = Root::new(); // config points fake at the fixture
+    let out = root.agent_profile(["agents"]).env_remove("PATH").output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    let ids = agent_profile::adapter::known_agents();
+    for id in &ids {
+        assert!(text.contains(&format!("agent:{}{id}\n", " ".repeat(8))), "{id} missing");
+    }
+    assert_eq!(text.matches("support:").count(), ids.len());
+    assert_eq!(text.matches("version:").count(), ids.len());
+    assert_eq!(text.matches("config:").count(), ids.len());
+    assert_eq!(text.matches("credentials:").count(), ids.len());
+    assert_eq!(text.matches("state:").count(), ids.len());
+    assert!(text.contains(&format!(
+        "executable:{}{} (configured)",
+        " ".repeat(3),
+        env!("CARGO_BIN_EXE_fake-agent")
+    )));
+    assert_eq!(text.matches("not found on PATH").count(), ids.len() - 1);
+    assert_eq!(text.matches("\n\n").count(), ids.len() - 1);
+}
+
+#[test]
+fn agents_reports_a_configured_but_missing_executable() {
+    let root = Root::empty();
+    // Config::load requires an absolute path, and `/x` is not absolute on Windows.
+    let missing =
+        if cfg!(windows) { r"C:\nonexistent\fake-agent" } else { "/nonexistent/fake-agent" };
+    root.write_config(&format!("[agents.fake]\nexecutable = {missing:?}\n"));
+    let out = root.agent_profile(["agents"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(stdout(&out).contains(&format!("{missing} (configured, missing)")));
+}
