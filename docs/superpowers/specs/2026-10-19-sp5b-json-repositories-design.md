@@ -87,7 +87,9 @@ Anti-goals — a result that "works" but is a failure
     token set in this document is CLOSED for its `<major>` (a consumer may match exhaustively; agy-first
     round 1, Axiom Breaker: a strict deserializer breaks on an unknown token exactly as on a renamed
     member). V3 §32 "stable within a release series" is read as: `<major>` cannot change within a 0.x
-    minor series. A consumer checks the prefix it knows and ignores members it does not.
+    minor series. Consequence, stated so nobody is surprised: the token sets below are final for the
+    0.x series; a state that does not fit them waits for 1.0 or lives in a new schema (as `doctor`'s
+    will). A consumer checks the prefix it knows and ignores members it does not.
   - `tool_version`: the crate version (`CARGO_PKG_VERSION`, the string `--version` prints).
 - Member names are `snake_case`. Enumerations are lower-case `snake_case` tokens, never the text labels
   (`"repository_agent_mapping"`, not `"repository agent mapping"`), so the text can be reworded without a
@@ -112,9 +114,12 @@ Anti-goals — a result that "works" but is a failure
 - `<agent> resolve --json` with no profile keeps the text form's shape: the document (with `"profile": null`,
   `"source": "none"`) is written to stdout, then the `NoProfile` error to stderr, exit 4.
 - A stdout write failure is `Error::Io`, exit 1, as for text. The document is serialised to a `String`
-  first and written with one `write_out` call, never streamed to stdout: a consumer that closes the pipe
-  early (`| head`) then sees either the whole document or nothing, never a truncated one (agy-first round 1,
-  Cascade Analyst).
+  first and written with one `write_out` call, never streamed to stdout: a serialisation failure can then
+  never leave half a document on stdout, and a write failure (a closed pipe included) is one `Error::Io`.
+  What a consumer that closes the pipe early reads is its own doing, not the tool's (agy-first round 1,
+  Cascade Analyst; corrected in panel round 1, S2-1).
+- Consumers read stdout alone. stderr keeps its notes under `--json` (§3.2 first bullet), so a capture
+  that merges the two streams (`2>&1`) is not a JSON document; the README says so (panel round 1, Q3).
 
 ### 3.3 `agent-profile <agent> resolve --json`
 ```json
@@ -137,17 +142,29 @@ Anti-goals — a result that "works" but is a failure
 {
   "schema": "agent-profile/status/1",
   "tool_version": "0.0.5",
+  "agent": null,
   "repository": "/home/me/src/acme",
   "mapping": { "profile": "work", "agents": { "claude": "personal" } },
   "default_profile": "work",
   "agents": [
-    { "agent": "claude", "profile": "personal", "source": "repository_agent_mapping",
-      "presence": { "state": "materialized", "existing": null } },
+    { "agent": "claude", "profile": "personal", "source": "repository_agent_mapping", "presence": null },
     { "agent": "codex", "profile": "work", "source": "repository_mapping", "presence": null }
   ],
   "inapplicable_mappings": ["/home/me/src"]
 }
 ```
+The same root through `agent-profile claude status --json` (only the members that differ are shown):
+```json
+{
+  "agent": "claude",
+  "agents": [
+    { "agent": "claude", "profile": "personal", "source": "repository_agent_mapping",
+      "presence": { "state": "materialized", "existing": null } }
+  ]
+}
+```
+- `agent`: `null` for bare `status`, the id for `<agent> status`, so the two forms are told apart from the
+  document alone (solo panel round 1, Protocol Pedant; the same member `profiles` carries).
 - `repository`: `null` for `NotInRepository`. `mapping`: the entry whose key equals the root, or `null`;
   inside it `profile` may be `null` and `agents` is an object keyed by agent id (sorted, as `BTreeMap`
   iterates), `{}` when empty.
@@ -244,7 +261,10 @@ Anti-goals — a result that "works" but is a failure
   ]
 }
 ```
-Members follow §4. `state` is one of the six tokens of §4. `detail` is `null` for `active`, `missing`,
+Members follow §4. `repository` is the stored key string verbatim, as `Config::mappings()` yields it (its
+casing and separators are the user's; on Windows a `C:/src/acme` key stays with forward slashes), which
+is also what `Path::display` renders for it (panel round 1, S4-1). `state` is one of the six tokens of
+§4. `detail` is `null` for `active`, `missing`,
 `not_a_repository` and `foreign`; for `moved` it is the discovered root as a path string (what the text shows
 after `now`); for `unreadable` it is the reason string exactly as `Error::Repository.reason` or the metadata
 error carries it (what the text shows in parentheses). Two moved entries or two unreadable entries are
@@ -268,13 +288,25 @@ state:        active
 profile:      work
 agents:       claude=personal
 ```
-- `state:` is the classification of the stored key against the filesystem, decided per entry in this order;
+- `state:` is the classification of the stored key against the filesystem (every non-`foreign` key is
+  probed, exactly as `status --repo <key>` would probe it, so a key on an unreachable network share takes
+  as long to classify as it would to resolve; the probes run one after another with no timeout of their
+  own, so a tool that calls `repositories` on a configuration with several stale network keys should
+  run it under its own subprocess timeout, and the README says so; panel round 1, S6-1), decided per
+  entry in this order;
   the first rule that applies wins, and a failure inside one entry never stops the loop (a report that stops
   at the first broken entry hides the rest; where another command would exit 4, this one records the reason):
   1. `foreign` — the key is in the other platform's form (`is_absolute_key` accepts both; a Windows-form key
      on Unix, or on Windows a Unix-form key such as `/srv/acme`, which would otherwise be read relative to
      the current drive). Never discovered; never applies on this host; kept so a synced configuration keeps
      working (SP3 design §6.1). The filesystem is not consulted.
+  1a. `unreadable` with the reason `device path refused`, on Windows only, when the key's first path
+     component is a prefix other than a drive (`Prefix::Disk`, `VerbatimDisk`) or a share (`UNC`,
+     `VerbatimUNC`): a `\\.\pipe\…` or `\\.\COM1` device namespace passes `is_absolute_key` (it starts
+     with `\\`, `config.rs:236`) and a `fs::metadata` on it can block or reach a driver. The same
+     allow-list `repo::target_allowed` applies to `gitdir` targets (`repo.rs:61-98`); the report applies it
+     to the key itself before touching the filesystem (panel round 1, S5-1). Unix has no such prefix: a
+     `/dev/...` key is an ordinary entry and `stat` does not open it.
   2. `missing` — `fs::metadata(key)` (which follows symlinks) fails with `NotFound`: the directory is gone, or
      the key is a symlink whose target is gone (a dangling link has the same remedy, `unlink --repo <key>`;
      agy-first round 1, question 2).
@@ -291,9 +323,14 @@ agents:       claude=personal
      repository, or resolves through a symlink to a root with another spelling). The text adds
      `(now <root>)`. This mapping never applies: nothing discovers this key as a root.
 - `profile:` is the entry's `profile` or `none`; it gains the suffix ` (no profile directory)` when
-  `<root>/profiles/<name>` is not a directory. `agents:` lists `id=profile` pairs in key order or `none`;
-  a pair gains ` (no profile directory)` under the same rule and ` (unknown agent)` when this build's
-  registry does not know the id (SP3 known limit: such a mapping is removable only by editing `config.toml`).
+  `<app root>/profiles/<name>` (`AppRoot::profiles_dir()`, never the repository) is not a directory.
+  `agents:` lists `id=profile` pairs in key order or `none`; a pair gains ` (no profile directory)` under
+  the same rule and ` (unknown agent)` when this build's registry does not know the id (SP3 known limit:
+  such a mapping is removable only by editing `config.toml`).
+- An entry with neither a `profile` nor an `agents` field (valid under SP3 design §6.1, reachable by hand
+  editing) maps nothing; its block gains `note:         maps nothing; remove it with agent-profile unlink
+  --repo <key>` (the key shell-quoted as `unlink`'s notes do). The document needs no member for it: a
+  consumer reads `"profile": null` with `"agents": {}` (panel round 1, Q2).
 - No entries: the single line `no repository mappings`, exit 0.
 - Exit 0 for every content; the only failures are the usual ones before the report: usage (2), invalid
   configuration (4), root resolution (4), stdout write (1).
@@ -310,7 +347,10 @@ agents:       claude=personal
   word, `--repo`, and `--yes`.
 - `--json` becomes a recognised option for `status`, `resolve`, `agents`, `profiles`, `list`, `repositories`:
   exact spelling only (`--json=1` stays an unknown option, like `--yes=1`), at most once (a repeat is a usage
-  error `` `--json` may be given only once ``, as `--repo`), position-free among the options. For `create`,
+  error `` `--json` may be given only once ``, as `--repo`), position-free among the options AFTER the
+  command word (`agent-profile --json status` reaches clap and is refused as today, like `--repo` there;
+  solo panel round 1, Literal Implementer). `COMMANDS_HELP` (`cli.rs:33`) gains the `repositories` line
+  and `[--json]` on the six commands. For `create`,
   `delete` it stays `NotYetImplemented`; for a launch it stays `NotYetImplemented` (`cli.rs:442`); for `link`,
   `unlink`, `current` it stays an unknown option. The usage texts of the six commands gain `[--json]` and a
   `--json  Print a JSON document instead of the report` line.
@@ -342,7 +382,8 @@ option exit 2, per §5).
   reverse on Windows), `no profile directory` and `unknown agent` both in text and JSON, and the empty
   report.
 - Schema pinning: one test per schema asserts the exact member list of the top-level object and of each
-  nested object (a sorted key list compared to a literal), so an accidental rename or omission is red, and
+  nested object (a sorted key list compared to a literal written by hand in the test, never derived from
+  the view type or from the document under test; solo panel round 1, Mechanism Gamer), so an accidental rename or omission is red, and
   that `schema` and `tool_version` are the first two members. Each such test runs on a fixture in which
   EVERY nullable member is null (`status` outside a repository with no default, `<agent> status` with
   nothing resolved, `resolve` with no profile, `profiles` on an empty root, `repositories` with an entry
@@ -397,6 +438,13 @@ within §5's shapes; how the component-equal compare for `active` is shared with
 10. `detail` carries the moved-to root or the unreadable reason, and is `null` otherwise (§3.7); `missing`
     is decided by `fs::metadata`, so a dangling symlink is `missing`, not `unreadable` (§4). Folded from
     agy-first round 1 (Literal Implementer, Blindspot Auditor, question 2).
+11. OPEN FOR THE OWNER: closed token sets (call 9) versus open ones. The agy-first peer asked for closed
+    sets (a strict consumer breaks on an unknown token); the panel peer, one round later, called the same
+    rule the contract's weakest point (no new state can be added before 1.0 without breaking V3 §32).
+    Both are right about their consumer. My recommendation stands with closed sets for 0.x: the five
+    token sets are small and derived from types this slice does not expect to grow, `doctor` gets its
+    own schema, and a consumer that wants to be forward-compatible can still write a fallback arm. The
+    alternative is to declare every token field open and require consumers to tolerate unknown tokens.
 
 ## Consults
 - agy-first round 1 (2026-10-19, `.clavity/seams/sp5b-design-forks.md`, reply
@@ -409,5 +457,27 @@ within §5's shapes; how the component-equal compare for `active` is shared with
   confirmed, F3 taxonomy confirmed as exhaustive for the remedies. Discarded by the peer, agreed: a
   `--compact` flag; naming the member `$schema`.
 
+- Panel round 1, solo (2026-10-19; persona relentless-adversarial-auditor; seats Axiom Breaker, Cascade
+  Analyst, Protocol Pedant, Literal Implementer, Blindspot Auditor, Mechanism Gamer, Activation Auditor;
+  dropped State Corruptor (nothing writes), Boundary Smuggler (the only input is the validated
+  `config.toml`), Resource Vampire (one probe per stored entry, bounded by the file), Dependency Cynic
+  (`serde` is already a pinned workspace dependency)). Folded: the 0.x consequence of closed token sets
+  (§3.1); the `agent` member in the `status` document (§3.4); `--json` only after the command word and the
+  `COMMANDS_HELP` lines (§5); the hand-written key-list literal (§7); the filesystem-probing note (§4).
+  PANEL VERDICT: five folds, no open finding.
+- Panel round 1, agy escalation (2026-10-19; brief `.clavity/seams/sp5b-panel.md`, reply
+  `.clavity/scratch/sp5b-panel/round1-reply.md`; seats as above plus Boundary Smuggler and Resource
+  Vampire): `NEGOTIATE` on two blocking findings, both verified and folded. S1-1 the bare `status` example
+  showed a populated `presence` against its own rule (verified against `cli.rs:777-780`, which sets no
+  presence for bare `status`): example corrected, a second example for `<agent> status` added (§3.4).
+  S5-1 a Windows device-namespace key (`\\.\pipe\…`) passes `is_absolute_key` and would reach
+  `fs::metadata` (verified: `config.rs:236` accepts any `\\` prefix; `repo::target_allowed`'s allow-list
+  at `repo.rs:61-98` covers only `gitdir` targets): rule 1a added (§4). Debt folded: `<app root>` wording
+  in §4 (S1-2); the `| head` rationale was wrong, `head` truncates on its own (S2-1); `repository` is the
+  stored key verbatim (S4-1); synchronous probes and the caller-side timeout advice (S6-1). Answers: Q2 the
+  empty mapping entry gets a `note:` (§4); Q3 stderr parity stands, consumers read stdout alone (§3.2).
+  Q1 reopens the closed-token-set rule: see §10 call 11. Discarded by the peer, agreed: alphabetical
+  `agents` order; renaming `exists`. PANEL VERDICT: two blocking folded, four debt folded; round 2 owed.
+
 ## Stand-downs
-None: every agy-first finding was folded.
+None: every agy-first and solo-panel finding was folded.
