@@ -10,7 +10,7 @@ use crate::adapter::{
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
 use crate::exe::Origin;
-use crate::lifecycle::CreateOutcome;
+use crate::lifecycle::{CreateOutcome, DeleteOutcome};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
 use crate::resolve::Resolution;
@@ -306,6 +306,23 @@ pub fn create_line(
             format!("profile '{profile}' for {agent} already exists: {path}")
         }
     }
+}
+
+/// `delete` (SP5a design §3): the stdout line of each outcome. A profile that vanished before the locked
+/// delete ran reports the same does-not-exist line as an advisory miss, because that is the state the
+/// user asked for.
+pub fn delete_line(outcome: &DeleteOutcome, agent: &str, profile: &ProfileName) -> String {
+    match outcome {
+        DeleteOutcome::Deleted { path, .. } => {
+            format!("deleted profile '{profile}' for {agent}: {}", path.display())
+        }
+        DeleteOutcome::Vanished { .. } => missing_profile_line(agent, profile),
+    }
+}
+
+/// The stdout line for a deleting command whose profile is not there.
+pub fn missing_profile_line(agent: &str, profile: &ProfileName) -> String {
+    format!("profile '{profile}' for {agent} does not exist; nothing to delete")
 }
 
 fn is_sensitive(key: &OsStr, declared: &[std::ffi::OsString]) -> bool {

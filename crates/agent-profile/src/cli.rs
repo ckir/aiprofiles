@@ -2,7 +2,7 @@
 //! repository commands (SP3 design §7).
 
 use std::ffi::{OsStr, OsString};
-use std::io::{self, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
@@ -703,14 +703,8 @@ fn run_command(
     repo: Option<OsString>,
     yes: bool,
 ) -> Result<i32> {
-    // `--yes` is bound to `delete` alone (validate_command); nothing reads it until the lifecycle commands
-    // of SP5a design §3 are implemented.
-    let _ = yes;
     let name = command.as_str();
-    if matches!(
-        command,
-        CommandWord::Delete | CommandWord::List | CommandWord::Agents | CommandWord::Profiles
-    ) {
+    if matches!(command, CommandWord::List | CommandWord::Agents | CommandWord::Profiles) {
         return Err(Error::NotYetImplemented {
             command: match agent {
                 Some(agent) => format!("{agent} {name}"),
@@ -723,14 +717,24 @@ fn run_command(
     let config = Config::load(&root)?;
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
-    // The load above refuses an invalid configuration but creates nothing. The configuration is not
-    // used further, and no repository discovery is needed, so `create` runs before the repository work
-    // below (V3 §17).
+    // The load above refuses an invalid configuration but creates nothing, so it runs before anything
+    // is touched (V3 §17). Neither lifecycle command needs repository discovery, so both return before
+    // the repository work below: `create` does not use the configuration at all, while `delete` reads it
+    // for its referenced-profile checks and `lifecycle::delete` re-reads it under the lock.
     if command == CommandWord::Create {
         return run_create(
             &root,
             agent.as_ref().expect("`create` has an agent"),
             profile.as_ref().expect("`create` has a profile"),
+        );
+    }
+    if command == CommandWord::Delete {
+        return run_delete(
+            &root,
+            &config,
+            agent.as_ref().expect("`delete` has an agent"),
+            profile.as_ref().expect("`delete` has a profile"),
+            yes,
         );
     }
     let cwd = base_dir(repo.as_deref())?;
@@ -822,6 +826,85 @@ fn run_create(root: &AppRoot, agent: &AgentId, profile: &ProfileName) -> Result<
     let (outcome, path) = lifecycle::create(root, adapter, profile)?;
     write_lines(&[output::create_line(&outcome, agent.as_str(), profile, &path)])?;
     Ok(0)
+}
+
+/// Asks the user a yes/no question: prints `question` to stderr without a newline, flushes, and reads one
+/// line. Only `y` or `yes`, trimmed and ignoring ASCII case, counts; EOF or anything else is no.
+fn confirm(question: &str, input: &mut dyn BufRead) -> Result<bool> {
+    let mut stderr = io::stderr();
+    stderr.write_all(question.as_bytes()).and_then(|()| stderr.flush()).map_err(|source| {
+        Error::Io { context: "could not write the confirmation prompt".to_owned(), source }
+    })?;
+    let mut line = String::new();
+    input.read_line(&mut line).map_err(|source| Error::Io {
+        context: "could not read the confirmation answer".to_owned(),
+        source,
+    })?;
+    let answer = line.trim();
+    Ok(answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
+}
+
+/// `<agent> delete <profile> [--yes]` (SP5a design §3). An advisory referenced-profile check first, then
+/// `--yes` or an interactive confirmation, then the locked `lifecycle::delete`. A missing profile exits 0
+/// rather than erroring, because that is the state the user asked for — the same line and code as a
+/// profile that vanishes between the check and the lock. The configuration was already refused if invalid
+/// by `run_command`'s load, and is read again under the lock inside `lifecycle::delete`.
+fn run_delete(
+    root: &AppRoot,
+    config: &Config,
+    agent: &AgentId,
+    profile: &ProfileName,
+    yes: bool,
+) -> Result<i32> {
+    let references = lifecycle::blocking_references(config, agent, profile);
+    match lifecycle::delete_target(root, agent, profile)? {
+        None => {
+            write_lines(&[output::missing_profile_line(agent.as_str(), profile)])?;
+            // A profile whose directories are gone can still be blocked by a mapping, which the user
+            // cannot delete and must unlink first (SP5a design §3).
+            if !references.is_empty() {
+                let _ = writeln!(
+                    io::stderr(),
+                    "agent-profile: note: still referenced by {}; unlink it before deleting",
+                    references.join(", ")
+                );
+            }
+            Ok(0)
+        }
+        Some(path) => {
+            // The advisory refusal: broader than the invariant needs, because removal is irreversible
+            // and a mapping blocks after the deletion too. The same check runs again inside the lock,
+            // where it is authoritative.
+            if !references.is_empty() {
+                return Err(Error::ProfileReferenced {
+                    agent: agent.to_string(),
+                    profile: profile.to_string(),
+                    references,
+                });
+            }
+            if !yes {
+                if !io::stdin().is_terminal() {
+                    return Err(usage("--yes is required when input is not a terminal"));
+                }
+                if !confirm(
+                    &format!(
+                        "delete profile '{profile}' for {agent} at {}? [y/N] ",
+                        path.display()
+                    ),
+                    &mut io::stdin().lock(),
+                )? {
+                    let _ = writeln!(io::stderr(), "agent-profile: not deleted");
+                    return Ok(1);
+                }
+            }
+            let outcome = lifecycle::delete(root, agent, profile)?;
+            if let lifecycle::DeleteOutcome::Deleted { parent_note: Some(note), .. } = &outcome {
+                let _ = writeln!(io::stderr(), "agent-profile: note: {note}");
+            }
+            write_lines(&[output::delete_line(&outcome, agent.as_str(), profile)])?;
+            Ok(0)
+        }
+    }
 }
 
 /// `unlink` chooses its keys without discovery when `--repo` is given (SP3 design §6.2).
@@ -964,6 +1047,22 @@ mod tests {
         match result {
             Err(Error::Usage { message }) => message,
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn confirm_accepts_only_y_or_yes_and_eof_is_no() {
+        use std::io::Cursor;
+        for (input, expected) in [
+            ("y\n", true),
+            ("YES\n", true),
+            (" yes \n", true),
+            ("n\n", false),
+            ("yes please\n", false),
+            ("", false),
+            ("\n", false),
+        ] {
+            assert_eq!(confirm("q? ", &mut Cursor::new(input)).unwrap(), expected, "{input:?}");
         }
     }
 
