@@ -324,6 +324,32 @@ fn profiles_counts_unrecognized_entries_on_stderr_and_ignores_dot_names() {
     assert_eq!(stderr(&out), "agent-profile: ignored 3 unrecognized entries\n");
 }
 
+/// An OS-refused read of one profile directory is a general error (spec §33: exit 1), not a skipped
+/// entry, and the message names that directory rather than the profiles directory above it.
+#[cfg(unix)]
+#[test]
+fn profiles_names_the_profile_directory_the_os_refused_to_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    created(&root, "fake", "other");
+    let work = root.path().join("profiles").join("work");
+    let mode = |bits: u32| fs::set_permissions(&work, fs::Permissions::from_mode(bits)).unwrap();
+    mode(0o000);
+    if fs::read_dir(&work).is_ok() {
+        mode(0o755); // a privileged user is not refused: nothing to pin here
+        return;
+    }
+    let out = root.agent_profile(["profiles"]).output().unwrap();
+    mode(0o755);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    let message = stderr(&out);
+    assert!(message.contains("could not read the profile directory "), "{message}");
+    assert!(message.contains("profiles/work"), "{message}");
+    assert!(!message.contains("could not read the profiles directory"), "{message}");
+}
+
 #[test]
 fn agent_list_prints_names_only_and_says_so_when_empty() {
     let root = Root::empty();

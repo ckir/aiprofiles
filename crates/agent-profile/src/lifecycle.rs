@@ -272,7 +272,10 @@ pub fn list_profiles(root: &AppRoot, adapters: &[&dyn Adapter]) -> Result<Listin
             .map(|adapter| adapter.metadata().id.to_owned())
             .collect();
         let directory = root.profiles_dir().join(profile.as_str());
-        ignored += unrecognized_children(&directory, adapters, &io_context)?;
+        // An OS-refused read one level down names the profile directory that failed, not the profiles
+        // directory above it, so a user with many profiles knows which one to look at.
+        let child_context = format!("could not read the profile directory {}", directory.display());
+        ignored += unrecognized_children(&directory, adapters, &child_context)?;
         rows.push((profile, agents));
     }
     // `str`'s `Ord` is byte order, so rows sort by profile name bytes.
