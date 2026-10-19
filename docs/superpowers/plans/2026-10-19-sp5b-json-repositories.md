@@ -174,7 +174,7 @@ else (mutating `RepositoryAgent` would also redden the status fixture test; pane
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/agent-profile/Cargo.toml crates/agent-profile/src/lib.rs crates/agent-profile/src/json.rs crates/agent-profile/src/lifecycle.rs crates/agent-profile/src/cli.rs
+git add crates/agent-profile/Cargo.toml crates/agent-profile/src/lib.rs crates/agent-profile/src/json.rs crates/agent-profile/src/lifecycle.rs crates/agent-profile/src/cli.rs crates/agent-profile/src/output.rs
 git commit -m "feat(json): resolve and status documents behind a serialisable view layer"
 ```
 
@@ -298,8 +298,10 @@ Expected: all pass
 
 - [ ] **Step 6: Mutant proofs**
 
-(a) Make `json::status` set `presence: None` always: `status_json_bare_and_per_agent_agree_with_the_text_report`
-red. (b) Make `render` return the document without the trailing newline:
+(a) Make the bare `status` arm of `run_command` compute a presence for every agent (as `<agent> status` does):
+`status_json_bare_and_per_agent_agree_with_the_text_report` red (it asserts `presence: null` for every bare
+row) and nothing else, since the case-twin test runs `<agent> status` only (panel round 2, S6-1). (b) Make
+`render` return the document without the trailing newline:
 `json_members_are_in_order_and_documents_end_with_one_newline` red. (c) Let `resolve` under `--json` return
 `Ok(0)` when no profile resolves: `resolve_json_matches_the_text_form_and_keeps_exit_4_without_a_profile` red.
 Restore after each.
@@ -464,7 +466,10 @@ Expected: pass
 
 (a) Add `#[serde(skip_serializing_if = "Option::is_none")]` to `StatusDocument.mapping`:
 `every_schema_pins_its_member_lists_on_a_null_bearing_fixture` red. (b) Rename `ignored_entries` to
-`ignored` in `ProfilesDocument`: the same test red. Restore.
+`ignored` in `ProfilesDocument`: the same test red. (c) Add a temporary member `api_token: &'static str`
+holding `"TOKEN=x"` to `StatusDocument`: `documents_carry_no_environment_or_secret_shaped_member` red; an
+implementer who widened that test's exemption list to make it pass would fail this proof (panel round 2,
+Q2). Restore.
 
 - [ ] **Step 4: Commit**
 
@@ -485,7 +490,7 @@ git commit -m "test(json): pin every schema's member list on null-bearing fixtur
   (`reserved_name` without `Repositories`), `:99-143` (`CommandWord::Repositories`, `parse`, `as_str`), `:146`
   (usage text: `Usage: agent-profile repositories` / `Show every stored repository mapping and whether it still
   applies.`), `validate_command` (`:461`: `Repositories` joins `Agents | Profiles` in the no-agent check and
-  the no-`--repo` list; takes no bare word; `--json` on it stays `NotYetImplemented` until Task 6),
+  the `--repo` refusal list; takes no bare word; `--json` on it stays `NotYetImplemented` until Task 6),
   `run_command` (`:700`: `if command == CommandWord::Repositories { return run_repositories(&root, &config); }`
   right after the `Agents` return), new `fn run_repositories(root: &AppRoot, config: &Config) -> Result<i32>`;
   `tests/resolution.rs:529` (`command_help_and_the_top_level_help`, if it pins `COMMANDS_HELP`); `cli.rs:1401`
@@ -750,6 +755,17 @@ a `moved` key; all three are stated in the spec's §4.
   checks) is the right one for this slice; a golden file is brittle, a schema file needs a validator, a
   round-trip struct misses order and the newline. Discarded by the peer, agreed: mandating sorted map keys;
   renaming the view structs. PANEL VERDICT: one blocking folded, two debt folded; round 2 owed.
+- Round 2, agy escalation (2026-10-19; brief `.clavity/seams/sp5b-plan-panel-r2.md`, reply
+  `.clavity/scratch/sp5b-plan-panel/round2-reply.md`; seats Axiom Breaker, Cascade Analyst, Dependency Cynic
+  (new), Blindspot Auditor (new), Literal Implementer, Mechanism Gamer; four of six "no new findings"):
+  `NEGOTIATE` on one blocking finding, verified and folded. S2-1 Task 1's commit line omitted `output.rs`,
+  the file whose `is_proper_ancestor` the task makes `pub(crate)`, so the committed tree would not compile
+  (verified against the Files list and the commit line): the file is in the `git add` now. Debt folded: Task
+  2's mutant (a) would have reddened the case-twin test too; it now mutates the bare `status` arm only
+  (S6-1). Q2: the secrets walk gained a mutant proof (Task 4, c) so widening its exemption list cannot pass
+  unnoticed. Q3 the six-task grain confirmed. Discarded by the peer, agreed: a hyphenation slip (fixed
+  anyway); runner parameter order. PANEL VERDICT: one blocking folded, one debt folded, one guard added;
+  round 3 owed.
 
 ## Stand-downs
 None.
