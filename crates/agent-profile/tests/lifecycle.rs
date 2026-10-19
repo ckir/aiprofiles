@@ -128,6 +128,8 @@ fn delete_keeps_sibling_agents_and_the_parent() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(!root.profile_dir("work").exists());
     assert!(root.path().join("profiles").join("work").join("aider").is_dir());
+    // The non-empty parent is never swept, so no "could not remove" note reaches stderr.
+    assert_eq!(stderr(&out), "");
 }
 
 #[test]
@@ -278,6 +280,85 @@ fn a_profile_that_vanishes_before_the_locked_delete_is_not_an_error() {
     assert!(matches!(outcome, lifecycle::DeleteOutcome::Vanished { .. }), "{outcome:?}");
 }
 
+/// `delete` runs under `config.toml.lock` (owner ruling: across the reference check AND the removal).
+/// With the lock held by another handle it gives up with the lock message after the bounded wait and
+/// removes nothing; a `delete` that skipped the lock would simply remove the profile here.
+#[test]
+fn delete_gives_up_while_another_handle_holds_the_config_lock() {
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    use agent_profile::config::AppRoot;
+    use agent_profile::error::Error;
+    use agent_profile::lifecycle;
+    use agent_profile::name::{AgentId, Platform, ProfileName};
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    let holder = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.path().join("config.toml.lock"))
+        .unwrap();
+    holder.lock().unwrap();
+    let app = AppRoot::from_path(root.path().to_path_buf());
+
+    // A watchdog, so a regression that waits forever fails instead of hanging the suite.
+    let (done_tx, done_rx) = mpsc::channel();
+    let started = Instant::now();
+    std::thread::spawn(move || {
+        let agent = AgentId::parse("fake").unwrap();
+        let profile = ProfileName::parse("work", Platform::host()).unwrap();
+        let _ = done_tx.send(lifecycle::delete(&app, &agent, &profile));
+    });
+    let result =
+        done_rx.recv_timeout(Duration::from_secs(30)).expect("delete did not give up within 30 s");
+    let elapsed = started.elapsed();
+
+    match result {
+        Err(Error::ConfigWrite { source, .. }) => assert!(
+            source
+                .to_string()
+                .contains("another agent-profile process holds the configuration lock"),
+            "{source}"
+        ),
+        other => panic!("{other:?}"),
+    }
+    assert!(elapsed >= Duration::from_secs(9), "gave up after {elapsed:?}, before the 10 s bound");
+    assert!(root.profile_dir("work").is_dir());
+    drop(holder);
+}
+
+/// An OS-refused removal is reported as the failure it is (spec §16.2; SP5a design §3.2 step 8): exit 4,
+/// the tree still on disk, and a message that sends the user back to retry, never a `deleted` line.
+#[cfg(unix)]
+#[test]
+fn delete_reports_an_os_refused_removal_and_never_claims_success() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    let target = root.profile_dir("work");
+    fs::write(target.join("settings.json"), "{}").unwrap();
+    let mode = |bits: u32| fs::set_permissions(&target, fs::Permissions::from_mode(bits)).unwrap();
+    mode(0o555); // the entries inside can no longer be unlinked
+    if fs::write(target.join("probe"), "").is_ok() {
+        mode(0o755); // a privileged user is not refused: nothing to pin here
+        return;
+    }
+    let out = root.agent_profile(["fake", "delete", "work", "--yes"]).output().unwrap();
+    mode(0o755);
+    assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert!(target.join("settings.json").is_file());
+    let message = stderr(&out);
+    assert!(
+        message.contains("the profile may be partially removed, retry the deletion"),
+        "{message}"
+    );
+    assert!(!message.contains("deleted profile"), "{message}");
+}
+
 #[test]
 fn delete_removes_a_half_materialized_profile() {
     let root = Root::empty();
@@ -391,6 +472,7 @@ fn agents_lists_every_registered_agent_with_the_full_matrix() {
     for id in &ids {
         assert!(text.contains(&format!("agent:{}{id}\n", " ".repeat(8))), "{id} missing");
     }
+    assert_eq!(text.matches("mechanism:").count(), ids.len());
     assert_eq!(text.matches("support:").count(), ids.len());
     assert_eq!(text.matches("version:").count(), ids.len());
     assert_eq!(text.matches("config:").count(), ids.len());
@@ -415,4 +497,21 @@ fn agents_reports_a_configured_but_missing_executable() {
     let out = root.agent_profile(["agents"]).output().unwrap();
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(stdout(&out).contains(&format!("{missing} (configured, missing)")));
+}
+
+/// The fourth executable state of SP5a design §3.4: a configured shell script or shim is listed as a
+/// fact, so `agents` stays a discovery command (exit 0) whatever the configuration points at.
+#[test]
+fn agents_reports_a_configured_shell_script_as_unsupported() {
+    let root = Root::empty();
+    let shim = root.path().join("fake.cmd");
+    fs::write(&shim, "@echo off\n").unwrap();
+    root.write_config(&format!("[agents.fake]\nexecutable = {:?}\n", shim.to_str().unwrap()));
+    let out = root.agent_profile(["agents"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains(&format!("{} (unsupported: shell script or shim)", shim.display())),
+        "{text}"
+    );
 }
