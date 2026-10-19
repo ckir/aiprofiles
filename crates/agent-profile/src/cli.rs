@@ -39,7 +39,7 @@ Repository commands:
   agent-profile [<agent>] status [--repo <path>] [--json]
   agent-profile [<agent>] link <profile> [--repo <path>]
   agent-profile [<agent>] unlink [--repo <path>]
-  agent-profile repositories
+  agent-profile repositories [--json]
 
 Profile commands:
   agent-profile <agent> create <profile>
@@ -201,8 +201,9 @@ impl CommandWord {
                  --json  Print a JSON document instead of the report\n"
             }
             CommandWord::Repositories => {
-                "Usage: agent-profile repositories\n\
-                 Show every stored repository mapping and whether it still applies.\n"
+                "Usage: agent-profile repositories [--json]\n\
+                 Show every stored repository mapping and whether it still applies.\n\n  \
+                 --json  Print a JSON document instead of the report\n"
             }
         }
     }
@@ -515,10 +516,7 @@ fn validate_command(
         return Err(usage("`--repo` needs a non-empty path"));
     }
     let json_count = options(tokens).filter(|option| **option == "--json").count();
-    // `repositories --json` joins them until its document is built.
-    if matches!(command, CommandWord::Create | CommandWord::Delete | CommandWord::Repositories)
-        && json_count > 0
-    {
+    if matches!(command, CommandWord::Create | CommandWord::Delete) && json_count > 0 {
         return Err(Error::NotYetImplemented { command: "--json".to_owned() });
     }
     let json_accepted = matches!(
@@ -528,6 +526,7 @@ fn validate_command(
             | CommandWord::List
             | CommandWord::Agents
             | CommandWord::Profiles
+            | CommandWord::Repositories
     );
     if json_accepted && json_count > 1 {
         return Err(usage("`--json` may be given only once"));
@@ -737,7 +736,7 @@ fn run_command(
         return run_agents(&root, &config, json);
     }
     if command == CommandWord::Repositories {
-        return run_repositories(&root, &config);
+        return run_repositories(&root, &config, json);
     }
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
@@ -900,9 +899,13 @@ fn run_profiles(root: &AppRoot, agent: Option<&AgentId>, json: bool) -> Result<i
 
 /// `repositories` (SP5b design §4): every stored mapping with its classification. Read-only, takes no lock,
 /// and always exits 0: an entry that cannot be examined is reported, not raised.
-fn run_repositories(root: &AppRoot, config: &Config) -> Result<i32> {
+fn run_repositories(root: &AppRoot, config: &Config, json: bool) -> Result<i32> {
     let entries = repositories::report(root, config);
-    write_lines(&output::repositories_lines(&entries))?;
+    if json {
+        write_out(&json::render(&json::repositories(&entries)))?;
+    } else {
+        write_lines(&output::repositories_lines(&entries))?;
+    }
     Ok(0)
 }
 
@@ -1463,7 +1466,7 @@ mod tests {
     }
 
     #[test]
-    fn repositories_is_a_top_level_command_without_agent_arguments_or_json() {
+    fn repositories_is_a_top_level_command_without_agent_arguments_and_takes_json() {
         assert!(matches!(
             top(&["repositories"]),
             Ok(Invocation::Command { command: CommandWord::Repositories, json: false, .. })
@@ -1472,7 +1475,10 @@ mod tests {
             usage_message(Err(split_err(&["fake", "repositories"]))),
             "`repositories` takes no agent: agent-profile repositories"
         );
-        assert!(matches!(top(&["repositories", "--json"]), Err(Error::NotYetImplemented { .. })));
+        assert!(matches!(
+            top(&["repositories", "--json"]),
+            Ok(Invocation::Command { command: CommandWord::Repositories, json: true, .. })
+        ));
     }
 
     #[test]

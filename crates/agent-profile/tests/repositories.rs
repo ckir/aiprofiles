@@ -1,5 +1,4 @@
-//! `repositories` end to end through the `agent-profile` binary, text form (SP5b design §4). The JSON tests join
-//! this file with the document.
+//! `repositories` end to end through the `agent-profile` binary, text and JSON forms (SP5b design §4).
 
 mod support;
 
@@ -8,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use agent_profile::repo;
+use serde_json::{Value, json};
 use support::Root;
 
 fn stdout(output: &Output) -> String {
@@ -190,11 +190,125 @@ fn repositories_refuses_an_agent_word_arguments_and_repo() {
         (&["repositories", "x"], "`repositories` takes no arguments"),
         (&["repositories", "--repo", "x"], "unknown option \"--repo\" for `repositories`"),
         (&["repositories", "--yes"], "unknown option \"--yes\" for `repositories`"),
-        (&["repositories", "--json"], "`--json` is not yet implemented"),
     ] {
         let output = run(&root, args);
         assert_eq!(output.status.code(), Some(2), "{args:?}: {}", stderr(&output));
         assert!(stderr(&output).contains(message), "{args:?}: {}", stderr(&output));
         assert_eq!(stdout(&output), "", "{args:?}");
     }
+}
+
+/// The sorted member names of an object.
+fn keys(value: &Value) -> Vec<String> {
+    let mut names: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    names.sort();
+    names
+}
+
+fn document(output: &Output) -> Value {
+    let text = stdout(output);
+    serde_json::from_str(&text).unwrap_or_else(|error| panic!("not JSON ({error}): {text:?}"))
+}
+
+#[cfg(unix)]
+#[test]
+fn repositories_json_carries_every_state_with_detail_and_references() {
+    let root = Root::empty();
+    let (_dir, base) = scratch();
+    let acme = base.join("acme");
+    git_dir(&acme);
+    let sub = acme.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    let plain = base.join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    let gone = base.join("gone");
+    let file = base.join("file.txt");
+    fs::write(&file, "x").unwrap();
+    let empty = base.join("empty");
+    git_dir(&empty);
+    let foreign = r"C:\src\acme";
+    let p = |path: &Path| path.to_str().unwrap().to_owned();
+    let mut tables = String::new();
+    tables +=
+        &table(&p(&acme), "profile = \"work\"\nagents = { fake = \"mine\", nosuch = \"work\" }");
+    tables += &table(&p(&sub), "profile = \"work\"");
+    tables += &table(&p(&plain), "profile = \"work\"");
+    tables += &table(&p(&gone), "profile = \"work\"");
+    tables += &table(&p(&file), "profile = \"work\"");
+    tables += &table(&p(&empty), "");
+    tables += &table(foreign, "profile = \"work\"");
+    configure(&root, &tables);
+    let created = run(&root, &["fake", "create", "work"]);
+    assert_eq!(created.status.code(), Some(0), "{}", stderr(&created));
+
+    let output = run(&root, &["repositories", "--json"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stderr(&output), "");
+    let value = document(&output);
+    let entries = value["repositories"].as_array().unwrap();
+    let mut expected =
+        vec![p(&acme), p(&sub), p(&plain), p(&gone), p(&file), p(&empty), foreign.to_owned()];
+    expected.sort();
+    let listed: Vec<&str> = entries.iter().map(|e| e["repository"].as_str().unwrap()).collect();
+    assert_eq!(listed, expected);
+    let entry = |path: &str| {
+        entries.iter().find(|e| e["repository"] == path).unwrap_or_else(|| panic!("{path}"))
+    };
+    let work = json!({ "name": "work", "exists": true });
+
+    let acme_entry = entry(&p(&acme));
+    assert_eq!(acme_entry["state"], "active");
+    assert_eq!(acme_entry["detail"], Value::Null);
+    assert_eq!(acme_entry["profile"], work);
+    assert_eq!(
+        acme_entry["agents"],
+        json!({
+            "fake": { "profile": "mine", "exists": false, "known_agent": true },
+            "nosuch": { "profile": "work", "exists": true, "known_agent": false },
+        })
+    );
+    let sub_entry = entry(&p(&sub));
+    assert_eq!(sub_entry["state"], "moved");
+    assert_eq!(sub_entry["detail"], json!(p(&acme)));
+    assert_eq!(sub_entry["profile"], work);
+    assert_eq!(sub_entry["agents"], json!({}));
+    for (path, state) in
+        [(p(&plain), "not_a_repository"), (p(&gone), "missing"), (foreign.to_owned(), "foreign")]
+    {
+        assert_eq!(entry(&path)["state"], state);
+        assert_eq!(entry(&path)["detail"], Value::Null, "{path}");
+        assert_eq!(entry(&path)["profile"], work);
+    }
+    let file_entry = entry(&p(&file));
+    assert_eq!(file_entry["state"], "unreadable");
+    assert_eq!(file_entry["detail"], "not a directory");
+    let empty_entry = entry(&p(&empty));
+    assert_eq!(empty_entry["state"], "active");
+    assert_eq!(empty_entry["profile"], Value::Null);
+    assert_eq!(empty_entry["agents"], json!({}));
+
+    let blank = Root::empty();
+    let output = run(&blank, &["repositories", "--json"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stderr(&output), "");
+    assert_eq!(document(&output)["repositories"], json!([]));
+}
+
+#[test]
+fn repositories_json_members_are_pinned_on_a_null_bearing_entry() {
+    let root = Root::empty();
+    let (_dir, base) = scratch();
+    let gone = base.join("gone");
+    configure(&root, &table(gone.to_str().unwrap(), ""));
+    let output = run(&root, &["repositories", "--json"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let value = document(&output);
+    assert_eq!(keys(&value), ["repositories", "schema", "tool_version"]);
+    assert_eq!(value["schema"], "agent-profile/repositories/1");
+    let entry = &value["repositories"][0];
+    assert_eq!(keys(entry), ["agents", "detail", "profile", "repository", "state"]);
+    assert_eq!(entry["state"], "missing");
+    assert_eq!(entry.get("detail"), Some(&Value::Null));
+    assert_eq!(entry.get("profile"), Some(&Value::Null));
+    assert_eq!(entry["agents"], json!({}));
 }

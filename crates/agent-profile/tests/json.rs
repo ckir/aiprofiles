@@ -477,6 +477,31 @@ fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let value = document(&run(&work, work.path(), &["profiles", "--json"]));
     pin(&value["profiles"][0], &["agents", "name"], &[]);
+
+    // repositories: a missing-key entry with an empty table has a null `detail` and a null `profile`.
+    let table_root = Root::empty();
+    let gone = base.join("gone");
+    let present = base.join("present");
+    git_dir(&present);
+    configure(
+        &table_root,
+        None,
+        &(mapping(&gone, "") + &mapping(&present, "profile = \"p\"\nagents = { fake = \"q\" }")),
+    );
+    let out = run(&table_root, table_root.path(), &["repositories", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_leads_with_schema(&out, "repositories");
+    let value = document(&out);
+    pin(&value, &["repositories", "schema", "tool_version"], &[]);
+    let entries = value["repositories"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    let entry_keys = ["agents", "detail", "profile", "repository", "state"];
+    let missing = entries.iter().find(|e| e["state"] == "missing").unwrap();
+    pin(missing, &entry_keys, &["detail", "profile"]);
+    let active = entries.iter().find(|e| e["state"] == "active").unwrap();
+    pin(active, &entry_keys, &["detail"]);
+    pin(&active["profile"], &["exists", "name"], &[]);
+    pin(&active["agents"]["fake"], &["exists", "known_agent", "profile"], &[]);
 }
 
 /// Visits every object member of `value`: its name must not contain `=`, and a string value must not look like a
@@ -522,6 +547,7 @@ fn documents_carry_no_environment_or_secret_shaped_member() {
         (&["status", "--json"], acme.as_path()),
         (&["fake", "status", "--json"], acme.as_path()),
         (&["status", "--json"], base.as_path()),
+        (&["repositories", "--json"], base.as_path()),
     ] {
         let mut command = root.agent_profile(args);
         command

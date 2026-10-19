@@ -14,6 +14,7 @@ use crate::lifecycle::{Listing, Presence};
 use crate::name::AgentId;
 use crate::output::{ExecutableStatus, capability_label, is_proper_ancestor, support_label};
 use crate::repo::Discovery;
+use crate::repositories::Entry;
 use crate::resolve::{Resolution, ResolutionSource};
 
 /// The `tool_version` member of every document.
@@ -309,6 +310,73 @@ pub fn profiles(listing: &Listing, agent: Option<&AgentId>) -> ProfilesDocument 
             .map(|(name, ids)| ProfileView { name: name.to_string(), agents: ids.clone() })
             .collect(),
         ignored_entries: listing.ignored,
+    }
+}
+
+/// A profile a repository entry names, and whether its directory exists.
+#[derive(Debug, Serialize)]
+pub struct ProfileRefView {
+    name: String,
+    exists: bool,
+}
+
+/// An agent field of a repository entry.
+#[derive(Debug, Serialize)]
+pub struct AgentRefView {
+    profile: String,
+    exists: bool,
+    known_agent: bool,
+}
+
+/// One stored repository mapping with its classification.
+#[derive(Debug, Serialize)]
+pub struct RepositoryView {
+    repository: String,
+    state: &'static str,
+    detail: Option<String>,
+    profile: Option<ProfileRefView>,
+    agents: BTreeMap<String, AgentRefView>,
+}
+
+/// The `repositories` document.
+#[derive(Debug, Serialize)]
+pub struct RepositoriesDocument {
+    schema: &'static str,
+    tool_version: &'static str,
+    repositories: Vec<RepositoryView>,
+}
+
+/// Builds the `repositories` document; the entries arrive sorted and keep their order.
+pub fn repositories(entries: &[Entry]) -> RepositoriesDocument {
+    RepositoriesDocument {
+        schema: "agent-profile/repositories/1",
+        tool_version: TOOL_VERSION,
+        repositories: entries
+            .iter()
+            .map(|entry| RepositoryView {
+                repository: entry.key.clone(),
+                state: entry.state.token(),
+                detail: entry.detail.clone(),
+                profile: entry.profile.as_ref().map(|profile| ProfileRefView {
+                    name: profile.name.to_string(),
+                    exists: profile.exists,
+                }),
+                agents: entry
+                    .agents
+                    .iter()
+                    .map(|(id, agent)| {
+                        (
+                            id.as_str().to_owned(),
+                            AgentRefView {
+                                profile: agent.profile.to_string(),
+                                exists: agent.exists,
+                                known_agent: agent.known,
+                            },
+                        )
+                    })
+                    .collect(),
+            })
+            .collect(),
     }
 }
 
