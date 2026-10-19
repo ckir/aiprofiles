@@ -451,6 +451,26 @@ pub(crate) fn update_with(
     Ok(())
 }
 
+/// Reads the configuration under the same exclusive lock as `update` (spec §18, design §6.4). It does
+/// not create the root directory and does not sweep temp files: those are write-path side effects.
+pub fn locked<T>(root: &AppRoot, f: impl FnOnce(&Config) -> Result<T>) -> Result<T> {
+    let lock_path = root.lock_path();
+    let write_error =
+        |path: &Path, source: io::Error| Error::ConfigWrite { path: path.to_path_buf(), source };
+
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|source| write_error(&lock_path, source))?;
+    acquire(&lock, &lock_path)?;
+
+    let config = Config::load(root)?;
+    f(&config)
+}
+
 /// Maps `repository` (or only `agent` in it) to `profile` (SP3 design §6.2). The caller has discovered
 /// `repository`.
 pub fn link(

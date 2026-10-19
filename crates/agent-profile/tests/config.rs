@@ -238,3 +238,68 @@ fn windows_replace_blocked_by_an_open_handle_preserves_the_previous_file() {
         .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
+
+#[test]
+fn locked_reads_the_latest_configuration_and_releases_the_lock() {
+    let (_dir, root) = root();
+    std::fs::write(root.config_path(), "default_profile = \"work\"\n").unwrap();
+    let seen = config::locked(&root, |config| Ok(config.default_profile().map(|p| p.to_string())))
+        .unwrap();
+    assert_eq!(seen.as_deref(), Some("work"));
+    // Released: an update right after must not wait out the 10 s bound.
+    let started = Instant::now();
+    config::update(&root, |doc| {
+        set_agent(doc, "fake", &absolute("x"));
+        Ok(())
+    })
+    .unwrap();
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn locked_times_out_while_another_handle_holds_the_lock() {
+    let (_dir, root) = root();
+    let previous = format!("[agents.fake]\nexecutable = {:?}\n", absolute("old"));
+    std::fs::write(root.config_path(), &previous).unwrap();
+    let holder = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.path().join("config.toml.lock"))
+        .unwrap();
+    holder.lock().unwrap();
+
+    // A watchdog, so a regression that retries forever fails instead of hanging the suite.
+    let (done_tx, done_rx) = mpsc::channel();
+    let reader_root = root.clone();
+    let started = Instant::now();
+    thread::spawn(move || {
+        let result = config::locked(&reader_root, |_| Ok(()));
+        let _ = done_tx.send(result);
+    });
+    let result =
+        done_rx.recv_timeout(Duration::from_secs(30)).expect("locked did not give up within 30 s");
+    let elapsed = started.elapsed();
+
+    match result {
+        Err(Error::ConfigWrite { source, .. }) => assert!(
+            source
+                .to_string()
+                .contains("another agent-profile process holds the configuration lock"),
+            "{source}"
+        ),
+        other => panic!("{other:?}"),
+    }
+    assert!(elapsed >= Duration::from_secs(9), "gave up after {elapsed:?}, before the 10 s bound");
+    assert_eq!(std::fs::read_to_string(root.config_path()).unwrap(), previous);
+    drop(holder);
+}
+
+#[test]
+fn locked_never_creates_the_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = AppRoot::from_path(dir.path().join("absent"));
+    assert!(matches!(config::locked(&root, |_| Ok(())), Err(Error::ConfigWrite { .. })));
+    assert!(!dir.path().join("absent").exists());
+}
