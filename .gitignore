@@ -23,3 +23,6 @@ target
 # Local agent/tool state (machine-specific, not project config)
 .serena/
 .clavity/
+
+# Claude Code worktrees (EnterWorktree); each is a linked checkout of this repository
+.claude/worktrees/
