@@ -1,6 +1,7 @@
 # SP5b — `--json` output and the `repositories` report
 
-Status: DRAFT for owner approval. V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1
+Status: DRAFT for owner approval (agy-first ALIGNED; adversarial panel GREEN at round 3, see "Consults").
+V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1
 records every place this document goes past it. Second slice of SP5 as the owner split it on 2026-10-19:
 SP5a lifecycle (merged, `9039ee1`) → **SP5b `--json` + `repositories`** → SP5c `doctor` → SP5d completions,
 docs and CI-pinning debt. The ordering consult is `.clavity/seams/sp5-order.md` (agy-first, aligned).
@@ -176,6 +177,9 @@ The same root through `agent-profile claude status --json` (only the members tha
   string, so a future detail does not change the member's type.
 - `inapplicable_mappings`: the stored keys that are proper ancestors of the root, in stored-key order (the
   text's `note:` lines); `[]` outside a repository or when there are none.
+- For an integration that shows "which profile applies here, and does it exist": use `<agent> status
+  --json`, which exits 0 whether or not anything resolves and carries `presence`; `<agent> resolve --json`
+  exits 4 when nothing resolves and has no presence (panel round 3, S3-2; the README says so).
 
 ### 3.5 `agent-profile agents --json`
 ```json
@@ -340,8 +344,13 @@ agents:       claude=personal
 - Exit 0 for every content; the only failures are the usual ones before the report: usage (2), invalid
   configuration (4), root resolution (4), stdout write (1).
 - V3 §27 names the states `active/missing/orphaned`; this document splits `orphaned` into `moved`,
-  `not_a_repository`, `unreadable` and `foreign` because each has a different remedy (`unlink --repo <key>`
-  for the first two, fixing the checkout for the third, nothing for the fourth). Recorded in §10.
+  `not_a_repository`, `unreadable` and `foreign` because each has a different remedy (removing the
+  mapping for the first two, fixing the checkout for the third, nothing for the fourth). Recorded in §10.
+  Removing a mapping completely takes one `unlink` per stored field: `agent-profile unlink --repo <key>`
+  removes the entry's `profile` and `agent-profile <agent> unlink --repo <key>` one `agents.<id>` field;
+  `config::unlink` drops the table only once it is empty (`config.rs:556-558`), so an entry whose
+  `agents` object is not `{}` is still reported after the top-level `unlink` alone (panel round 3, S3-1).
+  The README's `repositories` paragraph says so.
 
 ## 5. Grammar changes
 
@@ -415,7 +424,9 @@ option exit 2, per §5).
 - Linux, macOS, Windows green; the `foreign` state test runs on every OS with the opposite key form.
 - No text report changes. No `config.toml` write anywhere in this slice. No lock taken by `repositories`.
 - The documents are built by dedicated view types (one `struct` per schema with `#[derive(Serialize)]`,
-  in a new module beside `output`), filled from the same inputs the text renderers take. Domain types do not
+  in a new module beside `output`), filled from the same inputs the text renderers take. Each schema of
+  §3.3-§3.7 maps one-to-one to a view struct whose field names are the JSON member names verbatim, with
+  no `skip_serializing_if` or `skip_serializing_none` anywhere (panel round 3, Q1). Domain types do not
   derive `Serialize`: the wire names are a contract and must not follow a field rename.
 
 ## 9. Left to the builder
@@ -497,6 +508,18 @@ within §5's shapes; how the component-equal compare for `active` is shared with
   apply (S6-1). Answers: Q2 no missing member for a clean-up script; Q3 structural comparison, with the
   member-order check on raw text (§7). Discarded by the peer, agreed: `agents: null` for an empty list;
   rewording `device path refused`. PANEL VERDICT: one blocking folded, two debt folded; round 3 owed.
+- Panel round 3, agy escalation (2026-10-19; brief `.clavity/seams/sp5b-panel-r3.md`, reply
+  `.clavity/scratch/sp5b-panel/round3-reply.md`; seats Axiom Breaker, Cascade Analyst, Integration
+  Author (bespoke, new), Protocol Pedant, Literal Implementer; four of five "no new findings"): GREEN,
+  two debt findings folded. S3-1 removing an entry that also holds `agents` fields takes one `unlink` per
+  field (verified: `config::unlink` removes one field and drops the table only when empty,
+  `config.rs:545-558`) (§4). S3-2 integrations wanting presence and exit 0 use `<agent> status --json`,
+  not `resolve --json` (§3.4). Q1 the view-struct rule made explicit (§8). Q2 the peer could not
+  construct a consumer that acts wrongly while honouring the document. Q3 `repositories` stays a separate
+  command: `status` is the hot path and must not probe every stored key. Discarded by the peer, agreed:
+  mandating sorted `agents` keys; renaming `inapplicable_mappings`.
+  PANEL VERDICT: GREEN; no live challenge.
 
 ## Stand-downs
-None: every agy-first and solo-panel finding was folded.
+None discarded below the floor by the driver and none accepted unverified: every agy-first, solo-panel and
+escalation finding was folded. Peer-discarded items are listed under each round above.
