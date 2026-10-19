@@ -1,6 +1,7 @@
 # SP5b — `--json` output and the `repositories` report
 
-Status: DRAFT for owner approval (agy-first ALIGNED; adversarial panel GREEN at round 3, see "Consults").
+Status: APPROVED by the owner on 2026-10-19 with closed token sets (§10 call 11 resolved: closed). agy-first
+ALIGNED; adversarial panel GREEN at round 3 (see "Consults").
 V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1
 records every place this document goes past it. Second slice of SP5 as the owner split it on 2026-10-19:
 SP5a lifecycle (merged, `9039ee1`) → **SP5b `--json` + `repositories`** → SP5c `doctor` → SP5d completions,
