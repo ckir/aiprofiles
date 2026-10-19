@@ -94,11 +94,9 @@ pub fn delete_target(
     check_case_twins(root, profile)?;
     let parent = root.profiles_dir().join(profile.as_str());
     let target = parent.join(agent.as_str());
-    // The parent is checked first: resolving the target through a symlinked parent would make the
-    // target's own lookup either miss (`NotFound` on a link pointing outside) or look ordinary.
-    if symlinked(&parent)? {
-        return Err(symlink_refusal(parent));
-    }
+    // Existence decides first (SP5a design §3.2): a missing entry branches straight to the idempotent
+    // no-directory outcome (`Ok(None)`) and the containment refusals below never run, so the no-entry
+    // result stays exit 0 by design even when a parent above the target is a symlink.
     let Ok(metadata) = fs::symlink_metadata(&target) else {
         return Ok(None); // not there, so nothing to delete
     };
@@ -107,7 +105,21 @@ pub fn delete_target(
     // `symlink_metadata` for exactly this reason, because `fs::metadata` follows links and would always
     // answer false. A Windows junction carries the reparse-point attribute, so `is_symlink` is true for
     // a junction too and this one test refuses both spellings.
-    check_shape(&target, &metadata)?;
+    if metadata.is_symlink() {
+        return Err(symlink_refusal(target));
+    }
+    // The parent one level above the target is refused after the target's own entry: `symlink_metadata`
+    // lstats the final component only, so a symlinked parent never changes the final component's
+    // identity and the no-entry branch above stays reachable.
+    if symlinked(&parent)? {
+        return Err(symlink_refusal(parent));
+    }
+    if !metadata.is_dir() {
+        return Err(Error::ProfileDir {
+            path: target,
+            source: io::Error::other("is not a directory"),
+        });
+    }
     let resolved_profiles = fs::canonicalize(root.profiles_dir())
         .map_err(|source| Error::ProfileDir { path: root.profiles_dir(), source })?;
     let resolved = fs::canonicalize(&target)
@@ -137,20 +149,6 @@ fn symlink_refusal(path: PathBuf) -> Error {
         path,
         source: io::Error::other("is a symbolic link or junction; refusing to delete through it"),
     }
-}
-
-/// The remaining shape checks once a symlink has been ruled out.
-fn check_shape(path: &Path, metadata: &fs::Metadata) -> Result<()> {
-    if metadata.is_symlink() {
-        return Err(symlink_refusal(path.to_path_buf()));
-    }
-    if !metadata.is_dir() {
-        return Err(Error::ProfileDir {
-            path: path.to_path_buf(),
-            source: io::Error::other("is not a directory"),
-        });
-    }
-    Ok(())
 }
 
 /// What `delete` did (SP5a design §3).
