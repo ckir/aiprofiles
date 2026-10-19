@@ -362,6 +362,16 @@ fn pin(value: &Value, expected: &[&str], nullable: &[&str]) {
     }
 }
 
+/// The raw stdout opens with `schema` then `tool_version` and ends with exactly one newline after the closing brace.
+fn assert_leads_with_schema(out: &Output, command: &str) {
+    let text = stdout(out);
+    let prefix =
+        format!("{{\n  \"schema\": \"agent-profile/{command}/1\",\n  \"tool_version\": \"");
+    assert!(text.starts_with(&prefix), "{command}: {text}");
+    assert!(text.ends_with("}\n"), "{command}: {text:?}");
+    assert!(!text.ends_with("}\n\n"), "{command}: {text:?}");
+}
+
 #[test]
 fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
     // resolve with no profile, inside a repository: `profile` null; outside one: `repository` null too.
@@ -372,6 +382,7 @@ fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
     let resolve = ["agent", "profile", "repository", "schema", "source", "tool_version"];
     let out = run(&root, &acme, &["fake", "resolve", "--json"]);
     assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    assert_leads_with_schema(&out, "resolve");
     pin(&document(&out), &resolve, &["profile"]);
     let out = run(&root, &base, &["fake", "resolve", "--json"]);
     assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
@@ -425,6 +436,7 @@ fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
     command.env_remove("PATH");
     let out = command.output().unwrap();
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_leads_with_schema(&out, "agents");
     let value = document(&out);
     pin(&value, &["agents", "schema", "tool_version"], &[]);
     let list = value["agents"].as_array().unwrap();
@@ -456,6 +468,7 @@ fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
     let empty = Root::empty();
     let out = run(&empty, empty.path(), &["profiles", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_leads_with_schema(&out, "profiles");
     let value = document(&out);
     pin(&value, &["agent", "ignored_entries", "profiles", "schema", "tool_version"], &["agent"]);
     assert_eq!(value["profiles"], json!([]));
