@@ -68,6 +68,7 @@ sets). V3 `agent-profile-implementation-spec-v3.md` §27, §32, §33, §36 win o
 - Modify: `crates/agent-profile/src/lifecycle.rs` (append `Presence` and `presence`)
 - Modify: `crates/agent-profile/src/cli.rs:996-1009` (`presence` moves to `lifecycle`; `cli` keeps a one-line
   wrapper returning `presence.label()` for `status_lines`)
+- Modify: `crates/agent-profile/src/output.rs:259` (`is_proper_ancestor` becomes `pub(crate)`)
 - Test: unit tests inside `src/json.rs` and `src/lifecycle.rs`
 
 **Interfaces:**
@@ -166,8 +167,9 @@ Expected: all pass (295 existing plus the new unit tests)
 
 - [ ] **Step 5: Mutant proof**
 
-Temporarily change `source_token` to return `"repository mapping"` (the text label) for `RepositoryAgent`:
-`source_tokens_are_snake_case_and_closed` is red and nothing else. Restore.
+Temporarily change `source_token` to return `"global default"` (the text label) for `GlobalDefault`, a variant
+no status fixture in this task resolves through: `source_tokens_are_snake_case_and_closed` is red and nothing
+else (mutating `RepositoryAgent` would also redden the status fixture test; panel round 1, S4-1). Restore.
 
 - [ ] **Step 6: Commit**
 
@@ -471,15 +473,26 @@ git add crates/agent-profile/tests/json.rs
 git commit -m "test(json): pin every schema's member list on null-bearing fixtures"
 ```
 
-### Task 5: `repositories` classification and text report
+### Task 5: `repositories` classification, text report and the command
 
 **Files:**
 - Create: `crates/agent-profile/src/repositories.rs`
 - Modify: `crates/agent-profile/src/lib.rs` (`pub mod repositories;` after `repo`), `src/output.rs` (header
   comment lines 1-3: JSON is SP5b now; append `repositories_lines`), `src/config.rs:236`
   (`is_absolute_key` stays private; add `pub fn is_host_form_key(root: &str) -> bool` beside it)
-- Test: unit tests in `src/repositories.rs`; `crates/agent-profile/tests/repositories.rs` (text form; JSON in
-  Task 6)
+- Modify: `crates/agent-profile/src/cli.rs:33-46` (`COMMANDS_HELP`: add `  agent-profile repositories` under
+  `Repository commands`), `:68-76` (remove `Repositories(Rest)` from `enum Command`), `:87-94`
+  (`reserved_name` without `Repositories`), `:99-143` (`CommandWord::Repositories`, `parse`, `as_str`), `:146`
+  (usage text: `Usage: agent-profile repositories` / `Show every stored repository mapping and whether it still
+  applies.`), `validate_command` (`:461`: `Repositories` joins `Agents | Profiles` in the no-agent check and
+  the no-`--repo` list; takes no bare word; `--json` on it stays `NotYetImplemented` until Task 6),
+  `run_command` (`:700`: `if command == CommandWord::Repositories { return run_repositories(&root, &config); }`
+  right after the `Agents` return), new `fn run_repositories(root: &AppRoot, config: &Config) -> Result<i32>`;
+  `tests/resolution.rs:529` (`command_help_and_the_top_level_help`, if it pins `COMMANDS_HELP`); `cli.rs:1401`
+  (the stub test keeps `doctor`)
+- Test: unit tests in `src/repositories.rs`; `crates/agent-profile/tests/repositories.rs` (text form; the JSON
+  tests join it in Task 6). The command is wired IN THIS TASK so the file is green at this task's commit
+  (panel round 1, S2-1: a committed red test file fails `just check`).
 
 **Interfaces:**
 - Consumes: `config::Config::mappings` (`config.rs:160`), `config::Mapping` (`:95`), `repo::discover`
@@ -578,61 +591,64 @@ fn repositories_refuses_an_agent_word_arguments_and_repo() {
     // ["repositories","x"] -> 2 "`repositories` takes no arguments"
     // ["repositories","--repo","x"] -> 2 "unknown option \"--repo\" for `repositories`"
     // ["repositories","--yes"] -> 2 "unknown option \"--yes\" for `repositories`"
-    // (this test is red until Task 6 wires the grammar; write it here, it is the oracle for Task 6)
+    // ["repositories","--json"] -> 2 "`--json` is not yet implemented"   (until Task 6)
 }
 ```
+In `cli.rs` unit tests: `top(&["repositories"])` is `Ok(Invocation::Command { command: CommandWord::Repositories,
+json: false, .. })`; `split_err(&["fake", "repositories"])` is the usage error above; `top(&["repositories",
+"--json"])` is `Err(Error::NotYetImplemented { .. })` for now.
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `cargo nextest run -p agent-profile --lib repositories --test repositories`
-Expected: compile failure (module missing); end-to-end rows exit 2 (`not yet implemented`)
+Run: `cargo nextest run -p agent-profile --lib repositories --lib cli --test repositories`
+Expected: compile failure (module missing; `CommandWord::Repositories` missing); end-to-end rows exit 2
+(`not yet implemented`)
 
-- [ ] **Step 4: Implement `repositories.rs`, `is_host_form_key`, `repositories_lines`**
+- [ ] **Step 4: Implement `repositories.rs`, `is_host_form_key`, `repositories_lines`, then the grammar and
+  `run_repositories`**
 
 `classify` uses `std::path::Component::Prefix` and `Prefix::kind()` under `#[cfg(windows)]` for rule 1a; the
 `Active` compare is `root == Path::new(key)` (component equality, the test `Config::mapping` uses at
-`config.rs:155`).
+`config.rs:155`). `run_repositories`: `let entries = repositories::report(root, config);
+write_lines(&output::repositories_lines(&entries))?; Ok(0)`. `repositories` leaves the clap `enum Command`
+exactly as `status` and the lifecycle words did (SP3 design §7.2, SP5a design §5).
 
-- [ ] **Step 5: Run the unit tests**
+- [ ] **Step 5: Run the whole crate**
 
-Run: `cargo nextest run -p agent-profile --lib repositories`
-Expected: pass (the end-to-end file still fails until Task 6)
+Run: `cargo nextest run -p agent-profile`
+Expected: all pass, `tests/repositories.rs` included
 
 - [ ] **Step 6: Mutant proofs**
 
 (a) Swap the `Missing` and `NotARepository` arms:
 `classify_orders_foreign_missing_unreadable_not_a_repository_active_and_moved` red. (b) Compute `exists`
 against the repository root instead of `profiles_dir`:
-`report_marks_missing_profile_directories_unknown_agents_and_keeps_stored_order` red.
+`report_marks_missing_profile_directories_unknown_agents_and_keeps_stored_order` red. (c) Drop the
+`Repositories` arm from the no-agent check: `repositories_refuses_an_agent_word_arguments_and_repo` red.
+(d) Let `report` stop at the first `Unreadable` entry:
+`repositories_continues_past_an_unreadable_entry_sorted_first` red.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/agent-profile/src/repositories.rs crates/agent-profile/src/lib.rs crates/agent-profile/src/output.rs crates/agent-profile/src/config.rs crates/agent-profile/tests/repositories.rs
-git commit -m "feat(repositories): classify every stored mapping and render the report"
+git add crates/agent-profile/src/repositories.rs crates/agent-profile/src/lib.rs crates/agent-profile/src/output.rs crates/agent-profile/src/config.rs crates/agent-profile/src/cli.rs crates/agent-profile/tests/repositories.rs crates/agent-profile/tests/resolution.rs
+git commit -m "feat(repositories): classify every stored mapping and report it"
 ```
 
-### Task 6: the `repositories` command, its document, and the docs
+### Task 6: the `repositories` document, `--json` on it, and the docs
 
 **Files:**
-- Modify: `crates/agent-profile/src/cli.rs:33-46` (`COMMANDS_HELP`: add `  agent-profile repositories
-  [--json]` under `Repository commands`), `:68-76` (remove `Repositories(Rest)` from `enum Command`), `:87-94`
-  (`reserved_name` without `Repositories`), `:99-143` (`CommandWord::Repositories`, `parse`, `as_str`), `:146`
-  (usage text: `Usage: agent-profile repositories [--json]` / `Show every stored repository mapping and whether
-  it still applies.` plus the `--json` option line), `validate_command` (`:461`: `Repositories` joins
-  `Agents | Profiles` in the no-agent check, the no-`--repo` list and the `--json` list; takes no bare word),
-  `run_command` (`:700`: `if command == CommandWord::Repositories { return run_repositories(&root, &config,
-  json); }` right after the `Agents` return), new `fn run_repositories(root: &AppRoot, config: &Config, json:
-  bool) -> Result<i32>`.
+- Modify: `crates/agent-profile/src/cli.rs` (`COMMANDS_HELP` and the `repositories` usage text gain
+  `[--json]` and the `--json` option line; `validate_command`: `Repositories` joins the `--json` list of Task 2;
+  `run_command` passes `json` to `run_repositories(root, config, json: bool)`, which renders the document
+  when set).
 - Modify: `crates/agent-profile/src/json.rs` (repositories family), `tests/repositories.rs` (JSON tests),
-  `tests/json.rs` (pinning rows), `tests/resolution.rs:529` (`command_help_and_the_top_level_help` if it pins
-  `COMMANDS_HELP`), `cli.rs:1401` (the stub test keeps `doctor`; add that `repositories` no longer parses as a
-  clap stub), `README.md:40-52` (usage block), `README.md:65-70` (a paragraph on `repositories` and the JSON
-  contract), `ROADMAP.md:14` (SP5 row: SP5b done).
+  `tests/json.rs` (pinning rows and the secrets walk), `README.md:40-52` (usage block), `README.md:65-70` (a
+  paragraph on `repositories` and the JSON contract), `ROADMAP.md:14` (SP5 row: SP5b done).
 
 **Interfaces:**
-- Consumes: `repositories::{report, Entry, State}` (Task 5), `output::repositories_lines` (Task 5),
-  `json::render`.
+- Consumes: `repositories::{report, Entry, State}` and `run_repositories` (Task 5), `json::render`, the
+  `--json` grammar of Task 2.
 - Produces: `pub struct ProfileRefView { name: String, exists: bool }`, `AgentRefView { profile: String,
   exists: bool, known_agent: bool }`, `RepositoryView { repository: String, state: &'static str, detail:
   Option<String>, profile: Option<ProfileRefView>, agents: BTreeMap<String, AgentRefView> }`,
@@ -655,19 +671,18 @@ fn repositories_json_members_are_pinned_on_a_null_bearing_entry() {
     // the missing-key entry has detail == Null and profile == Null when its table is empty
 }
 ```
-In `cli.rs` unit tests: `top(&["repositories"])` is `Ok(Invocation::Command { command: Repositories, json:
-false, .. })`; `top(&["repositories", "--json"])` sets `json: true`; `split_err(&["fake", "repositories"])` is
-the usage error above.
+In `cli.rs` unit tests: `top(&["repositories", "--json"])` now sets `json: true` (replace Task 5's
+`NotYetImplemented` expectation), and the Task 5 end-to-end row `["repositories","--json"] -> 2` is removed.
 
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `cargo nextest run -p agent-profile --lib cli --test repositories`
-Expected: FAIL (`CommandWord::Repositories` does not exist; end to end exit 2)
+Expected: FAIL (`json::repositories` does not exist; `repositories --json` still exits 2)
 
-- [ ] **Step 3: Implement the grammar, `run_repositories`, the JSON family, then update the docs**
+- [ ] **Step 3: Implement the JSON family, add `Repositories` to the `--json` list, then update the docs**
 
-`run_repositories`: `let entries = repositories::report(root, config);` then `write_out(&json::render(
-&json::repositories(&entries)))` or `write_lines(&output::repositories_lines(&entries))`; `Ok(0)`.
+`run_repositories(root, config, json)`: `let entries = repositories::report(root, config);` then
+`write_out(&json::render(&json::repositories(&entries)))` when `json`, else the Task 5 lines; `Ok(0)`.
 README usage block: add `agent-profile repositories [--json]` and `[--json]` to the six commands; one paragraph
 after line 70: what `repositories` reports (the six states), that removing an entry takes one `unlink` per stored
 field, that `--json` documents carry `schema` and `tool_version`, that consumers read stdout only and must run
@@ -682,14 +697,15 @@ Expected: exit 0; nextest reports every test passing (295 + the new ones; no ski
 - [ ] **Step 5: Mutant proofs**
 
 (a) Make `json::repositories` emit `detail` as the state token for `Moved`:
-`repositories_json_carries_every_state_with_detail_and_references` red. (b) Drop the `Repositories` arm from
-the no-agent check: `repositories_refuses_an_agent_word_arguments_and_repo` red.
+`repositories_json_carries_every_state_with_detail_and_references` red. (b) Add
+`#[serde(skip_serializing_if = "Option::is_none")]` to `RepositoryView.detail`:
+`repositories_json_members_are_pinned_on_a_null_bearing_entry` red.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/agent-profile/src/cli.rs crates/agent-profile/src/json.rs crates/agent-profile/tests/repositories.rs crates/agent-profile/tests/json.rs crates/agent-profile/tests/resolution.rs README.md ROADMAP.md
-git commit -m "feat(cli): repositories report in text and JSON; document the JSON contract"
+git add crates/agent-profile/src/cli.rs crates/agent-profile/src/json.rs crates/agent-profile/tests/repositories.rs crates/agent-profile/tests/json.rs README.md ROADMAP.md
+git commit -m "feat(cli): repositories --json; document the JSON contract"
 ```
 
 ---
@@ -697,8 +713,9 @@ git commit -m "feat(cli): repositories report in text and JSON; document the JSO
 ## Self-review (done 2026-10-19 before handoff)
 
 1. Spec coverage: §3.1-§3.2 Task 1 (`render`, order, newline) and Task 2 (stdout-only, exit parity); §3.3-§3.4
-   Tasks 1-2; §3.5-§3.6 Task 3; §3.7 and §4 Tasks 5-6; §5 grammar Tasks 2 and 6; §6 nothing to build; §7
-   oracles Tasks 2-6 plus Task 4; §8 constraints in Global Constraints; README/ROADMAP Task 6.
+   Tasks 1-2; §3.5-§3.6 Task 3; §3.7 and §4 Tasks 5-6; §6 nothing to build; §7
+   oracles Tasks 2-6 plus Task 4; §5 grammar Tasks 2, 5 and 6; §8 constraints in Global Constraints;
+   README/ROADMAP Task 6.
 2. Step scan: every code step names its signature and file; bodies appear only for `classify`'s rule order
    (spec §4) and the text block (spec §4), which the tests do not fully determine.
 3. Type consistency: `Presence` (Task 1) is what Task 2's rows carry; `Entry`/`State` (Task 5) are what Task 6's
@@ -720,6 +737,19 @@ a `moved` key; all three are stated in the spec's §4.
   declares no capability and the builder's `expect` would fire (Literal Implementer); `State` derives
   `PartialEq`/`Debug` for the unit tests' `assert_eq!` (Literal Implementer). PANEL VERDICT: two folds, no
   open finding.
+- Round 1, agy escalation (2026-10-19; brief `.clavity/seams/sp5b-plan-panel.md`, reply
+  `.clavity/scratch/sp5b-plan-panel/round1-reply.md`; seats Axiom Breaker, Cascade Analyst, Literal
+  Implementer, Mechanism Gamer, Protocol Pedant, Activation Auditor; three of six "no new findings"):
+  `NEGOTIATE` on one blocking finding, verified and folded. S2-1 Task 5 committed a red end-to-end test file
+  (verified: `just check` runs `cargo nextest run --workspace`, `justfile:13`, so the Task 5 commit would fail
+  the gate): the `repositories` command's grammar and text wiring moved from Task 6 into Task 5, Task 6 keeps
+  the document, `--json` on it, and the docs (the peer's option 2; its question 2 asked for exactly this
+  boundary). Debt folded: `output.rs:259` added to Task 1's files (S3-1); the Task 1 mutant now flips
+  `GlobalDefault`, which no fixture in that task resolves through, so exactly one test turns red (S4-1).
+  Answers: Q3 the plan's oracle (hand-written key lists on null-bearing fixtures plus raw prefix and suffix
+  checks) is the right one for this slice; a golden file is brittle, a schema file needs a validator, a
+  round-trip struct misses order and the newline. Discarded by the peer, agreed: mandating sorted map keys;
+  renaming the view structs. PANEL VERDICT: one blocking folded, two debt folded; round 2 owed.
 
 ## Stand-downs
 None.
