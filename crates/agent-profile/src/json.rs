@@ -1,4 +1,4 @@
-//! The serialisable view layer behind `--json` (SP5b design §3.1 to §3.4).
+//! The serialisable view layer behind `--json` (SP5b design §3.1 to §3.7).
 //!
 //! Every document is a struct whose field order is its JSON member order; an absent value is `null`,
 //! never a missing member, so a consumer sees the same members on every run.
@@ -7,12 +7,12 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::adapter::{AdapterMetadata, Capability, CapabilityState};
+use crate::adapter::{AdapterMetadata, Capability, CapabilityState, SupportLevel};
 use crate::config::Config;
 use crate::exe::Origin;
 use crate::lifecycle::{Listing, Presence};
 use crate::name::AgentId;
-use crate::output::{ExecutableStatus, capability_label, is_proper_ancestor, support_label};
+use crate::output::{ExecutableStatus, is_proper_ancestor};
 use crate::repo::Discovery;
 use crate::repositories::Entry;
 use crate::resolve::{Resolution, ResolutionSource};
@@ -158,6 +158,23 @@ pub fn state_token(state: CapabilityState) -> &'static str {
     }
 }
 
+/// The closed JSON token for a capability.
+pub fn capability_token(capability: Capability) -> &'static str {
+    match capability {
+        Capability::ConfigIsolation => "config",
+        Capability::CredentialIsolation => "credentials",
+        Capability::StateIsolation => "state",
+    }
+}
+
+/// The closed JSON token for a support level.
+pub fn support_token(support: SupportLevel) -> &'static str {
+    match support {
+        SupportLevel::Proven => "proven",
+        SupportLevel::Experimental => "experimental",
+    }
+}
+
 /// An agent's executable evidence.
 #[derive(Debug, Serialize)]
 pub struct ExecutableView {
@@ -246,7 +263,7 @@ pub fn agents(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> AgentsDocumen
                         .find(|claim| claim.capability == capability)
                         .expect("registry adapters declare every capability");
                     CapabilityView {
-                        capability: capability_label(capability),
+                        capability: capability_token(capability),
                         state: state_token(claim.state),
                         basis: claim.basis,
                     }
@@ -259,7 +276,7 @@ pub fn agents(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> AgentsDocumen
                     id: metadata.evidence.mechanism_id,
                     description: metadata.mechanism.to_string(),
                 },
-                support: support_label(metadata.support),
+                support: support_token(metadata.support),
                 evidence: EvidenceView {
                     upstream_version: metadata.evidence.upstream_version,
                     verified_at: metadata.evidence.verified_at,
@@ -436,6 +453,20 @@ mod tests {
     }
 
     #[test]
+    fn state_tokens_are_snake_case_and_closed() {
+        assert_eq!(state_token(CapabilityState::Supported), "supported");
+        assert_eq!(state_token(CapabilityState::NotSupported), "not_supported");
+        assert_eq!(state_token(CapabilityState::NotGuaranteed), "not_guaranteed");
+        assert_eq!(state_token(CapabilityState::Conditional), "conditional");
+        assert_eq!(state_token(CapabilityState::Unknown), "unknown");
+        assert_eq!(capability_token(Capability::ConfigIsolation), "config");
+        assert_eq!(capability_token(Capability::CredentialIsolation), "credentials");
+        assert_eq!(capability_token(Capability::StateIsolation), "state");
+        assert_eq!(support_token(SupportLevel::Proven), "proven");
+        assert_eq!(support_token(SupportLevel::Experimental), "experimental");
+    }
+
+    #[test]
     fn status_document_outside_a_repository_is_all_null_and_empty() {
         let rows = [(
             Resolution {
@@ -528,6 +559,13 @@ mod tests {
                     origin: Origin::Configured,
                 }),
             ),
+            (
+                metadata,
+                ExecutableStatus::Found(Found {
+                    path: PathBuf::from("/usr/bin/fake"),
+                    origin: Origin::Path,
+                }),
+            ),
             (metadata, ExecutableStatus::NotOnPath),
             (metadata, ExecutableStatus::ConfiguredMissing(PathBuf::from("/gone"))),
             (metadata, ExecutableStatus::Unsupported(PathBuf::from("/shim.cmd"))),
@@ -535,9 +573,10 @@ mod tests {
         let value = parsed(&agents(&entries));
         assert_eq!(value["schema"], "agent-profile/agents/1");
         let list = value["agents"].as_array().unwrap();
-        assert_eq!(list.len(), 4);
+        assert_eq!(list.len(), 5);
         let expected = [
             ("found", Some("/bin/fake"), Some("configured")),
+            ("found", Some("/usr/bin/fake"), Some("path")),
             ("not_on_path", None, None),
             ("configured_missing", Some("/gone"), None),
             ("unsupported", Some("/shim.cmd"), None),
@@ -551,7 +590,7 @@ mod tests {
             let capabilities = element["capabilities"].as_array().unwrap();
             assert_eq!(capabilities.len(), 3);
             for (entry, capability) in capabilities.iter().zip(Capability::ALL) {
-                assert_eq!(entry["capability"], crate::output::capability_label(capability));
+                assert_eq!(entry["capability"], capability_token(capability));
             }
             let order: Vec<&str> =
                 capabilities.iter().map(|c| c["capability"].as_str().unwrap()).collect();

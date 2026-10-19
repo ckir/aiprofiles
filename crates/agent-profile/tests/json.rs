@@ -521,6 +521,10 @@ fn walk_for_secrets(value: &Value, member: &str, found: &mut usize) {
         }
         Value::String(text) => {
             *found += 1;
+            // Paths and reasons may legitimately hold `=`; no other member may hold an `=`-joined pair.
+            if !["basis", "notes", "description", "detail", "repository"].contains(&member) {
+                assert!(!text.contains('='), "member {member:?} value {text:?} contains '='");
+            }
             if !["basis", "notes", "description"].contains(&member) {
                 for word in ["TOKEN", "SECRET", "PASSWORD"] {
                     assert!(

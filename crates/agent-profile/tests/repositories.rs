@@ -51,7 +51,6 @@ fn run(root: &Root, args: &[&str]) -> Output {
     root.agent_profile(args).output().unwrap()
 }
 
-#[cfg(unix)]
 #[test]
 fn repositories_prints_one_block_per_mapping_with_states_and_annotations() {
     let root = Root::empty();
@@ -67,7 +66,7 @@ fn repositories_prints_one_block_per_mapping_with_states_and_annotations() {
     fs::write(&file, "x").unwrap();
     let empty = base.join("empty");
     git_dir(&empty);
-    let foreign = r"C:\src\acme";
+    let foreign = if cfg!(windows) { "/srv/acme" } else { r"C:\src\acme" };
     let p = |path: &Path| path.to_str().unwrap().to_owned();
     let mut tables = String::new();
     tables +=
@@ -210,7 +209,6 @@ fn document(output: &Output) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|error| panic!("not JSON ({error}): {text:?}"))
 }
 
-#[cfg(unix)]
 #[test]
 fn repositories_json_carries_every_state_with_detail_and_references() {
     let root = Root::empty();
@@ -226,7 +224,11 @@ fn repositories_json_carries_every_state_with_detail_and_references() {
     fs::write(&file, "x").unwrap();
     let empty = base.join("empty");
     git_dir(&empty);
-    let foreign = r"C:\src\acme";
+    let badgit = base.join("badgit");
+    fs::create_dir_all(&badgit).unwrap();
+    let missing_gitdir = if cfg!(windows) { r"C:\nonexistent\x" } else { "/nonexistent/x" };
+    fs::write(badgit.join(".git"), format!("gitdir: {missing_gitdir}\n")).unwrap();
+    let foreign = if cfg!(windows) { "/srv/acme" } else { r"C:\src\acme" };
     let p = |path: &Path| path.to_str().unwrap().to_owned();
     let mut tables = String::new();
     tables +=
@@ -236,6 +238,7 @@ fn repositories_json_carries_every_state_with_detail_and_references() {
     tables += &table(&p(&gone), "profile = \"work\"");
     tables += &table(&p(&file), "profile = \"work\"");
     tables += &table(&p(&empty), "");
+    tables += &table(&p(&badgit), "profile = \"work\"");
     tables += &table(foreign, "profile = \"work\"");
     configure(&root, &tables);
     let created = run(&root, &["fake", "create", "work"]);
@@ -246,8 +249,16 @@ fn repositories_json_carries_every_state_with_detail_and_references() {
     assert_eq!(stderr(&output), "");
     let value = document(&output);
     let entries = value["repositories"].as_array().unwrap();
-    let mut expected =
-        vec![p(&acme), p(&sub), p(&plain), p(&gone), p(&file), p(&empty), foreign.to_owned()];
+    let mut expected = vec![
+        p(&acme),
+        p(&sub),
+        p(&plain),
+        p(&gone),
+        p(&file),
+        p(&empty),
+        p(&badgit),
+        foreign.to_owned(),
+    ];
     expected.sort();
     let listed: Vec<&str> = entries.iter().map(|e| e["repository"].as_str().unwrap()).collect();
     assert_eq!(listed, expected);
@@ -282,6 +293,9 @@ fn repositories_json_carries_every_state_with_detail_and_references() {
     let file_entry = entry(&p(&file));
     assert_eq!(file_entry["state"], "unreadable");
     assert_eq!(file_entry["detail"], "not a directory");
+    let badgit_entry = entry(&p(&badgit));
+    assert_eq!(badgit_entry["state"], "unreadable");
+    assert!(!badgit_entry["detail"].as_str().unwrap().is_empty(), "{badgit_entry}");
     let empty_entry = entry(&p(&empty));
     assert_eq!(empty_entry["state"], "active");
     assert_eq!(empty_entry["profile"], Value::Null);

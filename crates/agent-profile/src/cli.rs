@@ -66,7 +66,7 @@ struct Cli {
 
 /// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
 /// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
-/// (SP3 design §7.2), as are `resolve` and `current`.
+/// (SP3 design §7.2), as are `resolve`, `current` and `repositories`.
 #[derive(Subcommand)]
 enum Command {
     /// Not yet implemented.
@@ -1482,7 +1482,7 @@ mod tests {
     }
 
     #[test]
-    fn doctor_repositories_completions_stay_unimplemented() {
+    fn doctor_stays_unimplemented() {
         match split_err(&["fake", "doctor"]) {
             Error::NotYetImplemented { command } => assert_eq!(command, "fake doctor"),
             other => panic!("{other:?}"),
@@ -1621,6 +1621,14 @@ mod tests {
         assert_eq!(
             usage_message(split(args(&["fake", "current", "--json"]), KNOWN)),
             "unknown option \"--json\" for `current`"
+        );
+        assert_eq!(
+            usage_message(split(args(&["fake", "link", "work", "--json"]), KNOWN)),
+            "unknown option \"--json\" for `link`"
+        );
+        assert_eq!(
+            usage_message(split(args(&["fake", "unlink", "--json"]), KNOWN)),
+            "unknown option \"--json\" for `unlink`"
         );
     }
 

@@ -88,8 +88,8 @@ Anti-goals — a result that "works" but is a failure
     retyping or changing the meaning of a member is, and so is adding a token to an enumeration: every
     token set in this document is CLOSED for its `<major>` (a consumer may match exhaustively; agy-first
     round 1, Axiom Breaker: a strict deserializer breaks on an unknown token exactly as on a renamed
-    member). V3 §32 "stable within a release series" is read as: `<major>` cannot change within a 0.x
-    minor series. Consequence, stated so nobody is surprised: the token sets below are final for the
+    member). V3 §32 "stable within a release series" is read as: `<major>` cannot change within the 0.x
+    series. Consequence, stated so nobody is surprised: the token sets below are final for the
     0.x series; a state that does not fit them waits for 1.0 or lives in a new schema (as `doctor`'s
     will). A consumer checks the prefix it knows and ignores members it does not.
   - `tool_version`: the crate version (`CARGO_PKG_VERSION`, the string `--version` prints).

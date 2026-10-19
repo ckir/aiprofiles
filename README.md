@@ -75,7 +75,8 @@ agent's executable, support level and capability matrix.
 `repositories` lists every stored mapping with one of six states (`active`, `moved`, `not_a_repository`,
 `missing`, `unreadable`, `foreign`) and whether the mapped profiles exist; removing an entry completely takes
 one `unlink` per stored field (`unlink --repo <path>` for the entry's profile, `<agent> unlink --repo <path>`
-for each agent field). `--json` prints a document whose first members are `schema`
+for each agent field), except that an entry with no fields, or an `agents` field for an agent this build does
+not know, is removed by editing `config.toml`. `--json` prints a document whose first members are `schema`
 (`agent-profile/<command>/1`, stable within the 0.x series, token sets closed) and `tool_version`. Consumers
 read stdout only: stderr keeps its notes, so a `2>&1` capture is not a document. `repositories` probes every
 stored path synchronously, so callers should run it under their own timeout; an integration that wants the
