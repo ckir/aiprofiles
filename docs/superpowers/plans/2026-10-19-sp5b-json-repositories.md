@@ -344,7 +344,9 @@ git commit -m "feat(cli): --json on resolve and status"
 ```rust
 #[test]
 fn agents_document_renders_each_executable_state_and_the_full_matrix() {
-    // one entry per ExecutableStatus variant using the fixture adapter's metadata (as output.rs:557 builds it):
+    // one entry per ExecutableStatus variant using a REGISTRY adapter's metadata
+    // (`adapter::lookup("fake").unwrap().metadata()`, which declares every capability; the hand-built fixture
+    // at output.rs:557 declares none and would hit the builder's expect):
     // Found{configured} -> {state:"found", path:Some, origin:"configured"}; NotOnPath -> {state:"not_on_path", path:null, origin:null};
     // ConfiguredMissing(p) -> {"configured_missing", Some(p), null}; Unsupported(p) -> {"unsupported", Some(p), null};
     // every element: capabilities.len() == 3 in order config, credentials, state; support in {"proven","experimental"};
@@ -485,8 +487,9 @@ git commit -m "test(json): pin every schema's member list on null-bearing fixtur
   (`config.rs:75`), `output::{labeled, note, shell_word}` (`output.rs:187-194, :254`; make `labeled` and
   `shell_word` `pub(crate)`).
 - Produces (in `repositories.rs`):
-  - `pub enum State { Active, Moved, NotARepository, Missing, Unreadable, Foreign }` with `pub fn token(self)
-    -> &'static str` (`active | moved | not_a_repository | missing | unreadable | foreign`).
+  - `pub enum State { Active, Moved, NotARepository, Missing, Unreadable, Foreign }` (`#[derive(Debug, Clone,
+    Copy, PartialEq, Eq)]`, so the unit tests can `assert_eq!` on it) with `pub fn token(self) -> &'static str`
+    (`active | moved | not_a_repository | missing | unreadable | foreign`).
   - `pub struct ProfileRef { pub name: ProfileName, pub exists: bool }`, `pub struct AgentRef { pub profile:
     ProfileName, pub exists: bool, pub known: bool }`, `pub struct Entry { pub key: String, pub state: State,
     pub detail: Option<String>, pub profile: Option<ProfileRef>, pub agents: BTreeMap<AgentId, AgentRef> }`.
@@ -707,3 +710,16 @@ Exhaustiveness audit: no TBD; the only values left to the implementer are messag
 spec and the module-internal helper names. Not covered by any test on this host and left to CI: the Windows
 device-namespace test (`cfg(windows)`), the `foreign` key form on Windows (`/srv/acme`), and NTFS case folding of
 a `moved` key; all three are stated in the spec's §4.
+
+## Panel
+
+- Round 1, solo (2026-10-19; persona relentless-adversarial-auditor; seats Axiom Breaker, Cascade Analyst,
+  Literal Implementer, Mechanism Gamer, Protocol Pedant, Activation Auditor; dropped State Corruptor, Boundary
+  Smuggler, Resource Vampire, Dependency Cynic, Blindspot Auditor as covered by the spec's panel). Folded: the
+  Task 3 unit test must build its entries from a registry adapter's metadata, because the hand-built fixture
+  declares no capability and the builder's `expect` would fire (Literal Implementer); `State` derives
+  `PartialEq`/`Debug` for the unit tests' `assert_eq!` (Literal Implementer). PANEL VERDICT: two folds, no
+  open finding.
+
+## Stand-downs
+None.
