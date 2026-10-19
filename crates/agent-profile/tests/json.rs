@@ -348,3 +348,181 @@ fn profiles_json_on_an_unreadable_profiles_directory_leaves_stdout_empty() {
     assert_eq!(stdout(&out), "");
     assert!(stderr(&out).contains("could not read the profiles directory"), "{}", stderr(&out));
 }
+
+/// Asserts `value` is an object whose sorted member names are exactly `expected`, and that each of `nullable` is
+/// present as an explicit JSON `null` (an absent key is a failure, not a pass).
+fn pin(value: &Value, expected: &[&str], nullable: &[&str]) {
+    assert_eq!(keys(value), expected, "{value}");
+    for name in nullable {
+        assert_eq!(
+            value.get(*name),
+            Some(&Value::Null),
+            "`{name}` must be present and null in {value}"
+        );
+    }
+}
+
+#[test]
+fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
+    // resolve with no profile, inside a repository: `profile` null; outside one: `repository` null too.
+    let root = Root::empty();
+    let (_dir, base) = scratch();
+    let acme = base.join("acme");
+    git_dir(&acme);
+    let resolve = ["agent", "profile", "repository", "schema", "source", "tool_version"];
+    let out = run(&root, &acme, &["fake", "resolve", "--json"]);
+    assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    pin(&document(&out), &resolve, &["profile"]);
+    let out = run(&root, &base, &["fake", "resolve", "--json"]);
+    assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    pin(&document(&out), &resolve, &["profile", "repository"]);
+
+    // status outside any repository with no config: every nullable top-level member and the row members.
+    let status = [
+        "agent",
+        "agents",
+        "default_profile",
+        "inapplicable_mappings",
+        "mapping",
+        "repository",
+        "schema",
+        "tool_version",
+    ];
+    let out = run(&root, &base, &["status", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let value = document(&out);
+    pin(&value, &status, &["agent", "default_profile", "mapping", "repository"]);
+    let rows = value["agents"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        pin(row, &["agent", "presence", "profile", "source"], &["presence", "profile"]);
+    }
+    let out = run(&root, &base, &["fake", "status", "--json"]);
+    let value = document(&out);
+    pin(&value, &status, &["default_profile", "mapping", "repository"]);
+    assert_eq!(value["agent"], "fake");
+    pin(&value["agents"][0], &["agent", "presence", "profile", "source"], &["presence", "profile"]);
+
+    // status in a repository: `mapping` with a null `profile`, and `presence` with a null `existing`.
+    configure(&root, None, &mapping(&acme, "agents = { fake = \"mine\" }"));
+    let out = run(&root, &acme, &["fake", "status", "--json"]);
+    let value = document(&out);
+    pin(&value, &status, &["default_profile"]);
+    pin(&value["mapping"], &["agents", "profile"], &["profile"]);
+    pin(&value["agents"][0]["presence"], &["existing", "state"], &["existing"]);
+
+    // presence on a conflict: `existing` is a string, the member list is unchanged.
+    configure(&root, None, &mapping(&acme, "profile = \"work\""));
+    fs::create_dir_all(root.path().join("profiles").join("WORK")).unwrap();
+    let out = run(&root, &acme, &["fake", "status", "--json"]);
+    let value = document(&out);
+    pin(&value["agents"][0]["presence"], &["existing", "state"], &[]);
+    assert_eq!(value["agents"][0]["presence"]["existing"], "WORK");
+
+    // agents with PATH removed: unfound executables carry null path and origin.
+    let agents_root = Root::new();
+    let mut command = agents_root.agent_profile(["agents", "--json"]);
+    command.env_remove("PATH");
+    let out = command.output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let value = document(&out);
+    pin(&value, &["agents", "schema", "tool_version"], &[]);
+    let list = value["agents"].as_array().unwrap();
+    assert!(!list.is_empty());
+    let mut unfound = 0;
+    for element in list {
+        pin(
+            element,
+            &["agent", "capabilities", "evidence", "executable", "mechanism", "support"],
+            &[],
+        );
+        let executable = &element["executable"];
+        assert_eq!(keys(executable), ["origin", "path", "state"], "{element}");
+        if executable["state"] == "not_on_path" {
+            unfound += 1;
+            pin(executable, &["origin", "path", "state"], &["origin", "path"]);
+        }
+        pin(&element["mechanism"], &["description", "id"], &[]);
+        pin(&element["evidence"], &["notes", "source_url", "upstream_version", "verified_at"], &[]);
+        let capabilities = element["capabilities"].as_array().unwrap();
+        assert!(!capabilities.is_empty(), "{element}");
+        for capability in capabilities {
+            pin(capability, &["basis", "capability", "state"], &[]);
+        }
+    }
+    assert!(unfound > 0, "no agent exercised the null executable path");
+
+    // profiles on an empty root.
+    let empty = Root::empty();
+    let out = run(&empty, empty.path(), &["profiles", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let value = document(&out);
+    pin(&value, &["agent", "ignored_entries", "profiles", "schema", "tool_version"], &["agent"]);
+    assert_eq!(value["profiles"], json!([]));
+    let work = Root::empty();
+    let out = run(&work, work.path(), &["fake", "create", "work"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let value = document(&run(&work, work.path(), &["profiles", "--json"]));
+    pin(&value["profiles"][0], &["agents", "name"], &[]);
+}
+
+/// Visits every object member of `value`: its name must not contain `=`, and a string value must not look like a
+/// secret unless the member is one of the free-text members.
+fn walk_for_secrets(value: &Value, member: &str, found: &mut usize) {
+    match value {
+        Value::Object(map) => {
+            for (name, inner) in map {
+                assert!(!name.contains('='), "member name {name:?} contains '='");
+                walk_for_secrets(inner, name, found);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                walk_for_secrets(item, member, found);
+            }
+        }
+        Value::String(text) => {
+            *found += 1;
+            if !["basis", "notes", "description"].contains(&member) {
+                for word in ["TOKEN", "SECRET", "PASSWORD"] {
+                    assert!(
+                        !text.contains(word),
+                        "member {member:?} value {text:?} contains {word}"
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn documents_carry_no_environment_or_secret_shaped_member() {
+    let root = Root::new();
+    let (_dir, base) = scratch();
+    let acme = base.join("acme");
+    git_dir(&acme);
+    configure(&root, Some("work"), &mapping(&acme, "profile = \"work\""));
+    let mut documents = Vec::new();
+    for (args, cwd) in [
+        (&["agents", "--json"][..], root.path()),
+        (&["status", "--json"], acme.as_path()),
+        (&["fake", "status", "--json"], acme.as_path()),
+        (&["status", "--json"], base.as_path()),
+    ] {
+        let mut command = root.agent_profile(args);
+        command
+            .current_dir(cwd)
+            .env("API_TOKEN", "TOKEN=leak")
+            .env("MY_SECRET", "SECRET=leak")
+            .env("DB_PASSWORD", "PASSWORD=leak");
+        let out = command.output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        documents.push(document(&out));
+    }
+    let mut found = 0;
+    for value in &documents {
+        walk_for_secrets(value, "", &mut found);
+    }
+    assert!(found > 20, "the walk visited only {found} strings");
+}
