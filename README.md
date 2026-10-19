@@ -44,6 +44,11 @@ agent-profile <agent> current|resolve|status [--repo <path>]
 agent-profile [<agent>] link <profile> [--repo <path>]
 agent-profile [<agent>] unlink [--repo <path>]
 agent-profile status [--repo <path>]
+agent-profile <agent> create <profile>
+agent-profile <agent> delete <profile> [--yes]
+agent-profile [<agent>] list
+agent-profile profiles
+agent-profile agents
 ```
 
 Everything after `--` is passed to the agent untouched. `--dry-run` shows what would be launched without
@@ -58,6 +63,12 @@ you are in (its canonical root; a subdirectory, symlink or junction resolves to 
 `unlink --repo <path>` removes the mapping stored for a path even after the repository was deleted or moved. A
 mapping applies only to that repository: not to a nested repository, a submodule or a linked worktree, which are
 repositories of their own. `<agent> resolve` and `status` show what would be selected and why.
+
+Profiles are created on first launch or with `<agent> create <profile>`; `<agent> delete <profile>` asks for
+confirmation unless `--yes` is given, and refuses a profile that a repository-wide mapping, `<agent>`'s own
+mapping or `default_profile` still names. `<agent> list` shows the profiles that have a materialized directory
+for it; `profiles` shows every profile that exists, with the agents that have one, and `agents` shows every
+agent's executable, support level and capability matrix.
 
 ```toml
 default_profile = "work"

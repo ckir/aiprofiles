@@ -13,6 +13,7 @@ pub mod config;
 pub mod error;
 pub mod exe;
 pub mod launch;
+pub mod lifecycle;
 pub mod name;
 pub mod output;
 pub mod repo;

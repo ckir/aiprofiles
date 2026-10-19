@@ -11,7 +11,7 @@ green on Linux, macOS and Windows.
 | SP2 | Architecture gate — adapter model, capability and evidence metadata, common contract suite, Claude Code, Codex CLI, Aider | 4A | done (#11) |
 | SP3 | Repository resolution — discovery, canonical identity, mapping storage, precedence, `resolve`, `current`, `status`, `link`, `unlink` | 2 + part of 5 | done (#19) |
 | SP4 | Remaining adapters — Gemini CLI, GitHub Copilot CLI, OpenCode, Cline CLI, Pi, Kiro CLI, Cursor Agent CLI, Continue CLI, Amp | 4B | done (branch `sp4b-adapters`) |
-| SP5 | Lifecycle and quality — `create`, `list`, `delete`, `repositories`, `doctor`, JSON output, shell completions, docs | rest of 5, 6 | next |
+| SP5 | Lifecycle and quality — `create`, `list`, `delete`, `repositories`, `doctor`, JSON output, shell completions, docs | rest of 5, 6 | SP5a in progress: create, list, delete, profiles, agents; SP5b–d next |
 
 `link`/`unlink` land with resolution (SP3), earlier than §35's Phase 5, so resolution never ships
 without a way to create the mappings it resolves. SP4 is done: the nine adapters named above are

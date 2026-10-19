@@ -2,15 +2,17 @@
 //! repository commands (SP3 design §7).
 
 use std::ffi::{OsStr, OsString};
-use std::io::{self, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
 use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
-use crate::error::{Error, Result};
+use crate::error::{Error, NotInstalledReason, Result};
+use crate::exe;
 use crate::launch::{self, LaunchOutcome};
+use crate::lifecycle;
 use crate::name::{AgentId, Platform, ProfileName, RESERVED_WORDS, is_reserved_word};
 use crate::output::{self, ReportMode};
 use crate::repo::{self, Discovery};
@@ -34,7 +36,14 @@ Repository commands:
   agent-profile <agent> resolve [--repo <path>]
   agent-profile [<agent>] status [--repo <path>]
   agent-profile [<agent>] link <profile> [--repo <path>]
-  agent-profile [<agent>] unlink [--repo <path>]";
+  agent-profile [<agent>] unlink [--repo <path>]
+
+Profile commands:
+  agent-profile <agent> create <profile>
+  agent-profile <agent> delete <profile> [--yes]
+  agent-profile [<agent>] list
+  agent-profile agents
+  agent-profile profiles";
 
 /// Select and launch profiles for multiple coding agents.
 #[derive(Parser)]
@@ -52,20 +61,11 @@ struct Cli {
     command: Command,
 }
 
-/// The reserved words of spec §5.3 that are not implemented yet. `status`, `link`, `unlink`, `resolve` and
-/// `current` are dispatched before Clap (SP3 design §7.2).
+/// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
+/// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
+/// (SP3 design §7.2), as are `resolve` and `current`.
 #[derive(Subcommand)]
 enum Command {
-    /// Not yet implemented.
-    Agents(Rest),
-    /// Not yet implemented.
-    Profiles(Rest),
-    /// Not yet implemented.
-    List(Rest),
-    /// Not yet implemented.
-    Create(Rest),
-    /// Not yet implemented.
-    Delete(Rest),
     /// Not yet implemented.
     Doctor(Rest),
     /// Not yet implemented.
@@ -86,11 +86,6 @@ struct Rest {
 impl Command {
     fn reserved_name(&self) -> Option<&'static str> {
         Some(match self {
-            Command::Agents(_) => "agents",
-            Command::Profiles(_) => "profiles",
-            Command::List(_) => "list",
-            Command::Create(_) => "create",
-            Command::Delete(_) => "delete",
             Command::Doctor(_) => "doctor",
             Command::Repositories(_) => "repositories",
             Command::Completions(_) => "completions",
@@ -107,6 +102,11 @@ enum CommandWord {
     Status,
     Link,
     Unlink,
+    Create,
+    Delete,
+    List,
+    Agents,
+    Profiles,
 }
 
 impl CommandWord {
@@ -118,6 +118,11 @@ impl CommandWord {
             "status" => CommandWord::Status,
             "link" => CommandWord::Link,
             "unlink" => CommandWord::Unlink,
+            "create" => CommandWord::Create,
+            "delete" => CommandWord::Delete,
+            "list" => CommandWord::List,
+            "agents" => CommandWord::Agents,
+            "profiles" => CommandWord::Profiles,
             _ => return None,
         })
     }
@@ -129,6 +134,11 @@ impl CommandWord {
             CommandWord::Status => "status",
             CommandWord::Link => "link",
             CommandWord::Unlink => "unlink",
+            CommandWord::Create => "create",
+            CommandWord::Delete => "delete",
+            CommandWord::List => "list",
+            CommandWord::Agents => "agents",
+            CommandWord::Profiles => "profiles",
         }
     }
 
@@ -160,6 +170,27 @@ impl CommandWord {
                  Remove this repository's mapping (or only <agent>'s). With --repo, removes the mapping stored \
                  for that path.\n\n  \
                  --repo <path>  Use the repository at <path> instead of the current directory\n"
+            }
+            CommandWord::Create => {
+                "Usage: agent-profile <agent> create <profile>\n\
+                 Create <agent>'s profile directory, without launching <agent>.\n"
+            }
+            CommandWord::Delete => {
+                "Usage: agent-profile <agent> delete <profile> [--yes]\n\
+                 Delete <agent>'s profile directory.\n\n  \
+                 --yes  Delete without asking\n"
+            }
+            CommandWord::List => {
+                "Usage: agent-profile [<agent>] list\n\
+                 List the profiles that exist; with <agent>, only <agent>'s profile names.\n"
+            }
+            CommandWord::Agents => {
+                "Usage: agent-profile agents\n\
+                 Show every known agent with its support level and full capability matrix.\n"
+            }
+            CommandWord::Profiles => {
+                "Usage: agent-profile profiles\n\
+                 List the profiles that exist, with the agents that have one.\n"
             }
         }
     }
@@ -223,6 +254,7 @@ enum Invocation {
         command: CommandWord,
         profile: Option<String>,
         repo: Option<OsString>,
+        yes: bool,
     },
 }
 
@@ -317,7 +349,7 @@ fn option_name(option: &OsStr) -> String {
     shown.split_once('=').map_or(&*shown, |(name, _)| name).to_owned()
 }
 
-/// `agent-profile status|link|unlink|resolve|current …` (SP3 design §7.2).
+/// `agent-profile <command> …` for the reserved words dispatched before Clap (SP3 design §7.2).
 fn split_top_level(command: CommandWord, rest: Vec<OsString>) -> Result<Invocation> {
     let (pre, opaque) = cut(rest);
     let tokens = bind(pre)?;
@@ -330,6 +362,12 @@ fn split_top_level(command: CommandWord, rest: Vec<OsString>) -> Result<Invocati
     if matches!(command, CommandWord::Resolve | CommandWord::Current) {
         let name = command.as_str();
         return Err(usage(format!("`{name}` needs an agent: agent-profile <agent> {name}")));
+    }
+    if matches!(command, CommandWord::Create | CommandWord::Delete) {
+        let name = command.as_str();
+        return Err(usage(format!(
+            "`{name}` needs an agent: agent-profile <agent> {name} <profile>"
+        )));
     }
     let bare = bare_words(&tokens);
     validate_command(None, command, &tokens, &bare, opaque.is_some())
@@ -431,6 +469,10 @@ fn validate_command(
     if has_cut {
         return Err(usage(format!("`{name}` takes no agent arguments; remove `--`")));
     }
+    // `agents` and `profiles` are top-level only (SP5a design §5).
+    if matches!(command, CommandWord::Agents | CommandWord::Profiles) && agent.is_some() {
+        return Err(usage(format!("`{name}` takes no agent: agent-profile {name}")));
+    }
     let repos: Vec<&OsString> = tokens
         .iter()
         .filter_map(|token| match token {
@@ -438,29 +480,62 @@ fn validate_command(
             _ => None,
         })
         .collect();
+    // The lifecycle words take no `--repo`; refused before the checks below so the message names the command.
+    if matches!(
+        command,
+        CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+    ) && !repos.is_empty()
+    {
+        return Err(usage(format!("unknown option \"--repo\" for `{name}`")));
+    }
     if repos.len() > 1 {
         return Err(usage("`--repo` may be given only once"));
     }
     if repos.first().is_some_and(|repo| repo.is_empty()) {
         return Err(usage("`--repo` needs a non-empty path"));
     }
-    if matches!(command, CommandWord::Status | CommandWord::Resolve)
-        && options(tokens).any(|option| option == "--json")
+    if matches!(
+        command,
+        CommandWord::Status
+            | CommandWord::Resolve
+            | CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+    ) && options(tokens).any(|option| option == "--json")
     {
         return Err(Error::NotYetImplemented { command: "--json".to_owned() });
     }
-    if let Some(option) = options(tokens).next() {
+    // `--yes` is exact and `delete`'s alone: `--yes=1` stays an unknown option, matched like `--dry-run=yes`
+    // is (SP5a design §5).
+    let yes = command == CommandWord::Delete && options(tokens).any(|option| option == "--yes");
+    if let Some(option) = options(tokens).find(|option| !(yes && **option == "--yes")) {
         return Err(usage(format!("unknown option {:?} for `{name}`", option_name(option))));
     }
-    let allowed = usize::from(command == CommandWord::Link);
+    // `link`, `create` and `delete` take exactly one profile word (SP3 design §7.2, SP5a design §5).
+    let allowed = usize::from(matches!(
+        command,
+        CommandWord::Link | CommandWord::Create | CommandWord::Delete
+    ));
     if command == CommandWord::Link && bare.is_empty() {
         return Err(usage("`link` needs a profile: agent-profile [<agent>] link <profile>"));
     }
     if bare.len() > allowed {
         return Err(usage(match command {
             CommandWord::Link => "`link` takes one profile".to_owned(),
+            CommandWord::Create | CommandWord::Delete => format!("`{name}` takes one profile"),
             _ => format!("`{name}` takes no arguments"),
         }));
+    }
+    if matches!(command, CommandWord::Create | CommandWord::Delete) && bare.is_empty() {
+        return Err(usage(format!(
+            "`{name}` needs a profile: agent-profile <agent> {name} <profile>"
+        )));
     }
     let profile = match bare.first() {
         Some(word) => Some(
@@ -473,6 +548,7 @@ fn validate_command(
         command,
         profile,
         repo: repos.first().map(|repo| (*repo).clone()),
+        yes,
     })
 }
 
@@ -493,8 +569,8 @@ fn execute(invocation: Invocation) -> Result<i32> {
         Invocation::Launch { agent, profile, dry_run, verbose, opaque } => {
             run_launch(agent, profile, dry_run, verbose, opaque)
         }
-        Invocation::Command { agent, command, profile, repo } => {
-            run_command(agent, command, profile, repo)
+        Invocation::Command { agent, command, profile, repo, yes } => {
+            run_command(agent, command, profile, repo, yes)
         }
     }
 }
@@ -626,12 +702,39 @@ fn run_command(
     command: CommandWord,
     profile: Option<String>,
     repo: Option<OsString>,
+    yes: bool,
 ) -> Result<i32> {
     let profile = profile.map(parse_profile).transpose()?;
     let root = AppRoot::resolve()?;
     let config = Config::load(&root)?;
+    if command == CommandWord::Agents {
+        return run_agents(&root, &config);
+    }
     let agent =
         agent.map(|agent| AgentId::parse(&agent).expect("known agents are valid agent ids"));
+    if matches!(command, CommandWord::List | CommandWord::Profiles) {
+        return run_profiles(&root, agent.as_ref());
+    }
+    // The load above refuses an invalid configuration but creates nothing, so it runs before anything
+    // is touched (V3 §17). Neither lifecycle command needs repository discovery, so both return before
+    // the repository work below: `create` does not use the configuration at all, while `delete` reads it
+    // for its referenced-profile checks and `lifecycle::delete` re-reads it under the lock.
+    if command == CommandWord::Create {
+        return run_create(
+            &root,
+            agent.as_ref().expect("`create` has an agent"),
+            profile.as_ref().expect("`create` has a profile"),
+        );
+    }
+    if command == CommandWord::Delete {
+        return run_delete(
+            &root,
+            &config,
+            agent.as_ref().expect("`delete` has an agent"),
+            profile.as_ref().expect("`delete` has a profile"),
+            yes,
+        );
+    }
     let cwd = base_dir(repo.as_deref())?;
     if command == CommandWord::Unlink {
         return run_unlink(&root, &config, agent.as_ref(), &cwd, repo.as_deref());
@@ -703,9 +806,165 @@ fn run_command(
             lines
         }
         CommandWord::Unlink => unreachable!("unlink returned above"),
+        CommandWord::Create
+        | CommandWord::Delete
+        | CommandWord::List
+        | CommandWord::Agents
+        | CommandWord::Profiles => unreachable!("lifecycle commands returned above"),
     };
     write_lines(&lines)?;
     Ok(0)
+}
+
+/// `profiles` and bare `list` and `<agent> list` (SP5a design §3): the read-only listings. Nothing is
+/// created — `run_command` has already loaded the configuration (V3 §17) but no root, no `config.toml`
+/// and no lock is written here — and every outcome exits 0: an empty listing is the answer, not an
+/// error, and unrecognized on-disk entries are a stderr note rather than a failure.
+fn run_profiles(root: &AppRoot, agent: Option<&AgentId>) -> Result<i32> {
+    let adapters = adapter::registry();
+    let listing = lifecycle::list_profiles(root, &adapters)?;
+    let lines = match agent {
+        Some(agent) => output::list_lines(&listing, agent.as_str()),
+        None => output::profiles_lines(&listing),
+    };
+    write_lines(&lines)?;
+    if listing.ignored > 0 {
+        let _ = writeln!(
+            io::stderr(),
+            "agent-profile: ignored {} unrecognized entries",
+            listing.ignored
+        );
+    }
+    if let Some(agent) = agent
+        && lines.is_empty()
+    {
+        let _ = writeln!(io::stderr(), "agent-profile: no profiles for {agent}");
+    }
+    Ok(0)
+}
+
+/// `agents` (SP5a design §3): every registry entry with its executable evidence. Read-only — the load in
+/// `run_command` refuses an invalid configuration but nothing is created here (V3 §17) — and it always
+/// exits 0: a missing or unusable executable is listed as a fact, not an error, while any discovery error
+/// that is not one of those facts propagates.
+fn run_agents(root: &AppRoot, config: &Config) -> Result<i32> {
+    let path_var = std::env::var_os("PATH");
+    let mut entries = Vec::new();
+    for adapter in adapter::registry() {
+        let metadata = adapter.metadata();
+        let status = match exe::discover(
+            metadata.id,
+            metadata.executable,
+            config.agent_executable(metadata.id),
+            path_var.as_deref(),
+            &root.config_path(),
+        ) {
+            Ok(found) => output::ExecutableStatus::Found(found),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::NotOnPath { .. }, ..
+            }) => output::ExecutableStatus::NotOnPath,
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::ExplicitMissing(path),
+                ..
+            }) => output::ExecutableStatus::ConfiguredMissing(path),
+            Err(Error::UnsupportedExecutable { path, .. }) => {
+                output::ExecutableStatus::Unsupported(path)
+            }
+            Err(error) => return Err(error),
+        };
+        entries.push((metadata, status));
+    }
+    write_lines(&output::agents_lines(&entries))?;
+    Ok(0)
+}
+
+/// `<agent> create <profile>` (SP5a design §3): materializes the adapter's paths exactly once. Both
+/// outcomes exit 0; the configuration was already refused if invalid by `run_command`'s load, and is
+/// otherwise unused.
+fn run_create(root: &AppRoot, agent: &AgentId, profile: &ProfileName) -> Result<i32> {
+    let adapter = adapter::lookup(agent.as_str()).expect("known agents have an adapter");
+    let (outcome, path) = lifecycle::create(root, adapter, profile)?;
+    write_lines(&[output::create_line(&outcome, agent.as_str(), profile, &path)])?;
+    Ok(0)
+}
+
+/// Asks the user a yes/no question: prints `question` to stderr without a newline, flushes, and reads one
+/// line. Only `y` or `yes`, trimmed and ignoring ASCII case, counts; EOF or anything else is no.
+fn confirm(question: &str, input: &mut dyn BufRead) -> Result<bool> {
+    let mut stderr = io::stderr();
+    stderr.write_all(question.as_bytes()).and_then(|()| stderr.flush()).map_err(|source| {
+        Error::Io { context: "could not write the confirmation prompt".to_owned(), source }
+    })?;
+    let mut line = String::new();
+    input.read_line(&mut line).map_err(|source| Error::Io {
+        context: "could not read the confirmation answer".to_owned(),
+        source,
+    })?;
+    let answer = line.trim();
+    Ok(answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
+}
+
+/// `<agent> delete <profile> [--yes]` (SP5a design §3). An advisory referenced-profile check first, then
+/// `--yes` or an interactive confirmation, then the locked `lifecycle::delete`. A missing profile exits 0
+/// rather than erroring, because that is the state the user asked for — the same line and code as a
+/// profile that vanishes between the check and the lock. The configuration was already refused if invalid
+/// by `run_command`'s load, and is read again under the lock inside `lifecycle::delete`.
+fn run_delete(
+    root: &AppRoot,
+    config: &Config,
+    agent: &AgentId,
+    profile: &ProfileName,
+    yes: bool,
+) -> Result<i32> {
+    let references = lifecycle::blocking_references(config, agent, profile);
+    match lifecycle::delete_target(root, agent, profile)? {
+        None => {
+            write_lines(&[output::missing_profile_line(agent.as_str(), profile)])?;
+            // A profile whose directories are gone can still be blocked by a mapping, which the user
+            // cannot delete and must unlink first (SP5a design §3).
+            if !references.is_empty() {
+                let _ = writeln!(
+                    io::stderr(),
+                    "agent-profile: note: still referenced by {}; unlink it before deleting",
+                    references.join(", ")
+                );
+            }
+            Ok(0)
+        }
+        Some(path) => {
+            // The advisory refusal: broader than the invariant needs, because removal is irreversible
+            // and a mapping blocks after the deletion too. The same check runs again inside the lock,
+            // where it is authoritative.
+            if !references.is_empty() {
+                return Err(Error::ProfileReferenced {
+                    agent: agent.to_string(),
+                    profile: profile.to_string(),
+                    references,
+                });
+            }
+            if !yes {
+                if !io::stdin().is_terminal() {
+                    return Err(usage("--yes is required when input is not a terminal"));
+                }
+                if !confirm(
+                    &format!(
+                        "delete profile '{profile}' for {agent} at {}? [y/N] ",
+                        path.display()
+                    ),
+                    &mut io::stdin().lock(),
+                )? {
+                    let _ = writeln!(io::stderr(), "agent-profile: not deleted");
+                    return Ok(1);
+                }
+            }
+            let outcome = lifecycle::delete(root, agent, profile)?;
+            if let lifecycle::DeleteOutcome::Deleted { parent_note: Some(note), .. } = &outcome {
+                let _ = writeln!(io::stderr(), "agent-profile: note: {note}");
+            }
+            write_lines(&[output::delete_line(&outcome, agent.as_str(), profile)])?;
+            Ok(0)
+        }
+    }
 }
 
 /// `unlink` chooses its keys without discovery when `--repo` is given (SP3 design §6.2).
@@ -819,12 +1078,14 @@ mod tests {
         command: CommandWord,
         profile: Option<&str>,
         repo: Option<&str>,
+        yes: bool,
     ) -> Invocation {
         Invocation::Command {
             agent: agent.map(str::to_owned),
             command,
             profile: profile.map(str::to_owned),
             repo: repo.map(OsString::from),
+            yes,
         }
     }
 
@@ -846,6 +1107,22 @@ mod tests {
         match result {
             Err(Error::Usage { message }) => message,
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn confirm_accepts_only_y_or_yes_and_eof_is_no() {
+        use std::io::Cursor;
+        for (input, expected) in [
+            ("y\n", true),
+            ("YES\n", true),
+            (" yes \n", true),
+            ("n\n", false),
+            ("yes please\n", false),
+            ("", false),
+            ("\n", false),
+        ] {
+            assert_eq!(confirm("q? ", &mut Cursor::new(input)).unwrap(), expected, "{input:?}");
         }
     }
 
@@ -874,7 +1151,10 @@ mod tests {
     #[test]
     fn help_and_version_win_first() {
         assert_eq!(split_ok(&["zzz", "--help"]), Invocation::Help);
-        assert_eq!(split_ok(&["fake", "create", "-h"]), Invocation::Help);
+        assert_eq!(
+            split_ok(&["fake", "create", "-h"]),
+            Invocation::CommandHelp(CommandWord::Create)
+        );
         assert_eq!(split_ok(&["fake", "-h", "--", "x"]), Invocation::Help);
         assert_eq!(split_ok(&["zzz", "--version"]), Invocation::Version);
         assert_eq!(split_ok(&["fake", "work", "-V"]), Invocation::Version);
@@ -890,10 +1170,10 @@ mod tests {
 
     #[test]
     fn reserved_first_bare_word_routes_by_exact_spelling() {
-        match split_err(&["fake", "create", "work"]) {
-            Error::NotYetImplemented { command } => assert_eq!(command, "fake create"),
-            other => panic!("{other:?}"),
-        }
+        assert_eq!(
+            split_ok(&["fake", "create", "work"]),
+            command(Some("fake"), CommandWord::Create, Some("work"), None, false)
+        );
         for (items, word) in [
             (&["fake", "CREATE", "--bogus"][..], "create"),
             (&["fake", "Create", "x"], "create"),
@@ -915,44 +1195,47 @@ mod tests {
     fn agent_scoped_commands_bind_their_words_and_repo() {
         assert_eq!(
             split_ok(&["claude", "current"]),
-            command(Some("claude"), CommandWord::Current, None, None)
+            command(Some("claude"), CommandWord::Current, None, None, false)
         );
         assert_eq!(
             split_ok(&["claude", "resolve", "--repo", "../x"]),
-            command(Some("claude"), CommandWord::Resolve, None, Some("../x"))
+            command(Some("claude"), CommandWord::Resolve, None, Some("../x"), false)
         );
         assert_eq!(
             split_ok(&["claude", "--repo=a=b", "status"]),
-            command(Some("claude"), CommandWord::Status, None, Some("a=b"))
+            command(Some("claude"), CommandWord::Status, None, Some("a=b"), false)
         );
         assert_eq!(
             split_ok(&["claude", "link", "work", "--repo", "-dir"]),
-            command(Some("claude"), CommandWord::Link, Some("work"), Some("-dir"))
+            command(Some("claude"), CommandWord::Link, Some("work"), Some("-dir"), false)
         );
         assert_eq!(
             split_ok(&["claude", "unlink", "--repo", "link"]),
-            command(Some("claude"), CommandWord::Unlink, None, Some("link"))
+            command(Some("claude"), CommandWord::Unlink, None, Some("link"), false)
         );
     }
 
     #[test]
     fn top_level_commands_take_every_raw_token() {
-        assert_eq!(top(&["status"]).unwrap(), command(None, CommandWord::Status, None, None));
+        assert_eq!(
+            top(&["status"]).unwrap(),
+            command(None, CommandWord::Status, None, None, false)
+        );
         assert_eq!(
             top(&["link", "work", "--repo", "r"]).unwrap(),
-            command(None, CommandWord::Link, Some("work"), Some("r"))
+            command(None, CommandWord::Link, Some("work"), Some("r"), false)
         );
         assert_eq!(
             top(&["link", "status"]).unwrap(),
-            command(None, CommandWord::Link, Some("status"), None)
+            command(None, CommandWord::Link, Some("status"), None, false)
         );
         assert_eq!(
             top(&["link", "Create"]).unwrap(),
-            command(None, CommandWord::Link, Some("Create"), None)
+            command(None, CommandWord::Link, Some("Create"), None, false)
         );
         assert_eq!(
             top(&["unlink", "--repo=/gone"]).unwrap(),
-            command(None, CommandWord::Unlink, None, Some("/gone"))
+            command(None, CommandWord::Unlink, None, Some("/gone"), false)
         );
     }
 
@@ -976,7 +1259,7 @@ mod tests {
     fn a_consumed_repo_value_is_never_help_an_option_or_a_command_word() {
         assert_eq!(
             split_ok(&["claude", "link", "work", "--repo", "-h"]),
-            command(Some("claude"), CommandWord::Link, Some("work"), Some("-h"))
+            command(Some("claude"), CommandWord::Link, Some("work"), Some("-h"), false)
         );
         assert_eq!(
             usage_message(split(args(&["claude", "--repo"]), KNOWN)),
@@ -1039,6 +1322,87 @@ mod tests {
             assert_eq!(text, message, "{items:?}");
         }
         assert!(matches!(top(&["status", "--json"]), Err(Error::NotYetImplemented { .. })));
+    }
+
+    #[test]
+    fn lifecycle_words_bind_agent_profile_and_yes() {
+        assert_eq!(
+            split_ok(&["fake", "create", "work"]),
+            command(Some("fake"), CommandWord::Create, Some("work"), None, false)
+        );
+        assert_eq!(
+            split_ok(&["fake", "delete", "work", "--yes"]),
+            command(Some("fake"), CommandWord::Delete, Some("work"), None, true)
+        );
+        assert_eq!(
+            split_ok(&["fake", "--yes", "delete", "work"]),
+            command(Some("fake"), CommandWord::Delete, Some("work"), None, true)
+        );
+        assert_eq!(
+            split_ok(&["fake", "list"]),
+            command(Some("fake"), CommandWord::List, None, None, false)
+        );
+        assert_eq!(top(&["list"]).unwrap(), command(None, CommandWord::List, None, None, false));
+        assert_eq!(
+            top(&["agents"]).unwrap(),
+            command(None, CommandWord::Agents, None, None, false)
+        );
+        assert_eq!(
+            top(&["profiles"]).unwrap(),
+            command(None, CommandWord::Profiles, None, None, false)
+        );
+        assert_eq!(top(&["create", "-h"]).unwrap(), Invocation::CommandHelp(CommandWord::Create));
+    }
+
+    #[test]
+    fn lifecycle_usage_errors() {
+        for (items, message) in [
+            (&["create"][..], "`create` needs an agent: agent-profile <agent> create <profile>"),
+            (
+                &["delete", "work", "--yes"],
+                "`delete` needs an agent: agent-profile <agent> delete <profile>",
+            ),
+            (&["agents", "--repo", "x"], "unknown option \"--repo\" for `agents`"),
+            (&["profiles", "extra"], "`profiles` takes no arguments"),
+            (&["list", "--yes"], "unknown option \"--yes\" for `list`"),
+        ] {
+            assert_eq!(usage_message(top(items)), message, "{items:?}");
+        }
+        for (items, message) in [
+            (
+                &["fake", "create"][..],
+                "`create` needs a profile: agent-profile <agent> create <profile>",
+            ),
+            (
+                &["fake", "delete"],
+                "`delete` needs a profile: agent-profile <agent> delete <profile>",
+            ),
+            (&["fake", "create", "a", "b"], "`create` takes one profile"),
+            (&["fake", "create", "work", "--repo", "x"], "unknown option \"--repo\" for `create`"),
+            (&["fake", "create", "work", "--yes"], "unknown option \"--yes\" for `create`"),
+            (&["fake", "delete", "work", "--yes=1"], "unknown option \"--yes\" for `delete`"),
+            (&["fake", "agents"], "`agents` takes no agent: agent-profile agents"),
+            (&["fake", "profiles"], "`profiles` takes no agent: agent-profile profiles"),
+            (&["fake", "list", "extra"], "`list` takes no arguments"),
+            (
+                &["fake", "create", "work", "--", "x"],
+                "`create` takes no agent arguments; remove `--`",
+            ),
+        ] {
+            assert_eq!(usage_message(split(args(items), KNOWN)), message, "{items:?}");
+        }
+        for items in [&["fake", "create", "work", "--json"][..], &["fake", "list", "--json"]] {
+            assert!(matches!(split_err(items), Error::NotYetImplemented { .. }), "{items:?}");
+        }
+        assert!(matches!(top(&["agents", "--json"]), Err(Error::NotYetImplemented { .. })));
+    }
+
+    #[test]
+    fn doctor_repositories_completions_stay_unimplemented() {
+        match split_err(&["fake", "doctor"]) {
+            Error::NotYetImplemented { command } => assert_eq!(command, "fake doctor"),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
@@ -1189,6 +1553,7 @@ mod tests {
                     command: CommandWord::Status,
                     profile: None,
                     repo: Some(non_utf8()),
+                    yes: false,
                 }
             );
         }

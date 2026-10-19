@@ -58,6 +58,9 @@ pub enum Error {
     #[error("profile path {}: {source}", path.display())]
     ProfileDir { path: PathBuf, source: io::Error },
 
+    #[error("{}", profile_referenced_message(agent, profile, references))]
+    ProfileReferenced { agent: String, profile: String, references: Vec<String> },
+
     #[error(
         "profile `{requested}` differs only in letter case from the existing profile entry `{existing}`; \
          use `{existing}` or choose a different name"
@@ -90,6 +93,7 @@ impl Error {
             | Error::ConfigWrite { .. }
             | Error::ProfileDir { .. }
             | Error::ProfileCaseConflict { .. }
+            | Error::ProfileReferenced { .. }
             | Error::Repository { .. } => 4,
             Error::UnsupportedExecutable { .. } | Error::Launch { .. } => 6,
             Error::Io { .. } => 1,
@@ -136,6 +140,25 @@ fn no_profile_message(agent: &str, config_file: &Path, in_repository: bool) -> S
          default_profile in {}",
         config_file.display()
     )
+}
+
+/// The suffix when the block includes the global default: config.toml is hand-edited, so no command
+/// rewrites it (SP3 design D3). The dash is ASCII, never an em dash (the repo has hit non-ASCII
+/// corruption in user-visible text before).
+fn profile_referenced_suffix() -> &'static str {
+    " - default_profile is set in config.toml; edit it to change the default"
+}
+
+fn profile_referenced_message(agent: &str, profile: &str, references: &[String]) -> String {
+    let mut message = format!(
+        "cannot delete profile '{profile}' for {agent}: it is referenced by one or more repository \
+         mappings ({}); unlink the profile first, then retry deletion",
+        references.join(", ")
+    );
+    if references.iter().any(|reference| reference == "default_profile") {
+        message.push_str(profile_referenced_suffix());
+    }
+    message
 }
 
 fn unsupported_message(agent: &str, path: &Path, config_file: &Path) -> String {
@@ -228,6 +251,14 @@ mod tests {
             (Error::ConfigWrite { path: "c".into(), source: io() }, 4),
             (Error::ProfileDir { path: "p".into(), source: io() }, 4),
             (Error::ProfileCaseConflict { requested: "WORK".into(), existing: "work".into() }, 4),
+            (
+                Error::ProfileReferenced {
+                    agent: "a".into(),
+                    profile: "p".into(),
+                    references: vec![],
+                },
+                4,
+            ),
             (
                 Error::UnsupportedExecutable {
                     agent: "a".into(),

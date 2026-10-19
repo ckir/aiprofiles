@@ -9,7 +9,8 @@ use crate::adapter::{
     AdapterMetadata, Capability, CapabilityState, PathKind, PlannedLaunch, SupportLevel,
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
-use crate::exe::Origin;
+use crate::exe::{Found, Origin};
+use crate::lifecycle::{CreateOutcome, DeleteOutcome, Listing};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
 use crate::resolve::Resolution;
@@ -95,11 +96,14 @@ pub fn report_lines(
     let continuation = |value: String| format!("{:LABEL_WIDTH$}{value}", "");
     lines.push(line("agent", resolution.agent.to_string()));
     lines.push(line("profile", format!("{} ({})", planned.profile, resolution.source.label())));
-    let origin = match planned.executable_origin {
-        Origin::Configured => "configured",
-        Origin::Path => "PATH",
-    };
-    lines.push(line("executable", format!("{} ({origin})", planned.plan.executable.display())));
+    lines.push(line(
+        "executable",
+        format!(
+            "{} ({})",
+            planned.plan.executable.display(),
+            origin_word(planned.executable_origin)
+        ),
+    ));
     let repository = match &resolution.repository {
         Some(path) => path.display().to_string(),
         None => "none".to_owned(),
@@ -107,23 +111,7 @@ pub fn report_lines(
     lines.push(line("repository", repository));
     lines.push(line("mechanism", planned.mechanism.clone()));
     lines.push(line("support", support_label(metadata.support).to_owned()));
-    // Every capability in `Capability::ALL`, in that fixed order, each followed by its basis. The matrix is
-    // unconditional: SP4 design §6.1 rests on a support level never being shown without it.
-    for (index, capability) in Capability::ALL.into_iter().enumerate() {
-        let claim = metadata.capabilities.iter().find(|claim| claim.capability == capability);
-        let label = capability_label(capability);
-        let value = match claim {
-            Some(claim) => format!("{label}: {}", state_label(claim.state)),
-            // Not every caller is a registry adapter: `metadata_invariants` requires one claim per
-            // capability, but `report_lines` is reachable from a fixture that declares none. "not declared"
-            // is visibly different from "unknown", and neither panics.
-            None => format!("{label}: not declared"),
-        };
-        lines.push(if index == 0 { line("isolation", value) } else { continuation(value) });
-        if let Some(claim) = claim {
-            lines.push(continuation(format!("  {}", claim.basis)));
-        }
-    }
+    lines.extend(capability_lines(metadata));
     if planned.plan.env.is_empty() {
         lines.push(line("environment", "none".to_owned()));
     }
@@ -157,6 +145,40 @@ pub fn report_lines(
     lines.push(line("arguments", format!("[{}]", args.join(", "))));
     for note in &planned.notes {
         lines.push(line("note", note.clone()));
+    }
+    lines
+}
+
+/// Where a launch's executable came from, spelled as the report does.
+fn origin_word(origin: Origin) -> &'static str {
+    match origin {
+        Origin::Configured => "configured",
+        Origin::Path => "PATH",
+    }
+}
+
+/// The capability-matrix block of the report: every capability in `Capability::ALL`, in that fixed order,
+/// each followed by its basis. The matrix is unconditional: SP4 design §6.1 rests on a support level never
+/// being shown without it, so every block that shows a support level (`report_lines`, `agents_lines`)
+/// renders this whole, without a leading or a trailing line of its own.
+pub fn capability_lines(metadata: &AdapterMetadata) -> Vec<String> {
+    let line = |label: &str, value: String| format!("{:<LABEL_WIDTH$}{value}", format!("{label}:"));
+    let continuation = |value: String| format!("{:LABEL_WIDTH$}{value}", "");
+    let mut lines = Vec::new();
+    for (index, capability) in Capability::ALL.into_iter().enumerate() {
+        let claim = metadata.capabilities.iter().find(|claim| claim.capability == capability);
+        let label = capability_label(capability);
+        let value = match claim {
+            Some(claim) => format!("{label}: {}", state_label(claim.state)),
+            // Not every caller is a registry adapter: `metadata_invariants` requires one claim per
+            // capability, but `report_lines` is reachable from a fixture that declares none. "not declared"
+            // is visibly different from "unknown", and neither panics.
+            None => format!("{label}: not declared"),
+        };
+        lines.push(if index == 0 { line("isolation", value) } else { continuation(value) });
+        if let Some(claim) = claim {
+            lines.push(continuation(format!("  {}", claim.basis)));
+        }
     }
     lines
 }
@@ -287,6 +309,127 @@ pub fn unlink_lines(
             "agent mappings remain: {}; remove them with agent-profile <agent> unlink",
             pairs.join(", ")
         )));
+    }
+    lines
+}
+
+/// `create` (SP5a design §3).
+pub fn create_line(
+    outcome: &CreateOutcome,
+    agent: &str,
+    profile: &ProfileName,
+    path: &Path,
+) -> String {
+    let path = path.display();
+    match outcome {
+        CreateOutcome::Created => format!("created profile '{profile}' for {agent}: {path}"),
+        CreateOutcome::AlreadyExists => {
+            format!("profile '{profile}' for {agent} already exists: {path}")
+        }
+    }
+}
+
+/// `delete` (SP5a design §3): the stdout line of each outcome. A profile that vanished before the locked
+/// delete ran reports the same does-not-exist line as an advisory miss, because that is the state the
+/// user asked for.
+pub fn delete_line(outcome: &DeleteOutcome, agent: &str, profile: &ProfileName) -> String {
+    match outcome {
+        DeleteOutcome::Deleted { path, .. } => {
+            format!("deleted profile '{profile}' for {agent}: {}", path.display())
+        }
+        DeleteOutcome::Vanished { .. } => missing_profile_line(agent, profile),
+    }
+}
+
+/// The stdout line for a deleting command whose profile is not there.
+pub fn missing_profile_line(agent: &str, profile: &ProfileName) -> String {
+    format!("profile '{profile}' for {agent} does not exist; nothing to delete")
+}
+
+/// `profiles` (SP5a design §3): one line per row, the profile name padded to the longest name so the
+/// agent columns align; an empty listing is the single line `no profiles`. A profile with no agent
+/// materialized is shown as `(none materialized)` rather than an empty column.
+pub fn profiles_lines(listing: &Listing) -> Vec<String> {
+    if listing.rows.is_empty() {
+        return vec!["no profiles".to_owned()];
+    }
+    let width = listing.rows.iter().map(|(name, _)| name.as_str().len()).max().unwrap_or(0);
+    listing
+        .rows
+        .iter()
+        .map(|(name, agents)| {
+            let agents = if agents.is_empty() {
+                "(none materialized)".to_owned()
+            } else {
+                agents.join(", ")
+            };
+            format!("{:<width$}  {}", name.as_str(), agents)
+        })
+        .collect()
+}
+
+/// `list` (SP5a design §3): only the names of the rows whose agents contain `agent`, one per line. The
+/// result may be empty; the CLI layer decides what that means for stderr.
+pub fn list_lines(listing: &Listing, agent: &str) -> Vec<String> {
+    listing
+        .rows
+        .iter()
+        .filter(|(_, agents)| agents.iter().any(|id| id == agent))
+        .map(|(name, _)| name.as_str().to_owned())
+        .collect()
+}
+
+/// Where `agents` resolved an agent's executable to (SP5a design §3). Each variant is a listed fact,
+/// not an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutableStatus {
+    /// `exe::discover` resolved it: the path, and whether it came from the configuration or `PATH`.
+    Found(Found),
+    /// Nothing configured, and no absolute `PATH` entry holds it.
+    NotOnPath,
+    /// The configured path is not a file.
+    ConfiguredMissing(PathBuf),
+    /// The resolved file would launch through a shell (a `.cmd`/`.bat`/`.ps1` script or shim).
+    Unsupported(PathBuf),
+}
+
+/// `agents` (SP5a design §3): a padded block per entry — the agent, the executable status, the mechanism,
+/// the support level, then the evidence entry's measured upstream version with its verification date (a
+/// probe of whatever happens to be installed would say nothing about the matrix it pairs with), and the
+/// full capability matrix without which a support level is never shown (SP4 design §6.1). An empty line
+/// separates the entries; there is none after the last.
+pub fn agents_lines(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, (metadata, status)) in entries.iter().enumerate() {
+        if index > 0 {
+            lines.push(String::new());
+        }
+        lines.push(labeled("agent", metadata.id));
+        lines.push(labeled(
+            "executable",
+            match status {
+                ExecutableStatus::Found(found) => {
+                    format!("{} ({})", found.path.display(), origin_word(found.origin))
+                }
+                ExecutableStatus::NotOnPath => "not found on PATH".to_owned(),
+                ExecutableStatus::ConfiguredMissing(path) => {
+                    format!("{} (configured, missing)", path.display())
+                }
+                ExecutableStatus::Unsupported(path) => {
+                    format!("{} (unsupported: shell script or shim)", path.display())
+                }
+            },
+        ));
+        lines.push(labeled("mechanism", metadata.mechanism.to_string()));
+        lines.push(labeled("support", support_label(metadata.support)));
+        lines.push(labeled(
+            "version",
+            format!(
+                "{} (verified {})",
+                metadata.evidence.upstream_version, metadata.evidence.verified_at
+            ),
+        ));
+        lines.extend(capability_lines(metadata));
     }
     lines
 }
@@ -931,6 +1074,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn create_line_covers_both_outcomes() {
+        let work = ProfileName::parse("work", Platform::host()).unwrap();
+        let dir = Path::new("/root/profiles/work/fake");
+        assert_eq!(
+            create_line(&CreateOutcome::Created, "fake", &work, dir),
+            format!("created profile 'work' for fake: {}", dir.display())
+        );
+        assert_eq!(
+            create_line(&CreateOutcome::AlreadyExists, "fake", &work, dir),
+            format!("profile 'work' for fake already exists: {}", dir.display())
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn non_utf8_argument_is_rendered_lossily_with_marker() {
@@ -1197,5 +1354,21 @@ mod tests {
         let file_line =
             lines.iter().find(|line| line.contains("FILE_VAR=")).expect("FILE_VAR line");
         assert!(!file_line.contains("(would be created)"), "{file_line}");
+    }
+
+    #[test]
+    fn report_lines_embed_capability_lines_unchanged() {
+        let lines = report_lines(
+            &planned(home_env(), vec![], false),
+            &resolution(),
+            ReportMode::DryRun,
+            &TEST_METADATA,
+        );
+        let matrix = capability_lines(&TEST_METADATA);
+        let start = lines
+            .iter()
+            .position(|line| *line == matrix[0])
+            .expect("the matrix starts in the report");
+        assert_eq!(&lines[start..start + matrix.len()], matrix.as_slice(), "{lines:?}");
     }
 }
