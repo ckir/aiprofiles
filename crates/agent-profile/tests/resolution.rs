@@ -537,7 +537,7 @@ fn command_help_and_the_top_level_help() {
         ),
         (&["resolve", "-h"], "Usage: agent-profile <agent> resolve [--repo <path>]"),
         (&["fake", "unlink", "--help"], "Usage: agent-profile [<agent>] unlink [--repo <path>]"),
-        (&["fake", "create", "-h"], "Usage: agent-profile <agent> <profile>"),
+        (&["fake", "create", "-h"], "Usage: agent-profile <agent> create <profile>"),
     ] {
         let output = run(&root, &base, args);
         assert_eq!(output.status.code(), Some(0), "{args:?}");

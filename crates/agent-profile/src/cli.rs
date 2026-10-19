@@ -34,7 +34,14 @@ Repository commands:
   agent-profile <agent> resolve [--repo <path>]
   agent-profile [<agent>] status [--repo <path>]
   agent-profile [<agent>] link <profile> [--repo <path>]
-  agent-profile [<agent>] unlink [--repo <path>]";
+  agent-profile [<agent>] unlink [--repo <path>]
+
+Profile commands:
+  agent-profile <agent> create <profile>
+  agent-profile <agent> delete <profile> [--yes]
+  agent-profile [<agent>] list
+  agent-profile agents
+  agent-profile profiles";
 
 /// Select and launch profiles for multiple coding agents.
 #[derive(Parser)]
@@ -52,20 +59,11 @@ struct Cli {
     command: Command,
 }
 
-/// The reserved words of spec §5.3 that are not implemented yet. `status`, `link`, `unlink`, `resolve` and
-/// `current` are dispatched before Clap (SP3 design §7.2).
+/// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
+/// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
+/// (SP3 design §7.2), as are `resolve` and `current`.
 #[derive(Subcommand)]
 enum Command {
-    /// Not yet implemented.
-    Agents(Rest),
-    /// Not yet implemented.
-    Profiles(Rest),
-    /// Not yet implemented.
-    List(Rest),
-    /// Not yet implemented.
-    Create(Rest),
-    /// Not yet implemented.
-    Delete(Rest),
     /// Not yet implemented.
     Doctor(Rest),
     /// Not yet implemented.
@@ -86,11 +84,6 @@ struct Rest {
 impl Command {
     fn reserved_name(&self) -> Option<&'static str> {
         Some(match self {
-            Command::Agents(_) => "agents",
-            Command::Profiles(_) => "profiles",
-            Command::List(_) => "list",
-            Command::Create(_) => "create",
-            Command::Delete(_) => "delete",
             Command::Doctor(_) => "doctor",
             Command::Repositories(_) => "repositories",
             Command::Completions(_) => "completions",
@@ -107,6 +100,11 @@ enum CommandWord {
     Status,
     Link,
     Unlink,
+    Create,
+    Delete,
+    List,
+    Agents,
+    Profiles,
 }
 
 impl CommandWord {
@@ -118,6 +116,11 @@ impl CommandWord {
             "status" => CommandWord::Status,
             "link" => CommandWord::Link,
             "unlink" => CommandWord::Unlink,
+            "create" => CommandWord::Create,
+            "delete" => CommandWord::Delete,
+            "list" => CommandWord::List,
+            "agents" => CommandWord::Agents,
+            "profiles" => CommandWord::Profiles,
             _ => return None,
         })
     }
@@ -129,6 +132,11 @@ impl CommandWord {
             CommandWord::Status => "status",
             CommandWord::Link => "link",
             CommandWord::Unlink => "unlink",
+            CommandWord::Create => "create",
+            CommandWord::Delete => "delete",
+            CommandWord::List => "list",
+            CommandWord::Agents => "agents",
+            CommandWord::Profiles => "profiles",
         }
     }
 
@@ -160,6 +168,27 @@ impl CommandWord {
                  Remove this repository's mapping (or only <agent>'s). With --repo, removes the mapping stored \
                  for that path.\n\n  \
                  --repo <path>  Use the repository at <path> instead of the current directory\n"
+            }
+            CommandWord::Create => {
+                "Usage: agent-profile <agent> create <profile>\n\
+                 Create <agent>'s profile directory, without launching <agent>.\n"
+            }
+            CommandWord::Delete => {
+                "Usage: agent-profile <agent> delete <profile> [--yes]\n\
+                 Delete <agent>'s profile directory.\n\n  \
+                 --yes  Delete without asking\n"
+            }
+            CommandWord::List => {
+                "Usage: agent-profile [<agent>] list\n\
+                 List the profiles that exist; with <agent>, only <agent>'s profile names.\n"
+            }
+            CommandWord::Agents => {
+                "Usage: agent-profile agents\n\
+                 Show every known agent with its support level and full capability matrix.\n"
+            }
+            CommandWord::Profiles => {
+                "Usage: agent-profile profiles\n\
+                 List the profiles that exist, with the agents that have one.\n"
             }
         }
     }
@@ -223,6 +252,7 @@ enum Invocation {
         command: CommandWord,
         profile: Option<String>,
         repo: Option<OsString>,
+        yes: bool,
     },
 }
 
@@ -317,7 +347,7 @@ fn option_name(option: &OsStr) -> String {
     shown.split_once('=').map_or(&*shown, |(name, _)| name).to_owned()
 }
 
-/// `agent-profile status|link|unlink|resolve|current …` (SP3 design §7.2).
+/// `agent-profile <command> …` for the reserved words dispatched before Clap (SP3 design §7.2).
 fn split_top_level(command: CommandWord, rest: Vec<OsString>) -> Result<Invocation> {
     let (pre, opaque) = cut(rest);
     let tokens = bind(pre)?;
@@ -330,6 +360,12 @@ fn split_top_level(command: CommandWord, rest: Vec<OsString>) -> Result<Invocati
     if matches!(command, CommandWord::Resolve | CommandWord::Current) {
         let name = command.as_str();
         return Err(usage(format!("`{name}` needs an agent: agent-profile <agent> {name}")));
+    }
+    if matches!(command, CommandWord::Create | CommandWord::Delete) {
+        let name = command.as_str();
+        return Err(usage(format!(
+            "`{name}` needs an agent: agent-profile <agent> {name} <profile>"
+        )));
     }
     let bare = bare_words(&tokens);
     validate_command(None, command, &tokens, &bare, opaque.is_some())
@@ -431,6 +467,10 @@ fn validate_command(
     if has_cut {
         return Err(usage(format!("`{name}` takes no agent arguments; remove `--`")));
     }
+    // `agents` and `profiles` are top-level only (SP5a design §5).
+    if matches!(command, CommandWord::Agents | CommandWord::Profiles) && agent.is_some() {
+        return Err(usage(format!("`{name}` takes no agent: agent-profile {name}")));
+    }
     let repos: Vec<&OsString> = tokens
         .iter()
         .filter_map(|token| match token {
@@ -438,29 +478,62 @@ fn validate_command(
             _ => None,
         })
         .collect();
+    // The lifecycle words take no `--repo`; refused before the checks below so the message names the command.
+    if matches!(
+        command,
+        CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+    ) && !repos.is_empty()
+    {
+        return Err(usage(format!("unknown option \"--repo\" for `{name}`")));
+    }
     if repos.len() > 1 {
         return Err(usage("`--repo` may be given only once"));
     }
     if repos.first().is_some_and(|repo| repo.is_empty()) {
         return Err(usage("`--repo` needs a non-empty path"));
     }
-    if matches!(command, CommandWord::Status | CommandWord::Resolve)
-        && options(tokens).any(|option| option == "--json")
+    if matches!(
+        command,
+        CommandWord::Status
+            | CommandWord::Resolve
+            | CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+    ) && options(tokens).any(|option| option == "--json")
     {
         return Err(Error::NotYetImplemented { command: "--json".to_owned() });
     }
-    if let Some(option) = options(tokens).next() {
+    // `--yes` is exact and `delete`'s alone: `--yes=1` stays an unknown option, matched like `--dry-run=yes`
+    // is (SP5a design §5).
+    let yes = command == CommandWord::Delete && options(tokens).any(|option| option == "--yes");
+    if let Some(option) = options(tokens).find(|option| !(yes && **option == "--yes")) {
         return Err(usage(format!("unknown option {:?} for `{name}`", option_name(option))));
     }
-    let allowed = usize::from(command == CommandWord::Link);
+    // `link`, `create` and `delete` take exactly one profile word (SP3 design §7.2, SP5a design §5).
+    let allowed = usize::from(matches!(
+        command,
+        CommandWord::Link | CommandWord::Create | CommandWord::Delete
+    ));
     if command == CommandWord::Link && bare.is_empty() {
         return Err(usage("`link` needs a profile: agent-profile [<agent>] link <profile>"));
     }
     if bare.len() > allowed {
         return Err(usage(match command {
             CommandWord::Link => "`link` takes one profile".to_owned(),
+            CommandWord::Create | CommandWord::Delete => format!("`{name}` takes one profile"),
             _ => format!("`{name}` takes no arguments"),
         }));
+    }
+    if matches!(command, CommandWord::Create | CommandWord::Delete) && bare.is_empty() {
+        return Err(usage(format!(
+            "`{name}` needs a profile: agent-profile <agent> {name} <profile>"
+        )));
     }
     let profile = match bare.first() {
         Some(word) => Some(
@@ -473,6 +546,7 @@ fn validate_command(
         command,
         profile,
         repo: repos.first().map(|repo| (*repo).clone()),
+        yes,
     })
 }
 
@@ -493,8 +567,8 @@ fn execute(invocation: Invocation) -> Result<i32> {
         Invocation::Launch { agent, profile, dry_run, verbose, opaque } => {
             run_launch(agent, profile, dry_run, verbose, opaque)
         }
-        Invocation::Command { agent, command, profile, repo } => {
-            run_command(agent, command, profile, repo)
+        Invocation::Command { agent, command, profile, repo, yes } => {
+            run_command(agent, command, profile, repo, yes)
         }
     }
 }
@@ -626,7 +700,27 @@ fn run_command(
     command: CommandWord,
     profile: Option<String>,
     repo: Option<OsString>,
+    yes: bool,
 ) -> Result<i32> {
+    // `--yes` is bound to `delete` alone (validate_command); nothing reads it until the lifecycle commands
+    // of SP5a design §3 are implemented.
+    let _ = yes;
+    let name = command.as_str();
+    if matches!(
+        command,
+        CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+    ) {
+        return Err(Error::NotYetImplemented {
+            command: match agent {
+                Some(agent) => format!("{agent} {name}"),
+                None => name.to_owned(),
+            },
+        });
+    }
     let profile = profile.map(parse_profile).transpose()?;
     let root = AppRoot::resolve()?;
     let config = Config::load(&root)?;
@@ -703,6 +797,11 @@ fn run_command(
             lines
         }
         CommandWord::Unlink => unreachable!("unlink returned above"),
+        CommandWord::Create
+        | CommandWord::Delete
+        | CommandWord::List
+        | CommandWord::Agents
+        | CommandWord::Profiles => unreachable!("lifecycle commands returned above"),
     };
     write_lines(&lines)?;
     Ok(0)
@@ -819,12 +918,14 @@ mod tests {
         command: CommandWord,
         profile: Option<&str>,
         repo: Option<&str>,
+        yes: bool,
     ) -> Invocation {
         Invocation::Command {
             agent: agent.map(str::to_owned),
             command,
             profile: profile.map(str::to_owned),
             repo: repo.map(OsString::from),
+            yes,
         }
     }
 
@@ -874,7 +975,10 @@ mod tests {
     #[test]
     fn help_and_version_win_first() {
         assert_eq!(split_ok(&["zzz", "--help"]), Invocation::Help);
-        assert_eq!(split_ok(&["fake", "create", "-h"]), Invocation::Help);
+        assert_eq!(
+            split_ok(&["fake", "create", "-h"]),
+            Invocation::CommandHelp(CommandWord::Create)
+        );
         assert_eq!(split_ok(&["fake", "-h", "--", "x"]), Invocation::Help);
         assert_eq!(split_ok(&["zzz", "--version"]), Invocation::Version);
         assert_eq!(split_ok(&["fake", "work", "-V"]), Invocation::Version);
@@ -890,10 +994,10 @@ mod tests {
 
     #[test]
     fn reserved_first_bare_word_routes_by_exact_spelling() {
-        match split_err(&["fake", "create", "work"]) {
-            Error::NotYetImplemented { command } => assert_eq!(command, "fake create"),
-            other => panic!("{other:?}"),
-        }
+        assert_eq!(
+            split_ok(&["fake", "create", "work"]),
+            command(Some("fake"), CommandWord::Create, Some("work"), None, false)
+        );
         for (items, word) in [
             (&["fake", "CREATE", "--bogus"][..], "create"),
             (&["fake", "Create", "x"], "create"),
@@ -915,44 +1019,47 @@ mod tests {
     fn agent_scoped_commands_bind_their_words_and_repo() {
         assert_eq!(
             split_ok(&["claude", "current"]),
-            command(Some("claude"), CommandWord::Current, None, None)
+            command(Some("claude"), CommandWord::Current, None, None, false)
         );
         assert_eq!(
             split_ok(&["claude", "resolve", "--repo", "../x"]),
-            command(Some("claude"), CommandWord::Resolve, None, Some("../x"))
+            command(Some("claude"), CommandWord::Resolve, None, Some("../x"), false)
         );
         assert_eq!(
             split_ok(&["claude", "--repo=a=b", "status"]),
-            command(Some("claude"), CommandWord::Status, None, Some("a=b"))
+            command(Some("claude"), CommandWord::Status, None, Some("a=b"), false)
         );
         assert_eq!(
             split_ok(&["claude", "link", "work", "--repo", "-dir"]),
-            command(Some("claude"), CommandWord::Link, Some("work"), Some("-dir"))
+            command(Some("claude"), CommandWord::Link, Some("work"), Some("-dir"), false)
         );
         assert_eq!(
             split_ok(&["claude", "unlink", "--repo", "link"]),
-            command(Some("claude"), CommandWord::Unlink, None, Some("link"))
+            command(Some("claude"), CommandWord::Unlink, None, Some("link"), false)
         );
     }
 
     #[test]
     fn top_level_commands_take_every_raw_token() {
-        assert_eq!(top(&["status"]).unwrap(), command(None, CommandWord::Status, None, None));
+        assert_eq!(
+            top(&["status"]).unwrap(),
+            command(None, CommandWord::Status, None, None, false)
+        );
         assert_eq!(
             top(&["link", "work", "--repo", "r"]).unwrap(),
-            command(None, CommandWord::Link, Some("work"), Some("r"))
+            command(None, CommandWord::Link, Some("work"), Some("r"), false)
         );
         assert_eq!(
             top(&["link", "status"]).unwrap(),
-            command(None, CommandWord::Link, Some("status"), None)
+            command(None, CommandWord::Link, Some("status"), None, false)
         );
         assert_eq!(
             top(&["link", "Create"]).unwrap(),
-            command(None, CommandWord::Link, Some("Create"), None)
+            command(None, CommandWord::Link, Some("Create"), None, false)
         );
         assert_eq!(
             top(&["unlink", "--repo=/gone"]).unwrap(),
-            command(None, CommandWord::Unlink, None, Some("/gone"))
+            command(None, CommandWord::Unlink, None, Some("/gone"), false)
         );
     }
 
@@ -976,7 +1083,7 @@ mod tests {
     fn a_consumed_repo_value_is_never_help_an_option_or_a_command_word() {
         assert_eq!(
             split_ok(&["claude", "link", "work", "--repo", "-h"]),
-            command(Some("claude"), CommandWord::Link, Some("work"), Some("-h"))
+            command(Some("claude"), CommandWord::Link, Some("work"), Some("-h"), false)
         );
         assert_eq!(
             usage_message(split(args(&["claude", "--repo"]), KNOWN)),
@@ -1039,6 +1146,87 @@ mod tests {
             assert_eq!(text, message, "{items:?}");
         }
         assert!(matches!(top(&["status", "--json"]), Err(Error::NotYetImplemented { .. })));
+    }
+
+    #[test]
+    fn lifecycle_words_bind_agent_profile_and_yes() {
+        assert_eq!(
+            split_ok(&["fake", "create", "work"]),
+            command(Some("fake"), CommandWord::Create, Some("work"), None, false)
+        );
+        assert_eq!(
+            split_ok(&["fake", "delete", "work", "--yes"]),
+            command(Some("fake"), CommandWord::Delete, Some("work"), None, true)
+        );
+        assert_eq!(
+            split_ok(&["fake", "--yes", "delete", "work"]),
+            command(Some("fake"), CommandWord::Delete, Some("work"), None, true)
+        );
+        assert_eq!(
+            split_ok(&["fake", "list"]),
+            command(Some("fake"), CommandWord::List, None, None, false)
+        );
+        assert_eq!(top(&["list"]).unwrap(), command(None, CommandWord::List, None, None, false));
+        assert_eq!(
+            top(&["agents"]).unwrap(),
+            command(None, CommandWord::Agents, None, None, false)
+        );
+        assert_eq!(
+            top(&["profiles"]).unwrap(),
+            command(None, CommandWord::Profiles, None, None, false)
+        );
+        assert_eq!(top(&["create", "-h"]).unwrap(), Invocation::CommandHelp(CommandWord::Create));
+    }
+
+    #[test]
+    fn lifecycle_usage_errors() {
+        for (items, message) in [
+            (&["create"][..], "`create` needs an agent: agent-profile <agent> create <profile>"),
+            (
+                &["delete", "work", "--yes"],
+                "`delete` needs an agent: agent-profile <agent> delete <profile>",
+            ),
+            (&["agents", "--repo", "x"], "unknown option \"--repo\" for `agents`"),
+            (&["profiles", "extra"], "`profiles` takes no arguments"),
+            (&["list", "--yes"], "unknown option \"--yes\" for `list`"),
+        ] {
+            assert_eq!(usage_message(top(items)), message, "{items:?}");
+        }
+        for (items, message) in [
+            (
+                &["fake", "create"][..],
+                "`create` needs a profile: agent-profile <agent> create <profile>",
+            ),
+            (
+                &["fake", "delete"],
+                "`delete` needs a profile: agent-profile <agent> delete <profile>",
+            ),
+            (&["fake", "create", "a", "b"], "`create` takes one profile"),
+            (&["fake", "create", "work", "--repo", "x"], "unknown option \"--repo\" for `create`"),
+            (&["fake", "create", "work", "--yes"], "unknown option \"--yes\" for `create`"),
+            (&["fake", "delete", "work", "--yes=1"], "unknown option \"--yes\" for `delete`"),
+            (&["fake", "agents"], "`agents` takes no agent: agent-profile agents"),
+            (&["fake", "profiles"], "`profiles` takes no agent: agent-profile profiles"),
+            (&["fake", "list", "extra"], "`list` takes no arguments"),
+            (
+                &["fake", "create", "work", "--", "x"],
+                "`create` takes no agent arguments; remove `--`",
+            ),
+        ] {
+            assert_eq!(usage_message(split(args(items), KNOWN)), message, "{items:?}");
+        }
+        for items in [&["fake", "create", "work", "--json"][..], &["fake", "list", "--json"]] {
+            assert!(matches!(split_err(items), Error::NotYetImplemented { .. }), "{items:?}");
+        }
+        assert!(matches!(top(&["agents", "--json"]), Err(Error::NotYetImplemented { .. })));
+    }
+
+    #[test]
+    fn doctor_repositories_completions_stay_unimplemented() {
+        match split_err(&["fake", "doctor"]) {
+            Error::NotYetImplemented { command } => assert_eq!(command, "fake doctor"),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
@@ -1189,6 +1377,7 @@ mod tests {
                     command: CommandWord::Status,
                     profile: None,
                     repo: Some(non_utf8()),
+                    yes: false,
                 }
             );
         }
