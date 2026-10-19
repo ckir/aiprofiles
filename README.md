@@ -65,8 +65,9 @@ mapping applies only to that repository: not to a nested repository, a submodule
 repositories of their own. `<agent> resolve` and `status` show what would be selected and why.
 
 Profiles are created on first launch or with `<agent> create <profile>`; `<agent> delete <profile>` asks for
-confirmation unless `--yes` is given, and refuses a profile that any mapping or `default_profile` still names.
-`<agent> list` and `profiles` show the profiles that have a materialized directory, and `agents` shows every
+confirmation unless `--yes` is given, and refuses a profile that a repository-wide mapping, `<agent>`'s own
+mapping or `default_profile` still names. `<agent> list` shows the profiles that have a materialized directory
+for it; `profiles` shows every profile that exists, with the agents that have one, and `agents` shows every
 agent's executable, support level and capability matrix.
 
 ```toml
