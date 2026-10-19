@@ -280,8 +280,11 @@ pub fn list_profiles(root: &AppRoot, adapters: &[&dyn Adapter]) -> Result<Listin
     Ok(Listing { rows, ignored })
 }
 
-/// The child entries of a listed profile directory that are directories but not known agent ids; each
-/// one is an unrecognized entry (`ignored +1` per child).
+/// The number of child directories of a listed profile directory that are not known agent ids: each one
+/// is an unrecognized entry and the caller's `ignored` grows by one per child. A child file is never
+/// counted — only child directories can be unrecognized — and a child entry whose name starts with `.`
+/// is skipped without counting, mirroring the profiles-directory rule: the same OS litter (*.swp,
+/// .DS_Store) must behave the same one level deeper.
 fn unrecognized_children(
     directory: &Path,
     adapters: &[&dyn Adapter],
@@ -296,11 +299,16 @@ fn unrecognized_children(
     let mut count = 0usize;
     for entry in entries {
         let entry = entry.map_err(|source| Error::Io { context: io_context.to_owned(), source })?;
-        let is_agent_dir = entry.file_type().is_ok_and(|kind| kind.is_dir())
-            && adapters
-                .iter()
-                .any(|adapter| entry.file_name().to_str() == Some(adapter.metadata().id));
-        if !is_agent_dir {
+        if entry.file_name().as_encoded_bytes().starts_with(b".") {
+            continue;
+        }
+        // lstat-based, as at the profiles-directory level: a symlink child is not a directory, so it is
+        // simply not counted — no refusal.
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        if !adapters.iter().any(|adapter| entry.file_name().to_str() == Some(adapter.metadata().id))
+        {
             count += 1;
         }
     }
