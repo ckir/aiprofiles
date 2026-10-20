@@ -64,4 +64,12 @@ is treated as the slow one, and a contributor who runs the other in the foregrou
 timeout. The mechanism is verified by reading; the wall-clock figure is not measured. A comment on the
 `probe-tests` recipe naming both would close it.
 
+**No test exercises a `\\?\C:\` verbatim-disk repository key.** Found by the SP5b test audit on 2026-10-20:
+dropping `Prefix::VerbatimDisk(_)` from the allow-list in `crates/agent-profile/src/repositories.rs`
+(`classify`, around line 73) leaves the whole suite green, because every Windows key in the tests uses
+the plain `C:\` form. Owner-deferred out of SP5b to keep that fold test-only. Close in SP5c with a
+`cfg(windows)` unit test asserting that `classify(r"\\?\C:\agent-profile-nonexistent\x")` yields
+`(State::Missing, None)`; it can only be measured by the Windows leg of PR CI, since the maintainer box
+is Linux.
+
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
