@@ -145,6 +145,39 @@ fn repositories_prints_one_block_per_mapping_with_states_and_annotations() {
     );
 }
 
+/// Design §4 rule 6: a key that resolves through a symlink to a root with another spelling is `moved`, never
+/// `active`, because nothing discovers the symlink spelling as a root.
+#[cfg(unix)]
+#[test]
+fn repositories_reports_a_symlinked_key_as_moved_to_the_real_root() {
+    let root = Root::empty();
+    let (_dir, base) = scratch();
+    let real = base.join("real");
+    git_dir(&real);
+    let alias = base.join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    configure(&root, &table(alias.to_str().unwrap(), "profile = \"work\""));
+
+    let text = run(&root, &["repositories"]);
+    assert_eq!(text.status.code(), Some(0), "{}", stderr(&text));
+    assert_eq!(
+        stdout(&text),
+        format!(
+            "repository:   {}\nstate:        moved (now {})\n\
+             profile:      work (no profile directory)\nagents:       none\n",
+            alias.display(),
+            real.display()
+        )
+    );
+
+    let json = run(&root, &["repositories", "--json"]);
+    assert_eq!(json.status.code(), Some(0), "{}", stderr(&json));
+    let entry = &document(&json)["repositories"][0];
+    assert_eq!(entry["repository"], alias.display().to_string());
+    assert_eq!(entry["state"], "moved");
+    assert_eq!(entry["detail"], real.display().to_string());
+}
+
 #[test]
 fn repositories_with_no_mappings_prints_the_empty_line_and_creates_nothing() {
     let root = Root::empty();

@@ -253,6 +253,11 @@ fn agents_json_lists_every_registered_agent_with_executable_states() {
             assert_eq!(executable["state"], "found");
             assert_eq!(executable["origin"], "configured");
             assert_eq!(executable["path"], env!("CARGO_BIN_EXE_fake-agent"));
+            // The mechanism carries the registry's id and its rendered description, not just the members.
+            assert_eq!(
+                element["mechanism"],
+                json!({"id": "fake-home-v1", "description": "environment variable FAKE_AGENT_HOME"})
+            );
         } else {
             assert_eq!(executable["state"], "not_on_path", "{id}");
             assert_eq!(executable["path"], Value::Null);
@@ -502,6 +507,111 @@ fn every_schema_pins_its_member_lists_on_a_null_bearing_fixture() {
     pin(active, &entry_keys, &["detail"]);
     pin(&active["profile"], &["exists", "name"], &[]);
     pin(&active["agents"]["fake"], &["exists", "known_agent", "profile"], &[]);
+}
+
+/// The member names that open an object member at exactly `indent` spaces in a pretty-printed document, in order
+/// of appearance across every object at that depth. Array elements (no `": ` after the name) are skipped.
+fn members_at(text: &str, indent: usize) -> Vec<String> {
+    let prefix = format!("{}\"", " ".repeat(indent));
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix(&prefix)?;
+            let (name, after) = rest.split_once('"')?;
+            after.starts_with(": ").then(|| name.to_owned())
+        })
+        .collect()
+}
+
+/// Design §3.1: a view struct's field order is the wire member order. Parsing into a `Value` sorts members, so
+/// this test reads the raw text; every object at one depth must repeat the same order (`chunks`).
+#[test]
+fn every_schema_keeps_the_design_member_order_in_the_raw_text() {
+    let root = Root::empty();
+    let (_dir, base) = scratch();
+    let acme = base.join("acme");
+    git_dir(&acme);
+    let solo = base.join("solo");
+    git_dir(&solo);
+    configure(
+        &root,
+        None,
+        &(mapping(&acme, "profile = \"work\"\nagents = { fake = \"mine\" }")
+            + &mapping(&solo, "profile = \"work\"")),
+    );
+    let created = run(&root, root.path(), &["fake", "create", "work"]);
+    assert_eq!(created.status.code(), Some(0), "{}", stderr(&created));
+    let chunks = |names: &[String], width: usize, expected: &[&str]| {
+        assert!(!names.is_empty() && names.len().is_multiple_of(width), "{names:?}");
+        for chunk in names.chunks(width) {
+            assert_eq!(chunk, expected, "{names:?}");
+        }
+    };
+
+    let text = stdout(&run(&root, &acme, &["fake", "resolve", "--json"]));
+    assert_eq!(
+        members_at(&text, 2),
+        ["schema", "tool_version", "agent", "profile", "source", "repository"],
+        "{text}"
+    );
+
+    // `solo` has a profile-only mapping, so `mapping.agents` prints inline and depth 6 holds only the row.
+    let text = stdout(&run(&root, &solo, &["fake", "status", "--json"]));
+    assert_eq!(
+        members_at(&text, 2),
+        [
+            "schema",
+            "tool_version",
+            "agent",
+            "repository",
+            "mapping",
+            "default_profile",
+            "agents",
+            "inapplicable_mappings"
+        ],
+        "{text}"
+    );
+    assert_eq!(members_at(&text, 4), ["profile", "agents"], "{text}");
+    assert_eq!(members_at(&text, 6), ["agent", "profile", "source", "presence"], "{text}");
+    assert_eq!(members_at(&text, 8), ["state", "existing"], "{text}");
+
+    let text = stdout(&run(&root, root.path(), &["agents", "--json"]));
+    assert_eq!(members_at(&text, 2), ["schema", "tool_version", "agents"], "{text}");
+    chunks(
+        &members_at(&text, 6),
+        6,
+        &["agent", "executable", "mechanism", "support", "evidence", "capabilities"],
+    );
+    chunks(
+        &members_at(&text, 8),
+        9,
+        &[
+            "state",
+            "path",
+            "origin",
+            "id",
+            "description",
+            "upstream_version",
+            "verified_at",
+            "source_url",
+            "notes",
+        ],
+    );
+    chunks(&members_at(&text, 10), 3, &["capability", "state", "basis"]);
+
+    let text = stdout(&run(&root, root.path(), &["profiles", "--json"]));
+    assert_eq!(
+        members_at(&text, 2),
+        ["schema", "tool_version", "agent", "profiles", "ignored_entries"],
+        "{text}"
+    );
+    assert_eq!(members_at(&text, 6), ["name", "agents"], "{text}");
+
+    let text = stdout(&run(&root, root.path(), &["repositories", "--json"]));
+    assert_eq!(members_at(&text, 2), ["schema", "tool_version", "repositories"], "{text}");
+    chunks(&members_at(&text, 6), 5, &["repository", "state", "detail", "profile", "agents"]);
+    // Entries in key order: `acme` (profile reference, then its one `fake` agent key), then `solo` (profile only).
+    assert_eq!(members_at(&text, 8), ["name", "exists", "fake", "name", "exists"], "{text}");
+    assert_eq!(members_at(&text, 10), ["profile", "exists", "known_agent"], "{text}");
 }
 
 /// Visits every object member of `value`: its name must not contain `=`, and a string value must not look like a
