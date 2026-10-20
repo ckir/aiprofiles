@@ -418,3 +418,37 @@ fn repository_local_executable_end_to_end() {
     assert_eq!(local.len(), 1, "{}", stdout(&output));
     assert_eq!(local[0]["status"], "warn");
 }
+
+#[cfg(unix)]
+#[test]
+fn root_ancestor_verdict_matches_create() {
+    let (_dir, base) = scratch();
+    let broken = base.join("broken");
+    std::os::unix::fs::symlink(base.join("gone"), &broken).unwrap();
+    let home = broken.join("app");
+    let root = Root::empty();
+    let mut doctor = root.agent_profile(["doctor"]);
+    doctor.env("AGENT_PROFILE_HOME", &home);
+    let doctor = doctor.output().unwrap();
+    assert_eq!(code(&doctor), 5, "{}{}", stdout(&doctor), stderr(&doctor));
+    let mut create = root.agent_profile(["fake", "create", "work"]);
+    create.env("AGENT_PROFILE_HOME", &home);
+    let create = create.output().unwrap();
+    assert_eq!(code(&create), 4, "{}", stderr(&create));
+}
+
+#[cfg(unix)]
+#[test]
+fn non_executable_override_verdict_matches_the_launch() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Root::empty();
+    let plain = root.path().join("plain-agent");
+    fs::write(&plain, "x").unwrap();
+    fs::set_permissions(&plain, fs::Permissions::from_mode(0o644)).unwrap();
+    root.write_config(&format!("[agents.fake]\nexecutable = {:?}\n", plain));
+    fs::create_dir_all(root.profile_dir("work")).unwrap();
+    let doctor = run(&root, &["fake", "doctor", "work"]);
+    assert_eq!(code(&doctor), 5, "{}{}", stdout(&doctor), stderr(&doctor));
+    let launch = run(&root, &["fake", "work", "--", "--version"]);
+    assert_eq!(code(&launch), 6, "{}", stderr(&launch));
+}

@@ -163,7 +163,7 @@ part of the contract, so tests and consumers can rely on it.
 | id | subject | condition -> status |
 |---|---|---|
 | `platform` | `null` | always `info`: `std::env::consts::OS` and `ARCH`, and `tool_version` |
-| `app_root` | the root path | `AppRoot::resolve` fails -> `fail` (message carries the error), and every later check that needs the root is `skip`; the root is a dangling symbolic link -> `fail`; the root does not exist -> `info` ("created on first use"); exists and is a directory -> `pass`; exists and is not a directory -> `fail` |
+| `app_root` | the root path | `AppRoot::resolve` fails -> `fail` (message carries the error), and every later check that needs the root is `skip`; the root is a dangling symbolic link -> `fail`; an ancestor of a missing root that is a dangling symbolic link or not a directory -> `fail` naming it; the root does not exist -> `info` ("created on first use"); exists and is a directory -> `pass`; exists and is not a directory -> `fail` |
 | `app_root_writable` | the root path | Unix only: root missing -> checks the nearest existing ancestor instead; that path's permissions are read-only (`Permissions::readonly()`, no write bit at all) -> `fail` (lazy initialization and `create` cannot create anything); otherwise `pass`. The message says only permission bits were read, never ACLs or ownership. Windows: always `info` ("not checked on this platform": Microsoft's file-attribute reference says `FILE_ATTRIBUTE_READONLY` "is not honored on directories", and `Permissions::readonly` reads only that attribute). Never creates a file. |
 | `config` | `config.toml` path | file absent -> `info` ("no configuration; defaults apply"); `Config::load` ok -> `pass`; any `Config::load` error -> `fail` with its key and detail (an unreadable file is already `ConfigInvalid` with "cannot read the file", `config.rs:130-138`) |
 | `config_agent` | the agent id | one record per `[agents.<id>]` table whose id is not registered -> `warn` ("not a known agent; this table is ignored"). No record when every configured id is registered. |
@@ -186,7 +186,7 @@ agent only.
 
 | id | form | subject | condition -> status |
 |---|---|---|---|
-| `executable` | both | the path or `null` | `Found` -> `pass` (path and origin); `NotOnPath` -> `info` in bare doctor, `fail` in `<agent> doctor`; `ConfiguredMissing` -> `fail` in both ("the configured executable does not exist or is not a file"); `Unsupported` -> `fail` in both (the launch exits 6 for a shell script or shim) |
+| `executable` | both | the path or `null` | `Found` -> `pass` (path and origin); Unix: a configured file with no execute bit -> `fail` in both forms (data.state stays `found`); `NotOnPath` -> `info` in bare doctor, `fail` in `<agent> doctor`; `ConfiguredMissing` -> `fail` in both ("the configured executable does not exist or is not a file"); `Unsupported` -> `fail` in both (the launch exits 6 for a shell script or shim) |
 | `repository_local_executable` | both | the path | a relative `PATH` entry, resolved against the process's current directory (never `--repo`: a launch resolves relative entries against the real cwd, so that is the only place V3 §20's third state can arise), holds the executable as `exe.rs`'s private `search_dir` decides it for an absolute entry (Unix: the bare name with an execute bit; Windows: the first of `WINDOWS_FORMS`, so `claude.exe` counts and an extensionless `claude` does not) -> `warn` ("found but never used: v0.1 searches only the configured override and absolute PATH entries"). Read-only existence check; never run. No record otherwise. This is V3 §20's third state. |
 | `support` | both | `null` | always `info`. `data` carries the SP5b `agents` element's `mechanism`, `support`, `evidence` and the full `capabilities` matrix, plus `"installed_version": null` and `"version_probe": "not_run"`. The message names the evidence's `upstream_version` and `verified_at` and says the installed version is not probed. |
 | `resolution` | agent form | the profile | an explicit `<profile>` argument is used as given (no discovery needed); otherwise `resolve::resolve` with the `repository` check's `Discovery`, and `skip` if that check failed (a launch would fail on the same error, so resolving as "not in a repository" would show a profile no launch uses). Invalid name argument -> `fail` (the `InvalidProfileName` text); nothing resolves -> `warn` ("a launch here needs an explicit profile"); resolved -> `info` naming profile and source. |
@@ -338,6 +338,9 @@ My calls (owner: please check)
   every run yellow.
 - C5: `app_root_writable` and `profile_path` read permission bits only. They can say "read-only" reliably and
   cannot prove writability (ACLs, ownership); messages say so.
+- C8: executability, like writability (C5), reads Unix permission bits only (`exe::is_executable`): a file executable
+  only by another user, and on Windows a configured file that is not a valid program, read as found; the launch then
+  exits 6 with the operating system's reason. Agreed with agy in the capstone round-1 fix-design consult.
 - C7: the builder check's five questions (2026-10-20) are settled in §4 (dependency table, `fail` = a command of
   this tool refuses), §5.1 (`config` takes any load error; `profiles_dir` names the failing path), §5.3
   (`resolution` skips on a discovery error; repository-local lookup uses the real cwd; `launch_environment`

@@ -247,6 +247,37 @@ fn nearest_existing(path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Why creating a missing path would fail below an existing ancestor.
+#[derive(Clone, Copy)]
+enum Blocker {
+    DanglingLink,
+    NotDirectory,
+}
+
+impl Blocker {
+    fn describe(self) -> &'static str {
+        match self {
+            Blocker::DanglingLink => "a dangling symbolic link",
+            Blocker::NotDirectory => "not a directory",
+        }
+    }
+}
+
+/// The entry that stops a launch creating the missing `path`: a dangling symbolic link between `path` and
+/// its nearest existing ancestor, or that ancestor when it is not a directory. Nothing else blocks here.
+fn blocked_ancestor(path: &Path) -> Option<(PathBuf, Blocker)> {
+    let ancestor = nearest_existing(path)?;
+    for candidate in path.ancestors().take_while(|candidate| *candidate != ancestor) {
+        if fs::symlink_metadata(candidate).is_ok() {
+            return Some((candidate.to_owned(), Blocker::DanglingLink));
+        }
+    }
+    match fs::metadata(&ancestor) {
+        Ok(metadata) if !metadata.is_dir() => Some((ancestor, Blocker::NotDirectory)),
+        _ => None,
+    }
+}
+
 fn host_checks(env: &Environment<'_>, checks: &mut Vec<Check>) -> Host {
     checks.push(check(
         CheckId::Platform,
@@ -332,13 +363,26 @@ fn app_root(root: &AppRoot, checks: &mut Vec<Check>) -> bool {
             ),
             true,
         ),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+        Err(error)
+            if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) =>
+        {
             if fs::symlink_metadata(path).is_ok() {
                 (
                     Status::Fail,
                     format!(
                         "application root {} is a dangling symbolic link; remove it or set AGENT_PROFILE_HOME",
                         path.display()
+                    ),
+                    false,
+                )
+            } else if let Some((blocker, reason)) = blocked_ancestor(path) {
+                (
+                    Status::Fail,
+                    format!(
+                        "application root {} cannot be created: {} is {}; remove it or set AGENT_PROFILE_HOME",
+                        path.display(),
+                        blocker.display(),
+                        reason.describe()
                     ),
                     false,
                 )
@@ -786,6 +830,14 @@ fn executable_record(
 ) -> Check {
     let id = metadata.id;
     let (subject, level, message) = match status {
+        ExecutableStatus::Found(found) if cfg!(unix) && !exe::is_executable(&found.path) => (
+            Some(shown(&found.path)),
+            Status::Fail,
+            format!(
+                "the configured executable {path} has no execute permission bit; chmod +x {path} or fix [agents.{id}] executable in config.toml",
+                path = found.path.display()
+            ),
+        ),
         ExecutableStatus::Found(found) => (
             Some(shown(&found.path)),
             Status::Pass,
@@ -1055,30 +1107,30 @@ fn profile_path_record(id: &'static str, path: &Path, kind: PathKind) -> Check {
 fn missing_path(path: &Path) -> (Status, String) {
     let created =
         (Status::Info, format!("{} does not exist; it is created on first launch", path.display()));
-    let Some(ancestor) = nearest_existing(path) else {
-        return created;
-    };
-    for candidate in path.ancestors().take_while(|candidate| *candidate != ancestor) {
-        if fs::symlink_metadata(candidate).is_ok() {
-            return (
+    if let Some((blocker, reason)) = blocked_ancestor(path) {
+        return match reason {
+            Blocker::DanglingLink => (
                 Status::Fail,
                 format!(
                     "{} is a dangling symbolic link, so a launch cannot create {}; remove it",
-                    candidate.display(),
+                    blocker.display(),
                     path.display()
                 ),
-            );
-        }
-    }
-    match fs::metadata(&ancestor) {
-        Ok(metadata) if !metadata.is_dir() => (
-            Status::Fail,
-            format!(
-                "{} is not a directory, so a launch cannot create {}; remove or rename it",
-                ancestor.display(),
-                path.display()
             ),
-        ),
+            Blocker::NotDirectory => (
+                Status::Fail,
+                format!(
+                    "{} is not a directory, so a launch cannot create {}; remove or rename it",
+                    blocker.display(),
+                    path.display()
+                ),
+            ),
+        };
+    }
+    let Some(ancestor) = nearest_existing(path) else {
+        return created;
+    };
+    match fs::metadata(&ancestor) {
         Ok(metadata) if cfg!(unix) && metadata.permissions().readonly() => (
             Status::Fail,
             format!(
@@ -1639,6 +1691,77 @@ mod tests {
         assert_eq!(fake.status, Status::Info);
         let targeted = run_with(&f, &agent_target(None), Some(bin.as_os_str()), &|_| false);
         assert_eq!(only(&targeted, CheckId::Executable).status, Status::Fail);
+        assert!(targeted.failed());
+    }
+
+    fn run_at_root(f: &Fixture, root: PathBuf) -> Report {
+        let environment = env(Ok(AppRoot::from_path(root)), &f.base);
+        run(&Target::Host, &environment)
+    }
+
+    #[cfg(unix)]
+    fn assert_root_blocked(report: &Report, root: &Path, ancestor: &Path, reason: &str) {
+        let record = only(report, CheckId::AppRoot);
+        assert_eq!(record.status, Status::Fail, "{record:?}");
+        assert_eq!(record.subject, Some(shown(root)));
+        assert_eq!(record.data, json!({ "path": shown(root), "exists": false }));
+        assert!(record.message.contains(&ancestor.display().to_string()), "{}", record.message);
+        assert!(record.message.contains(reason), "{}", record.message);
+        for id in [CheckId::AppRootWritable, CheckId::Config, CheckId::ProfilesDir] {
+            skipped(report, id);
+        }
+        assert!(report.failed());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_ancestor_of_root_fails() {
+        let f = fixture();
+        let broken = f.base.join("broken");
+        std::os::unix::fs::symlink(f.base.join("gone"), &broken).unwrap();
+        let root = broken.join("app");
+        let report = run_at_root(&f, root.clone());
+        assert_root_blocked(&report, &root, &broken, "dangling symbolic link");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_ancestor_of_root_fails() {
+        let f = fixture();
+        let file = f.base.join("plain");
+        fs::write(&file, "x").unwrap();
+        let root = file.join("app");
+        let report = run_at_root(&f, root.clone());
+        assert_root_blocked(&report, &root, &file, "not a directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn configured_executable_without_execute_bit_fails() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        let bin = bin_dir(&f, true);
+        let plain = f.base.join("plain-agent");
+        fs::write(&plain, "x").unwrap();
+        set_mode(&plain, 0o644);
+        fs::write(
+            f.root.join("config.toml"),
+            format!("[agents.fake]\nexecutable = '{}'\n", plain.display()),
+        )
+        .unwrap();
+        let bare = run_with(&f, &Target::Host, Some(bin.as_os_str()), &|_| false);
+        let fake = bare
+            .checks
+            .iter()
+            .find(|check| check.id == CheckId::Executable && check.agent == Some("fake"))
+            .unwrap();
+        let targeted = run_with(&f, &agent_target(None), Some(bin.as_os_str()), &|_| false);
+        for record in [fake, only(&targeted, CheckId::Executable)] {
+            assert_eq!(record.status, Status::Fail, "{record:?}");
+            assert_eq!(record.data["state"], json!("found"));
+            assert!(record.message.contains("no execute permission bit"), "{}", record.message);
+            assert!(record.message.contains(&plain.display().to_string()));
+        }
         assert!(targeted.failed());
     }
 
