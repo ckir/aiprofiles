@@ -1,7 +1,7 @@
 # SP5c — `doctor`
 
-Status: DRAFT 2026-10-20. Owner decided F1-F3 on 2026-10-20 (§11); agy-first ALIGNED after one negotiation
-round (see "Consults"). Not yet panel-reviewed.
+Status: panel GREEN at round 4 on 2026-10-20, awaiting owner approval. Owner decided F1-F3 on 2026-10-20
+(§11); agy-first ALIGNED after one negotiation round; builder check folded (see "Consults").
 V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1 "Past V3" records every place this
 document goes past it. Third slice of SP5 as the owner split it on 2026-10-19 (`.clavity/seams/sp5-order.md`): SP5a
 lifecycle (merged `9039ee1`) -> SP5b `--json` + `repositories` (merged `e099b01`) -> **SP5c `doctor`** -> SP5d
@@ -163,7 +163,7 @@ part of the contract, so tests and consumers can rely on it.
 |---|---|---|
 | `platform` | `null` | always `info`: `std::env::consts::OS` and `ARCH`, and `tool_version` |
 | `app_root` | the root path | `AppRoot::resolve` fails -> `fail` (message carries the error), and every later check that needs the root is `skip`; the root does not exist -> `info` ("created on first use"); exists and is a directory -> `pass`; exists and is not a directory -> `fail` |
-| `app_root_writable` | the root path | Unix only: root missing -> checks the nearest existing ancestor instead; that path's permissions are read-only (`Permissions::readonly()`, no write bit at all) -> `fail` (lazy initialization and `create` cannot create anything); otherwise `pass`. The message says only permission bits were read, never ACLs or ownership. Windows: always `info` ("not checked on this platform": the read-only attribute does not govern a directory's write access there). Never creates a file. |
+| `app_root_writable` | the root path | Unix only: root missing -> checks the nearest existing ancestor instead; that path's permissions are read-only (`Permissions::readonly()`, no write bit at all) -> `fail` (lazy initialization and `create` cannot create anything); otherwise `pass`. The message says only permission bits were read, never ACLs or ownership. Windows: always `info` ("not checked on this platform": Microsoft's file-attribute reference says `FILE_ATTRIBUTE_READONLY` "is not honored on directories", and `Permissions::readonly` reads only that attribute). Never creates a file. |
 | `config` | `config.toml` path | file absent -> `info` ("no configuration; defaults apply"); `Config::load` ok -> `pass`; any `Config::load` error -> `fail` with its key and detail (an unreadable file is already `ConfigInvalid` with "cannot read the file", `config.rs:130-138`) |
 | `config_agent` | the agent id | one record per `[agents.<id>]` table whose id is not registered -> `warn` ("not a known agent; this table is ignored"). No record when every configured id is registered. |
 | `profiles_dir` | the path that failed | absent -> `info`; `list_profiles` fails -> `fail` with the path its error names (the profiles directory or one profile directory below it; `profiles` and `list` fail the same way), `data.profiles` and `data.ignored` `null`; otherwise `pass` with `data.profiles` (row count) and `data.ignored` (the `Listing.ignored` count) |
@@ -376,8 +376,17 @@ Owner questions
   `repository_local_executable` reuses `search_dir`, so Windows sees `claude.exe` and ignores an extensionless
   `claude` (`exe.rs:105-123`). Its open-question remark that version detection is nominal is the owner's F2
   ruling, recorded under Stand-downs.
+- Spec panel round 4, 2026-10-20: brief `.clavity/seams/sp5c-spec-panel-r4.md`, reply
+  `.clavity/scratch/sp5c-spec-panel/reply-r4.md`: PANEL VERDICT GREEN, every seat "no new findings" (State
+  Corruptor new this round). Its one concrete claim was checked and stood down below. Tree unchanged after
+  every round. Seats used across the review: Axiom Breaker, Cascade Analyst, Protocol Pedant, Literal
+  Implementer, Mechanism Gamer, Boundary Smuggler, Blindspot Auditor, Fold Auditor, Platform Skeptic
+  (bespoke), State Corruptor.
 
 ## Stand-downs
 
 - UNVERIFIED-ACCEPTED: version detection reports only the evidence version, never the installed one (panel
   round 3, open question 1). The owner chose this in ruling F2 (§11); `support` says so in every run.
+- DISCARDED-BELOW-FLOOR: a profile directory deleted while `list_profiles` runs turns `profiles_dir` into a
+  `fail` (panel round 4, State Corruptor) - unreachable because `unrecognized_children` returns 0 on
+  `NotFound` (`lifecycle.rs:298-299`, "Gone between listing the profile and reading it").
