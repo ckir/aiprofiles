@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::adapter::{AdapterMetadata, Capability, CapabilityState, SupportLevel};
 use crate::config::Config;
+use crate::doctor::{Report, Status};
 use crate::exe::Origin;
 use crate::lifecycle::{Listing, Presence};
 use crate::name::AgentId;
@@ -403,6 +404,70 @@ pub fn repositories(entries: &[Entry]) -> RepositoriesDocument {
     }
 }
 
+/// The per-status counts of a `doctor` document; every key is always present.
+#[derive(Debug, Serialize)]
+pub struct DoctorCounts {
+    pass: usize,
+    info: usize,
+    warn: usize,
+    fail: usize,
+    skip: usize,
+}
+
+/// One record of a `doctor` document.
+#[derive(Debug, Serialize)]
+pub struct CheckView {
+    id: &'static str,
+    agent: Option<&'static str>,
+    subject: Option<String>,
+    status: &'static str,
+    message: String,
+    data: serde_json::Value,
+}
+
+/// The `doctor` document (SP5c design §6).
+#[derive(Debug, Serialize)]
+pub struct DoctorDocument {
+    schema: &'static str,
+    tool_version: &'static str,
+    agent: Option<String>,
+    profile: Option<String>,
+    repository: Option<String>,
+    result: &'static str,
+    counts: DoctorCounts,
+    checks: Vec<CheckView>,
+}
+
+pub fn doctor(report: &Report) -> DoctorDocument {
+    DoctorDocument {
+        schema: "agent-profile/doctor/1",
+        tool_version: TOOL_VERSION,
+        agent: report.agent.as_ref().map(|agent| agent.as_str().to_owned()),
+        profile: report.profile.as_ref().map(ToString::to_string),
+        repository: report.repository.as_ref().map(|path| path.display().to_string()),
+        result: if report.failed() { "fail" } else { "ok" },
+        counts: DoctorCounts {
+            pass: report.count(Status::Pass),
+            info: report.count(Status::Info),
+            warn: report.count(Status::Warn),
+            fail: report.count(Status::Fail),
+            skip: report.count(Status::Skip),
+        },
+        checks: report
+            .checks
+            .iter()
+            .map(|check| CheckView {
+                id: check.id.token(),
+                agent: check.agent,
+                subject: check.subject.clone(),
+                status: check.status.token(),
+                message: check.message.clone(),
+                data: check.data.clone(),
+            })
+            .collect(),
+    }
+}
+
 #[cfg(all(test, debug_assertions))]
 mod tests {
     use super::*;
@@ -642,5 +707,83 @@ mod tests {
             some["profiles"],
             serde_json::json!([{"name": "work", "agents": ["claude", "codex"]}])
         );
+    }
+
+    fn record(
+        id: crate::doctor::CheckId,
+        agent: Option<&'static str>,
+        status: crate::doctor::Status,
+        message: &str,
+    ) -> crate::doctor::Check {
+        crate::doctor::Check {
+            id,
+            agent,
+            subject: None,
+            status,
+            message: message.to_owned(),
+            data: Value::Null,
+        }
+    }
+
+    fn report(checks: Vec<crate::doctor::Check>) -> crate::doctor::Report {
+        crate::doctor::Report { agent: None, profile: None, repository: None, checks }
+    }
+
+    #[test]
+    fn doctor_document_has_the_envelope_and_all_counts() {
+        use crate::doctor::{CheckId, Status};
+        let mut report = report(vec![record(CheckId::Platform, None, Status::Info, "linux")]);
+        report.agent = Some(fake());
+        report.profile = Some(profile("work"));
+        report.repository = Some(std::path::PathBuf::from("/src/acme"));
+        let value = parsed(&doctor(&report));
+        // `Value` objects iterate sorted, so the member order is read from the rendered text.
+        let text = render(&doctor(&report));
+        let order = [
+            "schema",
+            "tool_version",
+            "agent",
+            "profile",
+            "repository",
+            "result",
+            "counts",
+            "checks",
+        ];
+        let positions: Vec<usize> =
+            order.iter().map(|key| text.find(&format!("\n  \"{key}\":")).unwrap()).collect();
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{text}");
+        assert_eq!(keys(&value).len(), order.len());
+        assert_eq!(value["schema"], "agent-profile/doctor/1");
+        assert_eq!(value["agent"], "fake");
+        assert_eq!(value["profile"], "work");
+        assert_eq!(value["repository"], "/src/acme");
+        let counts = &text[text.find("\"counts\"").unwrap()..text.find("\"checks\"").unwrap()];
+        let count_order: Vec<usize> = ["pass", "info", "warn", "fail", "skip"]
+            .iter()
+            .map(|k| counts.find(&format!("\"{k}\"")).unwrap())
+            .collect();
+        assert!(count_order.windows(2).all(|pair| pair[0] < pair[1]), "{counts}");
+        assert_eq!(keys(&value["counts"]).len(), 5);
+        assert_eq!(value["counts"]["info"], 1);
+        assert_eq!(value["counts"]["pass"], 0);
+        let check = &value["checks"][0];
+        assert_eq!(keys(check), ["agent", "data", "id", "message", "status", "subject"]);
+        assert_eq!(check["id"], "platform");
+        assert_eq!(check["status"], "info");
+        assert!(check["agent"].is_null() && check["subject"].is_null() && check["data"].is_null());
+
+        let bare = parsed(&doctor(&self::report(Vec::new())));
+        assert!(
+            bare["agent"].is_null() && bare["profile"].is_null() && bare["repository"].is_null()
+        );
+    }
+
+    #[test]
+    fn doctor_document_result_tracks_failed() {
+        use crate::doctor::{CheckId, Status};
+        let failing = report(vec![record(CheckId::Config, None, Status::Fail, "bad")]);
+        assert_eq!(parsed(&doctor(&failing))["result"], "fail");
+        let fine = report(vec![record(CheckId::Config, None, Status::Warn, "meh")]);
+        assert_eq!(parsed(&doctor(&fine))["result"], "ok");
     }
 }
