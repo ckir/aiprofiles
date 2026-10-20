@@ -68,7 +68,7 @@ struct Cli {
 
 /// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
 /// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
-/// (SP3 design §7.2), as are `resolve`, `current` and `repositories`.
+/// (SP3 design §7.2), as are `resolve`, `current`, `repositories` and `doctor`.
 #[derive(Subcommand)]
 enum Command {
     /// Not yet implemented.
@@ -208,7 +208,8 @@ impl CommandWord {
                  --json  Print a JSON document instead of the report\n"
             }
             CommandWord::Doctor => {
-                "Usage: agent-profile [<agent>] doctor [<profile>] [--repo <path>] [--json]\n\
+                "Usage: agent-profile doctor [--repo <path>] [--json]\n       \
+                 agent-profile <agent> doctor [<profile>] [--repo <path>] [--json]\n\
                  Check this machine, its configuration, the repository mappings and the agents; with <agent>, \
                  also <agent> and its profile here.\n\n  \
                  --repo <path>  Use the repository at <path> instead of the current directory\n  \

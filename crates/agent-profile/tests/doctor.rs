@@ -143,6 +143,11 @@ fn text_and_json_carry_the_same_records() {
     let json = run(&root, &["fake", "doctor", "work", "--json"]);
     assert_eq!(code(&text), code(&json));
     let doc = json_of(&json);
+    let support = records(&doc, "support");
+    assert_eq!(support.len(), 1);
+    for member in ["mechanism", "support", "evidence"] {
+        assert!(!support[0]["data"][member].is_null(), "{member}: {}", support[0]);
+    }
     let checks = doc["checks"].as_array().unwrap();
     let text = stdout(&text);
     let status_lines: Vec<&str> = text
@@ -252,7 +257,52 @@ fn profile_path_verdict_matches_the_launch() {
         assert!(failures.is_empty(), "{failures:?}");
         assert_eq!(code(&output), 0);
         assert_eq!(code(&run(&root, &["fake", "work", "--", "--version"])), 0);
+
+        fs::remove_file(&work).unwrap();
+        std::os::unix::fs::symlink(root.path().join("missing"), &work).unwrap();
+        let output = run(&root, &["fake", "doctor", "work", "--json"]);
+        assert_eq!(code(&output), 5, "{}", stdout(&output));
+        let doc = json_of(&output);
+        let path_records = records(&doc, "profile_path");
+        assert_eq!(path_records.len(), 1, "{path_records:?}");
+        assert_eq!(path_records[0]["status"], "fail");
+        assert_eq!(code(&run(&root, &["fake", "work", "--", "--version"])), 4);
     }
+}
+
+#[test]
+fn agent_form_record_order() {
+    let root = Root::new();
+    fs::create_dir_all(root.profile_dir("work")).unwrap();
+    let empty_path = tempfile::tempdir().unwrap();
+    let output = command_with_path(&root, &["fake", "doctor", "work", "--json"], empty_path.path())
+        .output()
+        .unwrap();
+    let doc = json_of(&output);
+    let mut ids: Vec<&str> = Vec::new();
+    for check in doc["checks"].as_array().unwrap() {
+        if check["agent"] == "fake" {
+            let id = check["id"].as_str().unwrap();
+            if ids.last() != Some(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    assert_eq!(
+        ids,
+        [
+            "executable",
+            "support",
+            "resolution",
+            "profile",
+            "profile_path",
+            "launch_environment",
+            "conflicting_option",
+            "capability",
+        ],
+        "{}",
+        stdout(&output)
+    );
 }
 
 /// Relative path, kind and file bytes of everything below `base`; no timestamps, which OS indexers can touch.

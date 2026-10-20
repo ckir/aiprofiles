@@ -214,7 +214,13 @@ fn check(
 }
 
 fn skip(id: CheckId, dependency: CheckId) -> Check {
-    check(id, None, Status::Skip, format!("skipped: {} failed", dependency.token()), Value::Null)
+    check(
+        id,
+        None,
+        Status::Skip,
+        format!("{} skipped: {} failed", id.token(), dependency.token()),
+        Value::Null,
+    )
 }
 
 fn shown(path: &Path) -> String {
@@ -263,7 +269,7 @@ fn host_checks(env: &Environment<'_>, checks: &mut Vec<Check>) -> Host {
                 None,
                 Status::Fail,
                 format!("cannot resolve the application root: {message}"),
-                Value::Null,
+                json!({ "path": Value::Null, "exists": Value::Null }),
             ));
             for id in [
                 CheckId::AppRootWritable,
@@ -326,14 +332,27 @@ fn app_root(root: &AppRoot, checks: &mut Vec<Check>) -> bool {
             ),
             true,
         ),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => (
-            Status::Info,
-            format!(
-                "application root {} does not exist; it is created on first use",
-                path.display()
-            ),
-            false,
-        ),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if fs::symlink_metadata(path).is_ok() {
+                (
+                    Status::Fail,
+                    format!(
+                        "application root {} is a dangling symbolic link; remove it or set AGENT_PROFILE_HOME",
+                        path.display()
+                    ),
+                    false,
+                )
+            } else {
+                (
+                    Status::Info,
+                    format!(
+                        "application root {} does not exist; it is created on first use",
+                        path.display()
+                    ),
+                    false,
+                )
+            }
+        }
         Err(error) => (
             Status::Fail,
             format!("cannot examine the application root {}: {error}", path.display()),
@@ -472,7 +491,16 @@ fn profiles_dir(root: &AppRoot, checks: &mut Vec<Check>) -> ProfilesDir {
     match lifecycle::list_profiles(root, &adapters) {
         Ok(listing) => {
             let exists = fs::metadata(&dir).is_ok();
-            let (status, message) = if exists {
+            let dangling = !exists && fs::symlink_metadata(&dir).is_ok();
+            let (status, message) = if dangling {
+                (
+                    Status::Fail,
+                    format!(
+                        "profiles directory {} is a dangling symbolic link; remove it",
+                        dir.display()
+                    ),
+                )
+            } else if exists {
                 (
                     Status::Pass,
                     format!(
@@ -503,7 +531,13 @@ fn profiles_dir(root: &AppRoot, checks: &mut Vec<Check>) -> ProfilesDir {
                     "ignored": listing.ignored,
                 }),
             ));
-            if exists { ProfilesDir::Present } else { ProfilesDir::Absent }
+            if dangling {
+                ProfilesDir::Failed
+            } else if exists {
+                ProfilesDir::Present
+            } else {
+                ProfilesDir::Absent
+            }
         }
         Err(error) => {
             let (subject, itself) = match fs::read_dir(&dir) {
@@ -776,7 +810,7 @@ fn executable_record(
             Some(shown(path)),
             Status::Fail,
             format!(
-                "the configured executable {} is missing; fix [agents.{id}] executable in config.toml",
+                "the configured executable {} does not exist or is not a file; fix [agents.{id}] executable in config.toml",
                 path.display()
             ),
         ),
@@ -1223,7 +1257,38 @@ mod tests {
         ] {
             skipped(&report, id);
         }
-        assert_eq!(only(&report, CheckId::Config).message, "skipped: app_root failed");
+        assert_eq!(only(&report, CheckId::Config).message, "config skipped: app_root failed");
+        assert_eq!(
+            only(&report, CheckId::AppRoot).data,
+            json!({ "path": Value::Null, "exists": Value::Null })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_root_fails_and_skips_its_dependents() {
+        let f = fixture();
+        std::os::unix::fs::symlink(f.base.join("missing"), &f.root).unwrap();
+        let report = run_host(&f);
+        let found = only(&report, CheckId::AppRoot);
+        assert_eq!(found.status, Status::Fail);
+        assert!(found.message.contains("dangling symbolic link"), "{}", found.message);
+        for id in [CheckId::AppRootWritable, CheckId::Config, CheckId::ProfilesDir] {
+            skipped(&report, id);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_profiles_dir_fails_and_skips_its_dependents() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        std::os::unix::fs::symlink(f.base.join("missing"), f.root.join("profiles")).unwrap();
+        let report = run_host(&f);
+        let found = only(&report, CheckId::ProfilesDir);
+        assert_eq!(found.status, Status::Fail);
+        assert!(found.message.contains("dangling symbolic link"), "{}", found.message);
+        skipped(&report, CheckId::CaseTwins);
     }
 
     #[test]
@@ -1270,7 +1335,7 @@ mod tests {
         {
             skipped(&report, id);
         }
-        assert_eq!(only(&report, CheckId::Mapping).message, "skipped: config failed");
+        assert_eq!(only(&report, CheckId::Mapping).message, "mapping skipped: config failed");
     }
 
     #[test]
