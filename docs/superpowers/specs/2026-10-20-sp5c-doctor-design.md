@@ -186,11 +186,11 @@ agent only.
 | id | form | subject | condition -> status |
 |---|---|---|---|
 | `executable` | both | the path or `null` | `Found` -> `pass` (path and origin); `NotOnPath` -> `info` in bare doctor, `fail` in `<agent> doctor`; `ConfiguredMissing` -> `fail` in both ("the configured executable is missing"); `Unsupported` -> `fail` in both (the launch exits 6 for a shell script or shim) |
-| `repository_local_executable` | both | the path | a relative `PATH` entry, resolved against the process's current directory (never `--repo`: a launch resolves relative entries against the real cwd, so that is the only place V3 §20's third state can arise), holds a file named like the executable -> `warn` ("found but never used: v0.1 searches only the configured override and absolute PATH entries"). Read-only existence check; never run. No record otherwise. This is V3 §20's third state. |
+| `repository_local_executable` | both | the path | a relative `PATH` entry, resolved against the process's current directory (never `--repo`: a launch resolves relative entries against the real cwd, so that is the only place V3 §20's third state can arise), holds the executable as `exe.rs`'s private `search_dir` decides it for an absolute entry (Unix: the bare name with an execute bit; Windows: the first of `WINDOWS_FORMS`, so `claude.exe` counts and an extensionless `claude` does not) -> `warn` ("found but never used: v0.1 searches only the configured override and absolute PATH entries"). Read-only existence check; never run. No record otherwise. This is V3 §20's third state. |
 | `support` | both | `null` | always `info`. `data` carries the SP5b `agents` element's `mechanism`, `support`, `evidence` and the full `capabilities` matrix, plus `"installed_version": null` and `"version_probe": "not_run"`. The message names the evidence's `upstream_version` and `verified_at` and says the installed version is not probed. |
 | `resolution` | agent form | the profile | an explicit `<profile>` argument is used as given (no discovery needed); otherwise `resolve::resolve` with the `repository` check's `Discovery`, and `skip` if that check failed (a launch would fail on the same error, so resolving as "not in a repository" would show a profile no launch uses). Invalid name argument -> `fail` (the `InvalidProfileName` text); nothing resolves -> `warn` ("a launch here needs an explicit profile"); resolved -> `info` naming profile and source. |
 | `profile` | agent form | the profile | `presence`: `Conflict` -> `fail` naming the twin; `Absent` -> `info` ("created on first launch"); `Materialized` -> `pass`; `Known` -> `pass` (reserved and unconstructed by all twelve adapters, ROADMAP.md; mapped so the match stays exhaustive) |
-| `profile_path` | agent form | each path | one record per `Adapter::paths` entry, in that order, decided on `fs::metadata` of the path, which follows symbolic links exactly as `ensure_paths` and `has_kind` do (`adapter/mod.rs:281-285`; measured 2026-10-20: a launch through a symlinked `profiles/work` exits 0): exists with the expected kind -> `pass`, with `data.mode` on Unix (octal string) and `null` elsewhere; exists with the wrong kind (a file where a directory goes, or the reverse) -> `fail` (`ensure_paths` refuses it, `adapter/mod.rs:294-297`); Unix only, exists with the expected kind but no write bit at all -> `warn` (the launch is not refused, but the agent cannot write its state there); any error other than not-found -> `fail` carrying the error. Not found and `symlink_metadata` finds an entry -> `fail` ("<path> is a dangling symbolic link"; measured 2026-10-20: a launch through a dangling `profiles/dang` exits 4 with "File exists"). Not found -> walk up to the nearest existing ancestor (stopping at the application root), applying the same two rules to each ancestor (`fs::metadata`, and a dangling link is a `fail`): that ancestor is not a directory -> `fail` ("<ancestor> is not a directory, so a launch cannot create <path>"; reproduced 2026-10-20: a file at `profiles/work` makes `agent-profile fake work` exit 4 with "Not a directory"); Unix only, the ancestor has no write bit at all -> `fail` (a launch cannot create the path; this covers a read-only `profiles/` directory); otherwise `info` ("created on first launch"). |
+| `profile_path` | agent form | each path | one record per `Adapter::paths` entry, in that order, decided on `fs::metadata` of the path, which follows symbolic links exactly as `ensure_paths` and `has_kind` do (`adapter/mod.rs:281-285`; measured 2026-10-20: a launch through a symlinked `profiles/work` exits 0): exists with the expected kind -> `pass`, with `data.mode` on Unix (octal string) and `null` elsewhere; exists with the wrong kind (a file where a directory goes, or the reverse) -> `fail` (`ensure_paths` refuses it, `adapter/mod.rs:294-297`); Unix only, exists with the expected kind but no write bit at all -> `warn` (the launch is not refused, but the agent cannot write its state there); any error other than not-found -> `fail` carrying the error. Not found and `symlink_metadata` finds an entry -> `fail` ("<path> is a dangling symbolic link"; measured 2026-10-20: a launch through a dangling `profiles/dang` exits 4 with "File exists"). Not found -> walk up to the nearest existing ancestor, continuing above the application root when the root itself is missing (as `app_root_writable` does, and as `create_dir_all` would create the whole chain), applying the same two rules to each ancestor (`fs::metadata`, and a dangling link is a `fail`): that ancestor is not a directory -> `fail` ("<ancestor> is not a directory, so a launch cannot create <path>"; reproduced 2026-10-20: a file at `profiles/work` makes `agent-profile fake work` exit 4 with "Not a directory"); Unix only, the ancestor has no write bit at all -> `fail` (a launch cannot create the path; this covers a read-only `profiles/` directory); otherwise `info` ("created on first launch"). |
 | `launch_environment` | agent form | the variable or option | exactly one `info` record: the adapter's `Mechanism`, matched on its four variants, with the message `mechanism.sentence_for(<target>)` where the target is the profile directory (`Env`, `FlagDir`) or file (`EnvFile`, `FlagFile`) from `Adapter::paths`. For the two variable mechanisms, when the current environment already sets that variable the message adds that the launch replaces it. The current value is never read into the output, so there is nothing to redact. |
 | `conflicting_option` | agent form | the option spelling | one `info` per `ConflictOption` ("a launch refuses this option because the profile already sets it") |
 | `capability` | agent form | the capability | one record per `Capability::ALL` entry whose state is not `supported`: `info`, message = state label + basis. These are the credential-isolation caveats; they are facts the evidence documents, never `warn`. |
@@ -298,6 +298,10 @@ stdout; nothing doctor-specific goes to stderr.
 - A config error: `mapping` produces exactly one `skip` record with `subject: null`, whatever the file held.
 - A symlink at `profiles/<profile>` to a real directory: `profile_path` is not `fail` and the launch exits 0; a
   dangling symlink there: `profile_path` `fail` and the launch exits 4.
+- A fresh host: no application root at all, `<agent> doctor work` for an installed agent exits 0 and
+  `profile_path` is `info`.
+- Windows CI: a relative `PATH` entry `.` holding `fake.exe` gives `repository_local_executable` `warn`; an
+  extensionless `fake` there gives no record.
 - `<agent> doctor` with nothing resolving: `resolution` `warn`, then exactly one `skip` each for `profile`,
   `profile_path`, `launch_environment`.
 - Case twins: on a case-sensitive filesystem (Linux CI), `work` and `Work` produce one `fail` naming both; on
@@ -312,7 +316,8 @@ stdout; nothing doctor-specific goes to stderr.
 
 - Module layout (a `doctor.rs` producing records, renderers in `output.rs` and `json.rs` is the obvious shape).
 - Exact message wording, within §4's rule that a `fail` names what to change.
-- How the repository-local executable helper shares code with `exe::search_path`.
+- How `repository_local_executable` reuses `exe.rs`'s `search_dir` (it must, so the two cannot disagree on
+  what counts as an executable).
 
 ## 11. Decisions
 
@@ -365,7 +370,14 @@ Owner questions
   now names the `resolution` `warn` as a trigger; `profile_path` follows symbolic links like `ensure_paths`
   (measured: a symlinked profile directory launches, exit 0) and fails on a dangling one (measured: exit 4);
   every `message` names its subject, so `case_twins` names both profiles in text.
+- Spec panel round 3, 2026-10-20: brief `.clavity/seams/sp5c-spec-panel-r3.md`, reply
+  `.clavity/scratch/sp5c-spec-panel/reply-r3.md`, two findings, both verified and FOLDED: the ancestor walk
+  continues above a missing application root (it found nothing on a fresh host and could only fail);
+  `repository_local_executable` reuses `search_dir`, so Windows sees `claude.exe` and ignores an extensionless
+  `claude` (`exe.rs:105-123`). Its open-question remark that version detection is nominal is the owner's F2
+  ruling, recorded under Stand-downs.
 
 ## Stand-downs
 
-None so far.
+- UNVERIFIED-ACCEPTED: version detection reports only the evidence version, never the installed one (panel
+  round 3, open question 1). The owner chose this in ruling F2 (§11); `support` says so in every run.
