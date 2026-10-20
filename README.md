@@ -40,15 +40,17 @@ Adapters produce a `LaunchPlan`; they never spawn processes.
 ```text
 agent-profile <agent> <profile> [WRAPPER OPTIONS] [-- <agent args...>]
 agent-profile <agent> [WRAPPER OPTIONS] [-- <agent args...>]
-agent-profile <agent> current|resolve|status [--repo <path>]
+agent-profile <agent> current [--repo <path>]
+agent-profile <agent> resolve|status [--repo <path>] [--json]
 agent-profile [<agent>] link <profile> [--repo <path>]
 agent-profile [<agent>] unlink [--repo <path>]
-agent-profile status [--repo <path>]
+agent-profile status [--repo <path>] [--json]
 agent-profile <agent> create <profile>
 agent-profile <agent> delete <profile> [--yes]
-agent-profile [<agent>] list
-agent-profile profiles
-agent-profile agents
+agent-profile [<agent>] list [--json]
+agent-profile profiles [--json]
+agent-profile agents [--json]
+agent-profile repositories [--json]
 ```
 
 Everything after `--` is passed to the agent untouched. `--dry-run` shows what would be launched without
@@ -69,6 +71,17 @@ confirmation unless `--yes` is given, and refuses a profile that a repository-wi
 mapping or `default_profile` still names. `<agent> list` shows the profiles that have a materialized directory
 for it; `profiles` shows every profile that exists, with the agents that have one, and `agents` shows every
 agent's executable, support level and capability matrix.
+
+`repositories` lists every stored mapping with one of six states (`active`, `moved`, `not_a_repository`,
+`missing`, `unreadable`, `foreign`) and whether the mapped profiles exist; removing an entry completely takes
+one `unlink` per stored field (`unlink --repo <path>` for the entry's profile, `<agent> unlink --repo <path>`
+for each agent field), except that an entry with no fields, or an `agents` field for an agent this build does
+not know, is removed by editing `config.toml`. `--json` prints a document whose first members are `schema`
+(`agent-profile/<command>/1`, stable within the 0.x series, token sets closed) and `tool_version`. Consumers
+read stdout only: stderr keeps its notes, so a `2>&1` capture is not a document. `repositories` probes every
+stored path synchronously, so callers should run it under their own timeout; an integration that wants the
+applying profile and its presence uses `<agent> status --json`, which exits 0 whether or not anything
+resolves.
 
 ```toml
 default_profile = "work"

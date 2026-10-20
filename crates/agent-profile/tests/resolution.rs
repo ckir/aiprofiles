@@ -502,7 +502,7 @@ fn every_command_usage_error_through_the_binary() {
         (&["status", "--"], 2, "`status` takes no agent arguments; remove `--`"),
         (&["unlink", "--", "--repo", "x"], 2, "`unlink` takes no agent arguments; remove `--`"),
         (&["fake", "unlink", "--verbose"], 2, "unknown option \"--verbose\" for `unlink`"),
-        (&["fake", "resolve", "--json"], 2, "`--json` is not yet implemented"),
+        (&["fake", "create", "work", "--json"], 2, "`--json` is not yet implemented"),
         (&["link"], 2, "`link` needs a profile: agent-profile [<agent>] link <profile>"),
         (&["fake", "link", "a", "b"], 2, "`link` takes one profile"),
         (&["fake", "current", "x"], 2, "`current` takes no arguments"),

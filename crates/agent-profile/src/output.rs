@@ -1,6 +1,6 @@
 //! Human output: the dry-run and `--verbose` report (spec §26, SP1 design §7.4, SP2 design §7.3), the
-//! repository command reports (SP3 design §7.5) and redaction (spec §22). JSON output (spec §32) arrives in
-//! SP5.
+//! repository command reports (SP3 design §7.5) and redaction (spec §22). JSON output (spec §32) is built in
+//! `json` (SP5b).
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -184,7 +184,7 @@ pub fn capability_lines(metadata: &AdapterMetadata) -> Vec<String> {
 }
 
 /// `label:` padded to the report column, then `value`.
-fn labeled(label: &str, value: impl std::fmt::Display) -> String {
+pub(crate) fn labeled(label: &str, value: impl std::fmt::Display) -> String {
     format!("{:<LABEL_WIDTH$}{value}", format!("{label}:"))
 }
 
@@ -251,12 +251,12 @@ pub fn status_lines(
 
 /// A path to paste into a command: in double quotes when it contains whitespace, which POSIX shells, PowerShell
 /// and `cmd` all read as one argument.
-fn shell_word(path: &Path) -> String {
+pub(crate) fn shell_word(path: &Path) -> String {
     let shown = path.display().to_string();
     if shown.contains(char::is_whitespace) { format!("\"{shown}\"") } else { shown }
 }
 
-fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
+pub(crate) fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
     path.starts_with(key) && key != path
 }
 
@@ -391,6 +391,57 @@ pub enum ExecutableStatus {
     ConfiguredMissing(PathBuf),
     /// The resolved file would launch through a shell (a `.cmd`/`.bat`/`.ps1` script or shim).
     Unsupported(PathBuf),
+}
+
+/// `repositories` (SP5b design §4): a block per stored mapping, a blank line between blocks. The key is
+/// printed as stored.
+pub fn repositories_lines(entries: &[crate::repositories::Entry]) -> Vec<String> {
+    use crate::repositories::State;
+    if entries.is_empty() {
+        return vec!["no repository mappings".to_owned()];
+    }
+    let mut lines = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if index > 0 {
+            lines.push(String::new());
+        }
+        lines.push(labeled("repository", &entry.key));
+        let state = match (&entry.state, &entry.detail) {
+            (State::Moved, Some(detail)) => format!("{} (now {detail})", entry.state.token()),
+            (State::Unreadable, Some(detail)) => format!("{} ({detail})", entry.state.token()),
+            _ => entry.state.token().to_owned(),
+        };
+        lines.push(labeled("state", state));
+        lines.push(labeled(
+            "profile",
+            entry.profile.as_ref().map_or_else(
+                || "none".to_owned(),
+                |profile| {
+                    let missing = if profile.exists { "" } else { " (no profile directory)" };
+                    format!("{}{missing}", profile.name)
+                },
+            ),
+        ));
+        let agents = if entry.agents.is_empty() {
+            "none".to_owned()
+        } else {
+            entry
+                .agents
+                .iter()
+                .map(|(id, agent)| {
+                    let missing = if agent.exists { "" } else { " (no profile directory)" };
+                    let unknown = if agent.known { "" } else { " (unknown agent)" };
+                    format!("{id}={}{missing}{unknown}", agent.profile)
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        lines.push(labeled("agents", agents));
+        if entry.profile.is_none() && entry.agents.is_empty() {
+            lines.push(note("maps nothing; remove it by editing config.toml"));
+        }
+    }
+    lines
 }
 
 /// `agents` (SP5a design §3): a padded block per entry — the agent, the executable status, the mechanism,
