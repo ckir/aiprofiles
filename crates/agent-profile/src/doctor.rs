@@ -10,15 +10,20 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::adapter;
+use crate::adapter::{
+    self, Adapter, AdapterMetadata, Capability, CapabilityState, Mechanism, PathKind,
+};
 use crate::config::{AppRoot, Config};
 use crate::error::Error;
+use crate::exe::{self, Origin};
 use crate::json;
-use crate::lifecycle;
+use crate::lifecycle::{self, Presence};
 use crate::name::Platform;
 use crate::name::{AgentId, ProfileName};
+use crate::output::{self, ExecutableStatus};
 use crate::repo::{self, Discovery};
 use crate::repositories::{self, State};
+use crate::resolve;
 
 /// The outcome of one check (design §4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,7 +161,37 @@ pub fn run(target: &Target, env: &Environment<'_>) -> Report {
         checks: Vec::new(),
     };
     let host = host_checks(env, &mut report.checks);
-    report.repository = repository_checks(env, &host, &mut report.checks);
+    let discovery = repository_checks(env, &host, &mut report.checks);
+    report.repository = match &discovery {
+        Some(Discovery::Repository(root)) => Some(root.clone()),
+        _ => None,
+    };
+    match target {
+        Target::Host => {
+            for adapter in adapter::registry() {
+                let metadata = adapter.metadata();
+                executable_checks(metadata, env, &host, false, &mut report.checks);
+                report.checks.push(support_check(metadata));
+            }
+        }
+        Target::Agent { agent, profile } => {
+            let adapter = adapter::lookup(agent.as_str()).expect("the grammar admits known agents");
+            let metadata = adapter.metadata();
+            executable_checks(metadata, env, &host, true, &mut report.checks);
+            report.checks.push(support_check(metadata));
+            let resolved = resolution_check(
+                agent,
+                profile.as_deref(),
+                &host,
+                discovery.as_ref(),
+                &mut report.checks,
+            );
+            report.profile = resolved.clone();
+            let blocked = if host.root.is_none() { CheckId::AppRoot } else { CheckId::Resolution };
+            profile_checks(adapter, resolved.as_ref(), env, &host, blocked, &mut report.checks);
+            option_checks(metadata, &mut report.checks);
+        }
+    }
     report
 }
 
@@ -164,6 +199,8 @@ pub fn run(target: &Target, env: &Environment<'_>) -> Report {
 struct Host {
     root: Option<AppRoot>,
     config: Option<Config>,
+    /// `profiles_dir` failed on the profiles directory itself.
+    profiles_failed: bool,
 }
 
 fn check(
@@ -217,7 +254,7 @@ fn host_checks(env: &Environment<'_>, checks: &mut Vec<Check>) -> Host {
         ),
         json!({ "os": std::env::consts::OS, "arch": std::env::consts::ARCH }),
     ));
-    let mut host = Host { root: None, config: None };
+    let mut host = Host { root: None, config: None, profiles_failed: false };
     let root = match &env.root {
         Ok(root) => root,
         Err(message) => {
@@ -261,7 +298,10 @@ fn host_checks(env: &Environment<'_>, checks: &mut Vec<Check>) -> Host {
     match profiles_dir(root, checks) {
         ProfilesDir::Present => case_twins(root, checks),
         ProfilesDir::Absent => {}
-        ProfilesDir::Failed => checks.push(skip(CheckId::CaseTwins, CheckId::ProfilesDir)),
+        ProfilesDir::Failed => {
+            host.profiles_failed = true;
+            checks.push(skip(CheckId::CaseTwins, CheckId::ProfilesDir));
+        }
     }
     match &host.config {
         Some(config) => checks.push(default_profile(config)),
@@ -536,12 +576,12 @@ fn case_twins(root: &AppRoot, checks: &mut Vec<Check>) {
     }
 }
 
-/// Pushes the repository checks and returns the discovered root.
+/// Pushes the repository checks and returns the discovery, or `None` when it failed.
 fn repository_checks(
     env: &Environment<'_>,
     host: &Host,
     checks: &mut Vec<Check>,
-) -> Option<PathBuf> {
+) -> Option<Discovery> {
     let start = env.start;
     let found = match repo::discover(start) {
         Ok(Discovery::Repository(root)) => {
@@ -552,7 +592,7 @@ fn repository_checks(
                 format!("{} is in the repository rooted at {}", start.display(), root.display()),
                 Value::Null,
             ));
-            Some(root)
+            Some(Discovery::Repository(root))
         }
         Ok(Discovery::NotInRepository) => {
             checks.push(check(
@@ -562,7 +602,7 @@ fn repository_checks(
                 format!("{} is not in a repository", start.display()),
                 Value::Null,
             ));
-            None
+            Some(Discovery::NotInRepository)
         }
         Err(error) => {
             let reason = match &error {
@@ -644,6 +684,446 @@ fn mapping_checks(host: &Host, checks: &mut Vec<Check>) {
 /// The failed check that makes `mapping` and `mapping_agent` skip.
 fn mapping_dependency(host: &Host) -> CheckId {
     if host.root.is_none() { CheckId::AppRoot } else { CheckId::Config }
+}
+
+/// A per-agent record.
+fn agent_check(
+    agent: &'static str,
+    id: CheckId,
+    subject: Option<String>,
+    status: Status,
+    message: String,
+    data: Value,
+) -> Check {
+    Check { agent: Some(agent), ..check(id, subject, status, message, data) }
+}
+
+fn agent_skip(agent: &'static str, id: CheckId, dependency: CheckId) -> Check {
+    Check { agent: Some(agent), ..skip(id, dependency) }
+}
+
+/// Pushes `executable`, then `repository_local_executable` when found (design §5.3).
+fn executable_checks(
+    metadata: &AdapterMetadata,
+    env: &Environment<'_>,
+    host: &Host,
+    targeted: bool,
+    checks: &mut Vec<Check>,
+) {
+    let id = metadata.id;
+    if let (Some(root), Some(config)) = (&host.root, &host.config) {
+        let explicit = config.agent_executable(id);
+        checks.push(
+            match ExecutableStatus::discover(metadata, explicit, env.path_var, &root.config_path())
+            {
+                Ok(status) => executable_record(metadata, &status, targeted),
+                Err(error) => agent_check(
+                    id,
+                    CheckId::Executable,
+                    None,
+                    Status::Fail,
+                    format!("cannot discover the executable of {id}: {error}"),
+                    Value::Null,
+                ),
+            },
+        );
+    } else {
+        checks.push(agent_skip(id, CheckId::Executable, mapping_dependency(host)));
+    }
+    if let Some(path) = exe::repository_local(metadata.executable, env.path_var, env.cwd) {
+        checks.push(agent_check(
+            id,
+            CheckId::RepositoryLocalExecutable,
+            Some(shown(&path)),
+            Status::Warn,
+            format!(
+                "{} is found but never used: v0.1 searches only the configured override and absolute PATH entries",
+                path.display()
+            ),
+            Value::Null,
+        ));
+    }
+}
+
+fn executable_record(
+    metadata: &AdapterMetadata,
+    status: &ExecutableStatus,
+    targeted: bool,
+) -> Check {
+    let id = metadata.id;
+    let (subject, level, message) = match status {
+        ExecutableStatus::Found(found) => (
+            Some(shown(&found.path)),
+            Status::Pass,
+            format!(
+                "found {} ({})",
+                found.path.display(),
+                match found.origin {
+                    Origin::Configured => "configured override",
+                    Origin::Path => "on PATH",
+                }
+            ),
+        ),
+        ExecutableStatus::NotOnPath => (
+            None,
+            if targeted { Status::Fail } else { Status::Info },
+            format!(
+                "{} was not found in any absolute PATH entry; install it or set [agents.{id}] executable in config.toml",
+                metadata.executable
+            ),
+        ),
+        ExecutableStatus::ConfiguredMissing(path) => (
+            Some(shown(path)),
+            Status::Fail,
+            format!(
+                "the configured executable {} is missing; fix [agents.{id}] executable in config.toml",
+                path.display()
+            ),
+        ),
+        ExecutableStatus::Unsupported(path) => (
+            Some(shown(path)),
+            Status::Fail,
+            format!(
+                "{} is a shell script or shim, which a launch refuses (exit 6); point [agents.{id}] executable at a native executable",
+                path.display()
+            ),
+        ),
+    };
+    let data = serde_json::to_value(json::executable_view(status)).unwrap_or(Value::Null);
+    agent_check(id, CheckId::Executable, subject, level, message, data)
+}
+
+/// The `support` record: the evidence, never a probe of the installed agent.
+fn support_check(metadata: &AdapterMetadata) -> Check {
+    let view = serde_json::to_value(json::agent_view(metadata, &ExecutableStatus::NotOnPath))
+        .unwrap_or(Value::Null);
+    let data = json!({
+        "mechanism": view["mechanism"],
+        "support": view["support"],
+        "evidence": view["evidence"],
+        "capabilities": view["capabilities"],
+        "installed_version": Value::Null,
+        "version_probe": "not_run",
+    });
+    agent_check(
+        metadata.id,
+        CheckId::Support,
+        None,
+        Status::Info,
+        format!(
+            "{} is {} against upstream version {} verified {}; the installed version is not probed",
+            metadata.id,
+            json::support_token(metadata.support),
+            metadata.evidence.upstream_version,
+            metadata.evidence.verified_at
+        ),
+        data,
+    )
+}
+
+/// Pushes `resolution` and returns the profile it settled on.
+fn resolution_check(
+    agent: &AgentId,
+    argument: Option<&str>,
+    host: &Host,
+    discovery: Option<&Discovery>,
+    checks: &mut Vec<Check>,
+) -> Option<ProfileName> {
+    let id = adapter::lookup(agent.as_str()).expect("known agent").metadata().id;
+    let Some(config) = &host.config else {
+        checks.push(agent_skip(id, CheckId::Resolution, mapping_dependency(host)));
+        return None;
+    };
+    let explicit = match argument.map(|raw| (raw, ProfileName::parse(raw, Platform::host()))) {
+        Some((raw, Err(reason))) => {
+            let error = Error::InvalidProfileName { name: raw.to_owned(), reason };
+            checks.push(agent_check(
+                id,
+                CheckId::Resolution,
+                Some(raw.to_owned()),
+                Status::Fail,
+                format!("{error}; give a valid profile name"),
+                Value::Null,
+            ));
+            return None;
+        }
+        Some((_, Ok(name))) => Some(name),
+        None => None,
+    };
+    let found = match (&explicit, discovery) {
+        (Some(_), _) => Discovery::NotInRepository,
+        (None, Some(found)) => found.clone(),
+        (None, None) => {
+            checks.push(agent_skip(id, CheckId::Resolution, CheckId::Repository));
+            return None;
+        }
+    };
+    let resolution = resolve::resolve(agent.clone(), explicit, config, &found);
+    match resolution.profile {
+        Some(name) => {
+            checks.push(agent_check(
+                id,
+                CheckId::Resolution,
+                Some(name.to_string()),
+                Status::Info,
+                format!("profile `{name}` resolves for {id} ({})", resolution.source.label()),
+                Value::Null,
+            ));
+            Some(name)
+        }
+        None => {
+            checks.push(agent_check(
+                id,
+                CheckId::Resolution,
+                None,
+                Status::Warn,
+                format!(
+                    "no profile resolves for {id} here; a launch here needs an explicit profile"
+                ),
+                Value::Null,
+            ));
+            None
+        }
+    }
+}
+
+/// Pushes `profile`, `profile_path` and `launch_environment`, or one `skip` each.
+fn profile_checks(
+    adapter: &dyn Adapter,
+    profile: Option<&ProfileName>,
+    env: &Environment<'_>,
+    host: &Host,
+    blocked: CheckId,
+    checks: &mut Vec<Check>,
+) {
+    let id = adapter.metadata().id;
+    let (Some(profile), Some(root)) = (profile, &host.root) else {
+        for check in [CheckId::Profile, CheckId::ProfilePath, CheckId::LaunchEnvironment] {
+            checks.push(agent_skip(id, check, blocked));
+        }
+        return;
+    };
+    let agent = AgentId::parse(id).expect("registry ids are valid");
+    let paths = adapter.paths(root, profile);
+    if host.profiles_failed {
+        checks.push(agent_skip(id, CheckId::Profile, CheckId::ProfilesDir));
+        checks.push(agent_skip(id, CheckId::ProfilePath, CheckId::ProfilesDir));
+    } else {
+        checks.push(profile_record(id, root, &agent, profile));
+        for (path, kind) in &paths {
+            checks.push(profile_path_record(id, path, *kind));
+        }
+    }
+    checks.push(launch_environment(adapter.metadata(), &paths, env));
+}
+
+fn profile_record(
+    id: &'static str,
+    root: &AppRoot,
+    agent: &AgentId,
+    profile: &ProfileName,
+) -> Check {
+    let presence = lifecycle::presence(root, agent, profile);
+    let existing = match &presence {
+        Presence::Conflict { existing } => json!(existing),
+        _ => Value::Null,
+    };
+    let (status, message) = match &presence {
+        Presence::Conflict { existing } => (
+            Status::Fail,
+            format!(
+                "profile `{profile}` conflicts with `{existing}`, which differs only in case; rename or remove one"
+            ),
+        ),
+        Presence::Absent => (
+            Status::Info,
+            format!("profile `{profile}` does not exist for {id}; it is created on first launch"),
+        ),
+        Presence::Materialized | Presence::Known => {
+            (Status::Pass, format!("profile `{profile}` exists for {id}"))
+        }
+    };
+    agent_check(
+        id,
+        CheckId::Profile,
+        Some(profile.to_string()),
+        status,
+        message,
+        json!({ "state": presence.token(), "existing": existing }),
+    )
+}
+
+fn profile_path_record(id: &'static str, path: &Path, kind: PathKind) -> Check {
+    let (kind_token, noun) = match kind {
+        PathKind::Dir => ("dir", "directory"),
+        PathKind::File { .. } => ("file", "file"),
+    };
+    let mut exists = true;
+    let mut mode = Value::Null;
+    let (status, message) = match fs::metadata(path) {
+        Ok(metadata) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                mode = json!(format!("{:o}", metadata.permissions().mode() & 0o7777));
+            }
+            let right = match kind {
+                PathKind::Dir => metadata.is_dir(),
+                PathKind::File { .. } => metadata.is_file(),
+            };
+            if !right {
+                (
+                    Status::Fail,
+                    format!(
+                        "{} exists but is not a {noun}; a launch refuses it; remove or rename it",
+                        path.display()
+                    ),
+                )
+            } else if cfg!(unix) && metadata.permissions().readonly() {
+                (
+                    Status::Warn,
+                    format!(
+                        "{} has no write permission bit, so the agent cannot write its state there",
+                        path.display()
+                    ),
+                )
+            } else {
+                (Status::Pass, format!("{} is a {noun}", path.display()))
+            }
+        }
+        Err(error)
+            if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) =>
+        {
+            exists = false;
+            missing_path(path)
+        }
+        Err(error) => (Status::Fail, format!("cannot examine {}: {error}", path.display())),
+    };
+    agent_check(
+        id,
+        CheckId::ProfilePath,
+        Some(shown(path)),
+        status,
+        message,
+        json!({ "path": shown(path), "exists": exists, "kind": kind_token, "mode": mode }),
+    )
+}
+
+/// What a launch would meet creating `path`, which does not exist.
+fn missing_path(path: &Path) -> (Status, String) {
+    let created =
+        (Status::Info, format!("{} does not exist; it is created on first launch", path.display()));
+    let Some(ancestor) = nearest_existing(path) else {
+        return created;
+    };
+    for candidate in path.ancestors().take_while(|candidate| *candidate != ancestor) {
+        if fs::symlink_metadata(candidate).is_ok() {
+            return (
+                Status::Fail,
+                format!(
+                    "{} is a dangling symbolic link, so a launch cannot create {}; remove it",
+                    candidate.display(),
+                    path.display()
+                ),
+            );
+        }
+    }
+    match fs::metadata(&ancestor) {
+        Ok(metadata) if !metadata.is_dir() => (
+            Status::Fail,
+            format!(
+                "{} is not a directory, so a launch cannot create {}; remove or rename it",
+                ancestor.display(),
+                path.display()
+            ),
+        ),
+        Ok(metadata) if cfg!(unix) && metadata.permissions().readonly() => (
+            Status::Fail,
+            format!(
+                "{} has no write permission bit, so a launch cannot create {}; change its permissions",
+                ancestor.display(),
+                path.display()
+            ),
+        ),
+        Ok(_) => created,
+        Err(error) => (Status::Fail, format!("cannot examine {}: {error}", ancestor.display())),
+    }
+}
+
+/// The single `launch_environment` record: how the profile is passed, never a value read from the
+/// environment.
+fn launch_environment(
+    metadata: &AdapterMetadata,
+    paths: &[(PathBuf, PathKind)],
+    env: &Environment<'_>,
+) -> Check {
+    let (kind, name, wants_file) = match metadata.mechanism {
+        Mechanism::Env(name) => ("env", name, false),
+        Mechanism::EnvFile(name) => ("env_file", name, true),
+        Mechanism::FlagDir(option) => ("flag_dir", option.spelling(), false),
+        Mechanism::FlagFile(option) => ("flag_file", option.spelling(), true),
+    };
+    let target = paths
+        .iter()
+        .find(|(_, kind)| matches!(kind, PathKind::File { .. }) == wants_file)
+        .map(|(path, _)| path.as_path())
+        .expect("an adapter owns the path its mechanism points at");
+    let variable = matches!(metadata.mechanism, Mechanism::Env(_) | Mechanism::EnvFile(_));
+    let already_set = variable.then(|| (env.is_set)(name));
+    let message = if variable {
+        let mut message = format!("sets {name} to {}", target.display());
+        if already_set == Some(true) {
+            message += "; already set in this environment, the launch replaces it";
+        }
+        message
+    } else {
+        metadata.mechanism.sentence_for(target)
+    };
+    agent_check(
+        metadata.id,
+        CheckId::LaunchEnvironment,
+        Some(name.to_owned()),
+        Status::Info,
+        message,
+        json!({
+            "kind": kind,
+            "name": name,
+            "value": shown(target),
+            "already_set": already_set,
+        }),
+    )
+}
+
+/// Pushes `conflicting_option` and `capability` records.
+fn option_checks(metadata: &AdapterMetadata, checks: &mut Vec<Check>) {
+    let id = metadata.id;
+    for option in metadata.conflicts.iter().chain(metadata.mechanism.conflict_option()) {
+        checks.push(agent_check(
+            id,
+            CheckId::ConflictingOption,
+            Some(option.spelling().to_owned()),
+            Status::Info,
+            format!("a launch refuses {} because the profile already sets it", option.spelling()),
+            Value::Null,
+        ));
+    }
+    for capability in Capability::ALL {
+        let claim = metadata
+            .capabilities
+            .iter()
+            .find(|claim| claim.capability == capability)
+            .expect("registry adapters declare every capability");
+        if claim.state != CapabilityState::Supported {
+            checks.push(agent_check(
+                id,
+                CheckId::Capability,
+                Some(json::capability_token(capability).to_owned()),
+                Status::Info,
+                format!("{}: {}", output::state_label(claim.state), claim.basis),
+                Value::Null,
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -989,5 +1469,370 @@ mod tests {
         let report = run(&Target::Host, &environment);
         assert_eq!(only(&report, CheckId::Repository).status, Status::Fail);
         assert_eq!(report.repository, None);
+    }
+
+    // ---- Task 3: the per-agent checks -------------------------------------------------------------
+
+    fn fake_id() -> AgentId {
+        AgentId::parse("fake").unwrap()
+    }
+
+    /// A directory under the fixture holding an "installed" fake agent (or nothing).
+    fn bin_dir(f: &Fixture, installed: bool) -> PathBuf {
+        let dir = f.base.join(if installed { "bin-installed" } else { "bin-empty" });
+        fs::create_dir_all(&dir).unwrap();
+        if installed {
+            let file = dir.join(if cfg!(windows) { "fake-agent.exe" } else { "fake-agent" });
+            fs::write(&file, "x").unwrap();
+            #[cfg(unix)]
+            set_mode(&file, 0o755);
+        }
+        dir
+    }
+
+    fn run_with(
+        f: &Fixture,
+        target: &Target,
+        path_var: Option<&OsStr>,
+        is_set: &dyn Fn(&str) -> bool,
+    ) -> Report {
+        let environment = Environment {
+            root: Ok(AppRoot::from_path(f.root.clone())),
+            path_var,
+            cwd: &f.base,
+            start: &f.base,
+            is_set,
+        };
+        run(target, &environment)
+    }
+
+    fn agent_target(profile: Option<&str>) -> Target {
+        Target::Agent { agent: fake_id(), profile: profile.map(str::to_owned) }
+    }
+
+    /// `fake <profile> doctor` with the agent installed.
+    fn run_fake(f: &Fixture, profile: Option<&str>) -> Report {
+        let bin = bin_dir(f, true);
+        run_with(f, &agent_target(profile), Some(bin.as_os_str()), &|_| false)
+    }
+
+    fn profile_dir_of(f: &Fixture, profile: &str) -> PathBuf {
+        f.root.join("profiles").join(profile).join("fake")
+    }
+
+    fn skips_for_profile_checks(report: &Report) {
+        for id in [CheckId::Profile, CheckId::ProfilePath, CheckId::LaunchEnvironment] {
+            skipped(report, id);
+        }
+    }
+
+    #[test]
+    fn bare_doctor_has_three_records_per_agent() {
+        let f = fixture();
+        let report = run_host(&f);
+        let seen: Vec<(&str, CheckId)> = report
+            .checks
+            .iter()
+            .filter(|check| {
+                matches!(
+                    check.id,
+                    CheckId::Executable | CheckId::Support | CheckId::RepositoryLocalExecutable
+                )
+            })
+            .map(|check| (check.agent.unwrap(), check.id))
+            .collect();
+        let expected: Vec<(&str, CheckId)> = adapter::known_agents()
+            .into_iter()
+            .flat_map(|id| [(id, CheckId::Executable), (id, CheckId::Support)])
+            .collect();
+        assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn not_installed_is_info_bare_and_fail_targeted() {
+        let f = fixture();
+        let bin = bin_dir(&f, false);
+        let bare = run_with(&f, &Target::Host, Some(bin.as_os_str()), &|_| false);
+        let fake = bare
+            .checks
+            .iter()
+            .find(|check| check.id == CheckId::Executable && check.agent == Some("fake"))
+            .unwrap();
+        assert_eq!(fake.status, Status::Info);
+        let targeted = run_with(&f, &agent_target(None), Some(bin.as_os_str()), &|_| false);
+        assert_eq!(only(&targeted, CheckId::Executable).status, Status::Fail);
+        assert!(targeted.failed());
+    }
+
+    #[test]
+    fn configured_missing_and_shell_script_fail() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        let bin = bin_dir(&f, true);
+        let nope = f.base.join("nope");
+        fs::write(
+            f.root.join("config.toml"),
+            format!("[agents.fake]\nexecutable = '{}'\n", nope.display()),
+        )
+        .unwrap();
+        let report = run_with(&f, &agent_target(None), Some(bin.as_os_str()), &|_| false);
+        let found = only(&report, CheckId::Executable);
+        assert_eq!(found.status, Status::Fail);
+        assert_eq!(found.data["state"], json!("configured_missing"));
+
+        let script = f.base.join("fake.cmd");
+        fs::write(&script, "@echo off").unwrap();
+        fs::write(
+            f.root.join("config.toml"),
+            format!("[agents.fake]\nexecutable = '{}'\n", script.display()),
+        )
+        .unwrap();
+        let report = run_with(&f, &agent_target(None), Some(bin.as_os_str()), &|_| false);
+        let found = only(&report, CheckId::Executable);
+        assert_eq!(found.status, Status::Fail);
+        assert_eq!(found.data["state"], json!("unsupported"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repository_local_executable_warns() {
+        let f = fixture();
+        let local = f.base.join("bin");
+        fs::create_dir_all(&local).unwrap();
+        let exe = local.join("fake-agent");
+        fs::write(&exe, "x").unwrap();
+        set_mode(&exe, 0o755);
+        let report = run_with(&f, &agent_target(None), Some(OsStr::new("bin")), &|_| false);
+        let found = only(&report, CheckId::RepositoryLocalExecutable);
+        assert_eq!(found.status, Status::Warn);
+        assert_eq!(found.subject.as_deref(), Some(exe.to_str().unwrap()));
+        let without = run_with(&f, &agent_target(None), None, &|_| false);
+        assert!(find(&without, CheckId::RepositoryLocalExecutable).is_empty());
+    }
+
+    #[test]
+    fn support_never_probes() {
+        let f = fixture();
+        let report = run_fake(&f, None);
+        let found = only(&report, CheckId::Support);
+        assert_eq!(found.status, Status::Info);
+        assert_eq!(found.data["installed_version"], Value::Null);
+        assert_eq!(found.data["version_probe"], json!("not_run"));
+        assert_eq!(found.data["capabilities"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn invalid_profile_argument_fails_resolution() {
+        let f = fixture();
+        let report = run_fake(&f, Some("bad/name"));
+        assert_eq!(only(&report, CheckId::Resolution).status, Status::Fail);
+        skips_for_profile_checks(&report);
+        assert_eq!(report.profile, None);
+    }
+
+    #[test]
+    fn nothing_resolves_warns_and_skips() {
+        let f = fixture();
+        let report = run_fake(&f, None);
+        assert_eq!(only(&report, CheckId::Resolution).status, Status::Warn);
+        skips_for_profile_checks(&report);
+    }
+
+    #[test]
+    fn discovery_failure_skips_resolution_only_without_profile() {
+        let f = fixture();
+        let missing = f.base.join("start");
+        let bin = bin_dir(&f, true);
+        let run_at = |profile: Option<&str>| {
+            let environment = Environment {
+                root: Ok(AppRoot::from_path(f.root.clone())),
+                path_var: Some(bin.as_os_str()),
+                cwd: &f.base,
+                start: &missing,
+                is_set: &|_| false,
+            };
+            run(&agent_target(profile), &environment)
+        };
+        let without = run_at(None);
+        skipped(&without, CheckId::Resolution);
+        let with = run_at(Some("work"));
+        assert_eq!(only(&with, CheckId::Resolution).status, Status::Info);
+    }
+
+    #[test]
+    fn absent_profile_is_lazy_info() {
+        let f = fixture();
+        fs::create_dir_all(f.root.join("profiles")).unwrap();
+        let report = run_fake(&f, Some("work"));
+        assert_eq!(only(&report, CheckId::Profile).status, Status::Info);
+        assert_eq!(only(&report, CheckId::ProfilePath).status, Status::Info);
+        assert!(!report.failed());
+        assert_eq!(report.profile.as_ref().map(ProfileName::as_str), Some("work"));
+    }
+
+    #[test]
+    fn fresh_root_profile_path_is_info() {
+        let f = fixture();
+        assert!(!f.root.exists());
+        let report = run_fake(&f, Some("work"));
+        assert_eq!(only(&report, CheckId::ProfilePath).status, Status::Info);
+        assert!(!report.failed());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialized_profile_passes_with_mode() {
+        let f = fixture();
+        let dir = profile_dir_of(&f, "work");
+        fs::create_dir_all(&dir).unwrap();
+        set_mode(&dir, 0o700);
+        let report = run_fake(&f, Some("work"));
+        assert_eq!(only(&report, CheckId::Profile).status, Status::Pass);
+        let path = only(&report, CheckId::ProfilePath);
+        assert_eq!(path.status, Status::Pass);
+        assert_eq!(path.data["mode"], json!("700"));
+    }
+
+    #[test]
+    fn file_where_the_profile_dir_goes_fails() {
+        let f = fixture();
+        fs::create_dir_all(f.root.join("profiles")).unwrap();
+        let work = f.root.join("profiles").join("work");
+        fs::write(&work, "x").unwrap();
+        let report = run_fake(&f, Some("work"));
+        let path = only(&report, CheckId::ProfilePath);
+        assert_eq!(path.status, Status::Fail);
+        assert!(path.message.contains(work.to_str().unwrap()), "{}", path.message);
+    }
+
+    #[test]
+    fn wrong_kind_at_the_leaf_fails() {
+        let f = fixture();
+        let leaf = profile_dir_of(&f, "work");
+        fs::create_dir_all(leaf.parent().unwrap()).unwrap();
+        fs::write(&leaf, "x").unwrap();
+        let report = run_fake(&f, Some("work"));
+        assert_eq!(only(&report, CheckId::ProfilePath).status, Status::Fail);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_profile_dir_is_not_a_fail() {
+        let f = fixture();
+        fs::create_dir_all(f.root.join("profiles")).unwrap();
+        let real = f.base.join("real");
+        fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, f.root.join("profiles").join("work")).unwrap();
+        let report = run_fake(&f, Some("work"));
+        let status = only(&report, CheckId::ProfilePath).status;
+        assert!(matches!(status, Status::Info | Status::Pass), "{status:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_fails() {
+        let f = fixture();
+        fs::create_dir_all(f.root.join("profiles")).unwrap();
+        std::os::unix::fs::symlink(f.base.join("nowhere"), f.root.join("profiles").join("work"))
+            .unwrap();
+        let report = run_fake(&f, Some("work"));
+        let path = only(&report, CheckId::ProfilePath);
+        assert_eq!(path.status, Status::Fail);
+        assert!(path.message.contains("dangling"), "{}", path.message);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_only_existing_leaf_warns() {
+        let f = fixture();
+        let dir = profile_dir_of(&f, "work");
+        fs::create_dir_all(&dir).unwrap();
+        set_mode(&dir, 0o555);
+        let report = run_fake(&f, Some("work"));
+        set_mode(&dir, 0o755);
+        assert_eq!(only(&report, CheckId::ProfilePath).status, Status::Warn);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_only_ancestor_fails() {
+        let f = fixture();
+        let profiles = f.root.join("profiles");
+        fs::create_dir_all(&profiles).unwrap();
+        set_mode(&profiles, 0o555);
+        let report = run_fake(&f, Some("work"));
+        set_mode(&profiles, 0o755);
+        assert_eq!(only(&report, CheckId::ProfilePath).status, Status::Fail);
+    }
+
+    #[test]
+    fn launch_environment_reports_without_values() {
+        let f = fixture();
+        let bin = bin_dir(&f, true);
+        let report = run_with(&f, &agent_target(Some("work")), Some(bin.as_os_str()), &|name| {
+            name == "FAKE_AGENT_HOME"
+        });
+        let found = only(&report, CheckId::LaunchEnvironment);
+        assert_eq!(found.status, Status::Info);
+        assert_eq!(found.data["kind"], json!("env"));
+        assert_eq!(found.data["name"], json!("FAKE_AGENT_HOME"));
+        assert_eq!(found.data["already_set"], json!(true));
+        assert_eq!(found.data["value"], json!(profile_dir_of(&f, "work").display().to_string()));
+        assert!(found.message.contains("already set"), "{}", found.message);
+        assert!(!format!("{:?}", report.checks).contains("sentinel"));
+    }
+
+    #[test]
+    fn config_failure_skips_executable_and_resolution() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        fs::write(f.root.join("config.toml"), "x =").unwrap();
+        let report = run_fake(&f, None);
+        skipped(&report, CheckId::Executable);
+        skipped(&report, CheckId::Resolution);
+        let bare = run_host(&f);
+        let executables: Vec<&Check> = find(&bare, CheckId::Executable);
+        assert_eq!(executables.len(), adapter::known_agents().len());
+        assert!(executables.iter().all(|check| check.status == Status::Skip));
+    }
+
+    #[test]
+    fn conflicting_option_and_capabilities() {
+        let f = fixture();
+        let report = run_fake(&f, Some("work"));
+        let options = find(&report, CheckId::ConflictingOption);
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].subject.as_deref(), Some("--fake-profile"));
+        let capabilities = find(&report, CheckId::Capability);
+        assert_eq!(capabilities.len(), 3);
+        assert!(capabilities.iter().all(|check| check.status == Status::Info));
+        assert!(capabilities.iter().all(|check| check.message.starts_with("unknown: ")));
+    }
+
+    #[test]
+    fn flag_adapter_lists_its_own_flag() {
+        let f = fixture();
+        let target = Target::Agent { agent: AgentId::parse("aider").unwrap(), profile: None };
+        let report = run_with(&f, &target, None, &|_| false);
+        let subjects: Vec<&str> = find(&report, CheckId::ConflictingOption)
+            .iter()
+            .map(|check| check.subject.as_deref().unwrap())
+            .collect();
+        assert!(subjects.contains(&"--config"), "{subjects:?}");
+    }
+
+    #[test]
+    fn case_twin_profile_fails() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        if !case_sensitive(&f.root) {
+            println!("skipped: the filesystem is case-insensitive");
+            return;
+        }
+        fs::create_dir_all(f.root.join("profiles").join("Work")).unwrap();
+        let report = run_fake(&f, Some("work"));
+        let found = only(&report, CheckId::Profile);
+        assert_eq!(found.status, Status::Fail);
+        assert!(found.message.contains("Work"), "{}", found.message);
     }
 }
