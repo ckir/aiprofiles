@@ -1,6 +1,6 @@
 # SP5c — `doctor`
 
-Status: panel GREEN at round 4 on 2026-10-20, awaiting owner approval. Owner decided F1-F3 on 2026-10-20
+Status: APPROVED by the owner on 2026-10-20 (panel GREEN at round 4). Owner decided F1-F3 on 2026-10-20
 (§11); agy-first ALIGNED after one negotiation round; builder check folded (see "Consults").
 V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1 "Past V3" records every place this
 document goes past it. Third slice of SP5 as the owner split it on 2026-10-19 (`.clavity/seams/sp5-order.md`): SP5a
@@ -344,7 +344,7 @@ My calls (owner: please check)
   the default umask (§2) and judging would flag every profile it made.
 
 Owner questions
-- Q1: profile directories are created with the default umask (commonly `0755`), so other local users can list
+- Q1 (answered 2026-10-20: tracked as ROADMAP debt, out of this slice): profile directories are created with the default umask (commonly `0755`), so other local users can list
   them; agents usually protect their own credential files. Should `create` and lazy initialization use `0700`
   on Unix? That changes SP5a behaviour, so it is out of this slice either way; the question is whether to track
   it as debt.

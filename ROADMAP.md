@@ -72,4 +72,11 @@ the plain `C:\` form. Owner-deferred out of SP5b to keep that fold test-only. Cl
 `(State::Missing, None)`; it can only be measured by the Windows leg of PR CI, since the maintainer box
 is Linux.
 
+**Profile directories are created with the process's default permissions.** `adapter::ensure_paths` calls
+`fs::create_dir_all` with no explicit mode, so under a common `022` umask a profile directory is `0755` and
+other local users can list it. Agents usually protect their own credential files, so this is defence in depth
+rather than a measured leak. Found while designing SP5c (2026-10-20); owner ruled it tracked debt, out of SP5c.
+The fix is `DirBuilder` with mode `0700` on Unix in `ensure_paths` (which `create` and lazy initialization
+share), plus a test asserting the mode; `doctor` reports the mode as data and would show the change.
+
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
