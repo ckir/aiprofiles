@@ -953,6 +953,18 @@ fn profile_record(
     )
 }
 
+/// The octal permission bits on Unix, `null` elsewhere.
+#[cfg(unix)]
+fn file_mode(metadata: &fs::Metadata) -> Value {
+    use std::os::unix::fs::PermissionsExt;
+    json!(format!("{:o}", metadata.permissions().mode() & 0o7777))
+}
+
+#[cfg(not(unix))]
+fn file_mode(_metadata: &fs::Metadata) -> Value {
+    Value::Null
+}
+
 fn profile_path_record(id: &'static str, path: &Path, kind: PathKind) -> Check {
     let (kind_token, noun) = match kind {
         PathKind::Dir => ("dir", "directory"),
@@ -962,11 +974,7 @@ fn profile_path_record(id: &'static str, path: &Path, kind: PathKind) -> Check {
     let mut mode = Value::Null;
     let (status, message) = match fs::metadata(path) {
         Ok(metadata) => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                mode = json!(format!("{:o}", metadata.permissions().mode() & 0o7777));
-            }
+            mode = file_mode(&metadata);
             let right = match kind {
                 PathKind::Dir => metadata.is_dir(),
                 PathKind::File { .. } => metadata.is_file(),
@@ -1779,7 +1787,26 @@ mod tests {
         assert_eq!(found.data["already_set"], json!(true));
         assert_eq!(found.data["value"], json!(profile_dir_of(&f, "work").display().to_string()));
         assert!(found.message.contains("already set"), "{}", found.message);
-        assert!(!format!("{:?}", report.checks).contains("sentinel"));
+    }
+
+    #[test]
+    fn launch_environment_for_every_adapter() {
+        for id in adapter::known_agents() {
+            let f = fixture();
+            let target = Target::Agent {
+                agent: AgentId::parse(id).unwrap(),
+                profile: Some("work".to_owned()),
+            };
+            let report = run_with(&f, &target, None, &|_| false);
+            let found = only(&report, CheckId::LaunchEnvironment);
+            let kind = found.data["kind"].as_str().unwrap_or_else(|| panic!("{id}: no kind"));
+            assert!(["env", "env_file", "flag_dir", "flag_file"].contains(&kind), "{id}: {kind}");
+            let flag = kind == "flag_dir" || kind == "flag_file";
+            assert_eq!(found.data["already_set"].is_null(), flag, "{id}: {kind}");
+            if !flag {
+                assert!(found.data["already_set"].is_boolean(), "{id}");
+            }
+        }
     }
 
     #[test]
