@@ -1127,7 +1127,12 @@ fn option_checks(metadata: &AdapterMetadata, checks: &mut Vec<Check>) {
                 CheckId::Capability,
                 Some(json::capability_token(capability).to_owned()),
                 Status::Info,
-                format!("{}: {}", output::state_label(claim.state), claim.basis),
+                format!(
+                    "{} isolation is {}: {}",
+                    output::capability_label(capability),
+                    output::state_label(claim.state),
+                    claim.basis
+                ),
                 Value::Null,
             ));
         }
@@ -1833,7 +1838,20 @@ mod tests {
         let capabilities = find(&report, CheckId::Capability);
         assert_eq!(capabilities.len(), 3);
         assert!(capabilities.iter().all(|check| check.status == Status::Info));
-        assert!(capabilities.iter().all(|check| check.message.starts_with("unknown: ")));
+        for check in &capabilities {
+            let label = Capability::ALL
+                .into_iter()
+                .find(|capability| {
+                    Some(json::capability_token(*capability)) == check.subject.as_deref()
+                })
+                .map(output::capability_label)
+                .expect("the subject is a capability token");
+            assert!(
+                check.message.starts_with(&format!("{label} isolation is unknown: ")),
+                "{}",
+                check.message
+            );
+        }
     }
 
     #[test]
