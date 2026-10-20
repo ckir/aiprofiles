@@ -184,6 +184,12 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn a_verbatim_disk_key_is_classified_like_a_plain_disk_key() {
+        assert_eq!(classify(r"\\?\C:\agent-profile-nonexistent\x"), (State::Missing, None));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn classify_refuses_a_device_namespace_key_before_touching_it() {
         assert_eq!(
             classify(r"\\.\pipe\agent-profile-test"),

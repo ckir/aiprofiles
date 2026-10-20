@@ -9,7 +9,8 @@ use crate::adapter::{
     AdapterMetadata, Capability, CapabilityState, PathKind, PlannedLaunch, SupportLevel,
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
-use crate::exe::{Found, Origin};
+use crate::error::{Error, NotInstalledReason, Result};
+use crate::exe::{self, Found, Origin};
 use crate::lifecycle::{CreateOutcome, DeleteOutcome, Listing};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
@@ -391,6 +392,32 @@ pub enum ExecutableStatus {
     ConfiguredMissing(PathBuf),
     /// The resolved file would launch through a shell (a `.cmd`/`.bat`/`.ps1` script or shim).
     Unsupported(PathBuf),
+}
+
+impl ExecutableStatus {
+    /// Resolves an agent's executable to a listed fact. Not-installed and unsupported outcomes become
+    /// variants; any other discovery error propagates.
+    pub fn discover(
+        metadata: &AdapterMetadata,
+        explicit: Option<&Path>,
+        path_var: Option<&OsStr>,
+        config_file: &Path,
+    ) -> Result<ExecutableStatus> {
+        match exe::discover(metadata.id, metadata.executable, explicit, path_var, config_file) {
+            Ok(found) => Ok(ExecutableStatus::Found(found)),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::NotOnPath { .. }, ..
+            }) => Ok(ExecutableStatus::NotOnPath),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::ExplicitMissing(path),
+                ..
+            }) => Ok(ExecutableStatus::ConfiguredMissing(path)),
+            Err(Error::UnsupportedExecutable { path, .. }) => {
+                Ok(ExecutableStatus::Unsupported(path))
+            }
+            Err(error) => Err(error),
+        }
+    }
 }
 
 /// `repositories` (SP5b design §4): a block per stored mapping, a blank line between blocks. The key is

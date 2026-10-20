@@ -9,8 +9,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
-use crate::error::{Error, NotInstalledReason, Result};
-use crate::exe;
+use crate::error::{Error, Result};
 use crate::json;
 use crate::launch::{self, LaunchOutcome};
 use crate::lifecycle;
@@ -918,26 +917,12 @@ fn run_agents(root: &AppRoot, config: &Config, json: bool) -> Result<i32> {
     let mut entries = Vec::new();
     for adapter in adapter::registry() {
         let metadata = adapter.metadata();
-        let status = match exe::discover(
-            metadata.id,
-            metadata.executable,
+        let status = output::ExecutableStatus::discover(
+            metadata,
             config.agent_executable(metadata.id),
             path_var.as_deref(),
             &root.config_path(),
-        ) {
-            Ok(found) => output::ExecutableStatus::Found(found),
-            Err(Error::AgentNotInstalled {
-                reason: NotInstalledReason::NotOnPath { .. }, ..
-            }) => output::ExecutableStatus::NotOnPath,
-            Err(Error::AgentNotInstalled {
-                reason: NotInstalledReason::ExplicitMissing(path),
-                ..
-            }) => output::ExecutableStatus::ConfiguredMissing(path),
-            Err(Error::UnsupportedExecutable { path, .. }) => {
-                output::ExecutableStatus::Unsupported(path)
-            }
-            Err(error) => return Err(error),
-        };
+        )?;
         entries.push((metadata, status));
     }
     if json {

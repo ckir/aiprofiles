@@ -226,67 +226,71 @@ pub struct AgentsDocument {
     agents: Vec<AgentView>,
 }
 
-/// Builds the `agents` document from registry metadata and each agent's executable status.
-pub fn agents(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> AgentsDocument {
-    let agents = entries
-        .iter()
-        .map(|(metadata, status)| {
-            let executable = match status {
-                ExecutableStatus::Found(found) => ExecutableView {
-                    state: "found",
-                    path: Some(found.path.display().to_string()),
-                    origin: Some(match found.origin {
-                        Origin::Configured => "configured",
-                        Origin::Path => "path",
-                    }),
-                },
-                ExecutableStatus::NotOnPath => {
-                    ExecutableView { state: "not_on_path", path: None, origin: None }
-                }
-                ExecutableStatus::ConfiguredMissing(path) => ExecutableView {
-                    state: "configured_missing",
-                    path: Some(path.display().to_string()),
-                    origin: None,
-                },
-                ExecutableStatus::Unsupported(path) => ExecutableView {
-                    state: "unsupported",
-                    path: Some(path.display().to_string()),
-                    origin: None,
-                },
-            };
-            let capabilities = Capability::ALL
-                .into_iter()
-                .map(|capability| {
-                    let claim = metadata
-                        .capabilities
-                        .iter()
-                        .find(|claim| claim.capability == capability)
-                        .expect("registry adapters declare every capability");
-                    CapabilityView {
-                        capability: capability_token(capability),
-                        state: state_token(claim.state),
-                        basis: claim.basis,
-                    }
-                })
-                .collect();
-            AgentView {
-                agent: metadata.id,
-                executable,
-                mechanism: MechanismView {
-                    id: metadata.evidence.mechanism_id,
-                    description: metadata.mechanism.to_string(),
-                },
-                support: support_token(metadata.support),
-                evidence: EvidenceView {
-                    upstream_version: metadata.evidence.upstream_version,
-                    verified_at: metadata.evidence.verified_at,
-                    source_url: metadata.evidence.source_url,
-                    notes: metadata.evidence.notes,
-                },
-                capabilities,
+/// The JSON view of one executable status.
+pub fn executable_view(status: &ExecutableStatus) -> ExecutableView {
+    match status {
+        ExecutableStatus::Found(found) => ExecutableView {
+            state: "found",
+            path: Some(found.path.display().to_string()),
+            origin: Some(match found.origin {
+                Origin::Configured => "configured",
+                Origin::Path => "path",
+            }),
+        },
+        ExecutableStatus::NotOnPath => {
+            ExecutableView { state: "not_on_path", path: None, origin: None }
+        }
+        ExecutableStatus::ConfiguredMissing(path) => ExecutableView {
+            state: "configured_missing",
+            path: Some(path.display().to_string()),
+            origin: None,
+        },
+        ExecutableStatus::Unsupported(path) => ExecutableView {
+            state: "unsupported",
+            path: Some(path.display().to_string()),
+            origin: None,
+        },
+    }
+}
+
+/// The JSON view of one registry entry and its executable status.
+pub fn agent_view(metadata: &AdapterMetadata, status: &ExecutableStatus) -> AgentView {
+    let capabilities = Capability::ALL
+        .into_iter()
+        .map(|capability| {
+            let claim = metadata
+                .capabilities
+                .iter()
+                .find(|claim| claim.capability == capability)
+                .expect("registry adapters declare every capability");
+            CapabilityView {
+                capability: capability_token(capability),
+                state: state_token(claim.state),
+                basis: claim.basis,
             }
         })
         .collect();
+    AgentView {
+        agent: metadata.id,
+        executable: executable_view(status),
+        mechanism: MechanismView {
+            id: metadata.evidence.mechanism_id,
+            description: metadata.mechanism.to_string(),
+        },
+        support: support_token(metadata.support),
+        evidence: EvidenceView {
+            upstream_version: metadata.evidence.upstream_version,
+            verified_at: metadata.evidence.verified_at,
+            source_url: metadata.evidence.source_url,
+            notes: metadata.evidence.notes,
+        },
+        capabilities,
+    }
+}
+
+/// Builds the `agents` document from registry metadata and each agent's executable status.
+pub fn agents(entries: &[(&AdapterMetadata, ExecutableStatus)]) -> AgentsDocument {
+    let agents = entries.iter().map(|(metadata, status)| agent_view(metadata, status)).collect();
     AgentsDocument { schema: "agent-profile/agents/1", tool_version: TOOL_VERSION, agents }
 }
 
@@ -363,37 +367,39 @@ pub struct RepositoriesDocument {
     repositories: Vec<RepositoryView>,
 }
 
+/// The JSON view of one classified repository entry.
+pub fn repository_view(entry: &Entry) -> RepositoryView {
+    RepositoryView {
+        repository: entry.key.clone(),
+        state: entry.state.token(),
+        detail: entry.detail.clone(),
+        profile: entry.profile.as_ref().map(|profile| ProfileRefView {
+            name: profile.name.to_string(),
+            exists: profile.exists,
+        }),
+        agents: entry
+            .agents
+            .iter()
+            .map(|(id, agent)| {
+                (
+                    id.as_str().to_owned(),
+                    AgentRefView {
+                        profile: agent.profile.to_string(),
+                        exists: agent.exists,
+                        known_agent: agent.known,
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
 /// Builds the `repositories` document; the entries arrive sorted and keep their order.
 pub fn repositories(entries: &[Entry]) -> RepositoriesDocument {
     RepositoriesDocument {
         schema: "agent-profile/repositories/1",
         tool_version: TOOL_VERSION,
-        repositories: entries
-            .iter()
-            .map(|entry| RepositoryView {
-                repository: entry.key.clone(),
-                state: entry.state.token(),
-                detail: entry.detail.clone(),
-                profile: entry.profile.as_ref().map(|profile| ProfileRefView {
-                    name: profile.name.to_string(),
-                    exists: profile.exists,
-                }),
-                agents: entry
-                    .agents
-                    .iter()
-                    .map(|(id, agent)| {
-                        (
-                            id.as_str().to_owned(),
-                            AgentRefView {
-                                profile: agent.profile.to_string(),
-                                exists: agent.exists,
-                                known_agent: agent.known,
-                            },
-                        )
-                    })
-                    .collect(),
-            })
-            .collect(),
+        repositories: entries.iter().map(repository_view).collect(),
     }
 }
 
