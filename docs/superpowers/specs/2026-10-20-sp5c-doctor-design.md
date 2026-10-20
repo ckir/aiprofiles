@@ -2,8 +2,8 @@
 
 Status: DRAFT 2026-10-20. Owner decided F1-F3 on 2026-10-20 (§11); agy-first ALIGNED after one negotiation
 round (see "Consults"). Not yet panel-reviewed.
-V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1 records every place this document
-goes past it. Third slice of SP5 as the owner split it on 2026-10-19 (`.clavity/seams/sp5-order.md`): SP5a
+V3 (`agent-profile-implementation-spec-v3.md`) wins over this document; §1 "Past V3" records every place this
+document goes past it. Third slice of SP5 as the owner split it on 2026-10-19 (`.clavity/seams/sp5-order.md`): SP5a
 lifecycle (merged `9039ee1`) -> SP5b `--json` + `repositories` (merged `e099b01`) -> **SP5c `doctor`** -> SP5d
 completions, docs and CI-pinning debt.
 
@@ -35,6 +35,12 @@ Non-goals
   slice. Doctor shows the capability claim and its basis, which already names the caveat.
 - Validating launch arguments. Doctor sees no agent arguments; it lists the options a launch refuses (§5.3).
 - Changing the permissions `create` or lazy initialization give a profile directory (owner question Q1, §11).
+
+Past V3 (where this document decides what V3 leaves open)
+- V3 §30 permits an optional version command; this slice never runs one (owner ruling F2).
+- V3 §33 lists code 5 without saying which codes `doctor` may also use; this document restricts doctor to
+  0, 2 and 5, plus 1 when stdout cannot be written (owner ruling F3).
+- V3 §29 "writability" is read as "permission bits say read-only", on Unix only (§5.1, call C5).
 
 Anti-goals — a result that "works" but is a failure
 - A permanently red `doctor` on a healthy machine. An agent that is not installed is not a failure of the
@@ -116,10 +122,24 @@ Status meanings:
 - `pass`: a check that can fail did not.
 - `info`: a fact with no pass/fail sense (the platform, the evidence version, a lazily absent directory).
 - `warn`: probably not what the user wants, but a launch is not refused because of it.
-- `fail`: a launch, or every launch, would be refused or would break because of it, and doctor can see it
-  without running the agent. A `fail` must always name what to change.
-- `skip`: the check could not run because an earlier check failed (for example every configuration-dependent
-  check after `config` fails); `message` names the check it depends on.
+- `fail`: a command of this tool (a launch, `status`, `list`, `profiles`, ...) would be refused or would fail
+  because of it, and doctor can see it without running the agent. A `fail` must always name what to change.
+  Anything that only might make the agent itself misbehave is `warn`.
+- `skip`: the check could not run because a check it depends on failed; `message` names that check.
+
+Dependencies (a `fail` in the left column turns every check on the right into `skip`):
+
+| failed check | skipped checks |
+|---|---|
+| `app_root` | `app_root_writable`, `config` and everything that depends on it, `profiles_dir`, `case_twins`, `profile`, `profile_path` |
+| `config` | `config_agent`, `default_profile`, `mapping`, `mapping_agent`, `executable`, `resolution` and everything that depends on it |
+| `repository` | `resolution` when no explicit `<profile>` was given |
+| `resolution` (no valid profile) | `profile`, `profile_path`, `launch_environment` |
+
+`executable` depends on `config` because the configured override decides where to look; reporting a
+PATH-only result would contradict what a launch does. These checks need neither the root nor the
+configuration and always run: `platform`, `repository`, `repository_local_executable`, `support`,
+`conflicting_option`, `capability`.
 
 Exit rule (owner ruling F3): doctor runs every check in scope and always prints the full report. It exits
 `5` if any record is `fail`, otherwise `0`. Usage errors exit `2` before any check runs. The one other code is
@@ -138,11 +158,11 @@ part of the contract, so tests and consumers can rely on it.
 |---|---|---|
 | `platform` | `null` | always `info`: `std::env::consts::OS` and `ARCH`, and `tool_version` |
 | `app_root` | the root path | `AppRoot::resolve` fails -> `fail` (message carries the error), and every later check that needs the root is `skip`; the root does not exist -> `info` ("created on first use"); exists and is a directory -> `pass`; exists and is not a directory -> `fail` |
-| `app_root_writable` | the root path | root missing -> checks the nearest existing ancestor instead; that path's permissions are read-only (`Permissions::readonly()`) -> `fail`; otherwise `pass`. The message says only permission bits were read, never ACLs or ownership. Never creates a file. |
-| `config` | `config.toml` path | file absent -> `info` ("no configuration; defaults apply"); `Config::load` ok -> `pass`; `ConfigInvalid` -> `fail` with key and detail, and every configuration-dependent check is `skip` |
+| `app_root_writable` | the root path | Unix only: root missing -> checks the nearest existing ancestor instead; that path's permissions are read-only (`Permissions::readonly()`, no write bit at all) -> `fail` (lazy initialization and `create` cannot create anything); otherwise `pass`. The message says only permission bits were read, never ACLs or ownership. Windows: always `info` ("not checked on this platform": the read-only attribute does not govern a directory's write access there). Never creates a file. |
+| `config` | `config.toml` path | file absent -> `info` ("no configuration; defaults apply"); `Config::load` ok -> `pass`; any `Config::load` error -> `fail` with its key and detail (an unreadable file is already `ConfigInvalid` with "cannot read the file", `config.rs:130-138`) |
 | `config_agent` | the agent id | one record per `[agents.<id>]` table whose id is not registered -> `warn` ("not a known agent; this table is ignored"). No record when every configured id is registered. |
-| `profiles_dir` | profiles dir path | absent -> `info`; unreadable -> `fail`; otherwise `pass` with `data.profiles` (count) and `data.ignored` (the `Listing.ignored` count; `info` wording when non-zero) |
-| `case_twins` | the two names | one `fail` per pair of entries of the profiles directory whose UTF-8 names differ only in ASCII case ("every command on either profile exits 4; rename or remove one"). Pairs are listed in byte order of the first name. No record when there are none. The same comparison as `check_case_twins` (`eq_ignore_ascii_case`, every entry type, dot-entries included because `check_case_twins` includes them). |
+| `profiles_dir` | the path that failed | absent -> `info`; `list_profiles` fails -> `fail` with the path its error names (the profiles directory or one profile directory below it; `profiles` and `list` fail the same way), `data.profiles` and `data.ignored` `null`; otherwise `pass` with `data.profiles` (row count) and `data.ignored` (the `Listing.ignored` count) |
+| `case_twins` | the two names | `profiles_dir` absent -> no record. Unreadable profiles directory -> `skip`. Otherwise one `fail` per pair of entries of the profiles directory whose UTF-8 names differ only in ASCII case ("every command on either profile exits 4; rename or remove one"). Pairs are listed in byte order of the first name. No record when there are none. The same comparison as `check_case_twins` (`eq_ignore_ascii_case`, every entry type, dot-entries included because `check_case_twins` includes them). |
 | `default_profile` | the profile | set and has a case twin -> covered by `case_twins`, so this record is `info` naming the profile; unset -> `info` ("none") |
 
 ### 5.2 Repository checks (both forms)
@@ -161,12 +181,12 @@ agent only.
 | id | form | subject | condition -> status |
 |---|---|---|---|
 | `executable` | both | the path or `null` | `Found` -> `pass` (path and origin); `NotOnPath` -> `info` in bare doctor, `fail` in `<agent> doctor`; `ConfiguredMissing` -> `fail` in both ("the configured executable is missing"); `Unsupported` -> `fail` in both (the launch exits 6 for a shell script or shim) |
-| `repository_local_executable` | both | the path | a relative `PATH` entry, resolved against the start directory, holds a file named like the executable -> `warn` ("found but never used: v0.1 searches only the configured override and absolute PATH entries"). Read-only existence check; never run. No record otherwise. This is V3 §20's third state. |
+| `repository_local_executable` | both | the path | a relative `PATH` entry, resolved against the process's current directory (never `--repo`: a launch resolves relative entries against the real cwd, so that is the only place V3 §20's third state can arise), holds a file named like the executable -> `warn` ("found but never used: v0.1 searches only the configured override and absolute PATH entries"). Read-only existence check; never run. No record otherwise. This is V3 §20's third state. |
 | `support` | both | `null` | always `info`. `data` carries the SP5b `agents` element's `mechanism`, `support`, `evidence` and the full `capabilities` matrix, plus `"installed_version": null` and `"version_probe": "not_run"`. The message names the evidence's `upstream_version` and `verified_at` and says the installed version is not probed. |
-| `resolution` | agent form | the profile | an explicit `<profile>` argument is used as given; otherwise `resolve::resolve`. Invalid name argument -> `fail` (the `InvalidProfileName` text); nothing resolves -> `warn` ("a launch here needs an explicit profile"); resolved -> `info` naming profile and source. Every later row is `skip` when there is no valid profile. |
-| `profile` | agent form | the profile | `presence`: `Conflict` -> `fail` naming the twin; `Absent` -> `info` ("created on first launch"); `Materialized`, `Known` -> `pass` |
-| `profile_path` | agent form | each path | one record per `Adapter::paths` entry, in that order: missing -> `info` (lazy); exists with the expected kind -> `pass`, with `data.mode` on Unix (octal string) and `null` elsewhere; exists with the wrong kind (a file where a directory goes, or the reverse) -> `fail` (launch's `initialize` refuses it); exists but read-only -> `fail` |
-| `launch_environment` | agent form | the variable or option | one record per thing the plan would set, from `mechanism.sentence_for(<the profile path>)`: `info`. When the current environment already sets that variable -> `info` saying the launch replaces it; the current value is printed only if the `EnvOverride` is not `sensitive` and the name does not match `SENSITIVE_NAME_PARTS`, otherwise `<redacted>`. |
+| `resolution` | agent form | the profile | an explicit `<profile>` argument is used as given (no discovery needed); otherwise `resolve::resolve` with the `repository` check's `Discovery`, and `skip` if that check failed (a launch would fail on the same error, so resolving as "not in a repository" would show a profile no launch uses). Invalid name argument -> `fail` (the `InvalidProfileName` text); nothing resolves -> `warn` ("a launch here needs an explicit profile"); resolved -> `info` naming profile and source. |
+| `profile` | agent form | the profile | `presence`: `Conflict` -> `fail` naming the twin; `Absent` -> `info` ("created on first launch"); `Materialized` -> `pass`; `Known` -> `pass` (reserved and unconstructed by all twelve adapters, ROADMAP.md; mapped so the match stays exhaustive) |
+| `profile_path` | agent form | each path | one record per `Adapter::paths` entry, in that order: missing -> `info` (lazy); exists with the expected kind -> `pass`, with `data.mode` on Unix (octal string) and `null` elsewhere; exists with the wrong kind (a file where a directory goes, or the reverse) -> `fail` (`ensure_paths` refuses a non-directory at a directory path, `adapter/mod.rs:294-297`); Unix only, exists with the expected kind but no write bit at all -> `warn` (the launch is not refused, but the agent cannot write its state there) |
+| `launch_environment` | agent form | the variable or option | exactly one `info` record: the adapter's `Mechanism`, matched on its four variants, with the message `mechanism.sentence_for(<target>)` where the target is the profile directory (`Env`, `FlagDir`) or file (`EnvFile`, `FlagFile`) from `Adapter::paths`. For the two variable mechanisms, when the current environment already sets that variable the message adds that the launch replaces it. The current value is never read into the output, so there is nothing to redact. |
 | `conflicting_option` | agent form | the option spelling | one `info` per `ConflictOption` ("a launch refuses this option because the profile already sets it") |
 | `capability` | agent form | the capability | one record per `Capability::ALL` entry whose state is not `supported`: `info`, message = state label + basis. These are the credential-isolation caveats; they are facts the evidence documents, never `warn`. |
 
@@ -204,8 +224,8 @@ V3 §29's four capability words map to the `capability` and `support` records' s
   "agent": "claude",
   "profile": "work",
   "repository": "/home/me/src/acme",
-  "result": "fail",
-  "counts": { "pass": 9, "info": 11, "warn": 1, "fail": 1, "skip": 0 },
+  "result": "ok",
+  "counts": { "pass": 1, "info": 1, "warn": 0, "fail": 0, "skip": 0 },
   "checks": [
     { "id": "platform", "agent": null, "subject": null, "status": "info",
       "message": "linux x86_64, agent-profile 0.0.5",
@@ -228,8 +248,11 @@ V3 §29's four capability words map to the `capability` and `support` records' s
   `profiles_dir` adds {profiles, ignored}; `case_twins` {names: [a, b]}; `mapping` = the SP5b `repositories`
   element; `executable` = the SP5b `agents` element's `executable` object; `support` = {mechanism, support,
   evidence, capabilities, installed_version, version_probe}; `profile` {state, existing} as in SP5b `status`
-  `presence`; `profile_path` {path, kind, exists, mode}; `launch_environment` {name, kind, value, already_set};
-  every other id `null`. `value` and any printed environment value obey §5.3's redaction rule.
+  `presence`; `profile_path` {path, kind (`dir` or `file`), exists, mode (Unix octal string, else `null`)};
+  `launch_environment` {kind (`env`, `env_file`, `flag_dir`, `flag_file`, the `Mechanism::probe_token` vocabulary),
+  name (the variable or the option spelling), value (the target path the launch passes; a profile path, never a
+  secret), already_set (`true`/`false` for the two variable kinds, `null` for the two flag kinds)};
+  every other id `null`. No member ever carries a value read from the environment.
 - Under `--json`, stderr carries nothing doctor-specific; exit codes are those of §4.
 
 ## 7. Text output
@@ -260,8 +283,9 @@ stdout; nothing doctor-specific goes to stderr.
 - Targeted doctor for an uninstalled agent exits 5, for an installed one with an absent profile exits 0.
 - Read-only proof: a snapshot (paths, kinds, sizes, mtimes) of the root and the repository before and after
   doctor in both forms, with an existing profile and with a missing one, is identical.
-- Redaction: an `EnvOverride` marked `sensitive` that is set in the environment never appears in either output
-  (fixture adapter, as `adapter/mod.rs:572` does for launch).
+- No environment value leaks: with the agent's own variable set to a sentinel string in doctor's environment,
+  neither output contains the sentinel, and `already_set` is `true`.
+- Every row of §4's dependency table: the failed check produces exactly the listed `skip` records.
 - Case twins: on a case-sensitive filesystem (Linux CI), `work` and `Work` produce one `fail` naming both; on
   macOS and Windows CI the test creates only one and asserts no record.
 - The JSON document parses, its key set is identical across two runs with different installed agents, and
@@ -292,6 +316,10 @@ My calls (owner: please check)
   every run yellow.
 - C5: `app_root_writable` and `profile_path` read permission bits only. They can say "read-only" reliably and
   cannot prove writability (ACLs, ownership); messages say so.
+- C7: the builder check's five questions (2026-10-20) are settled in §4 (dependency table, `fail` = a command of
+  this tool refuses), §5.1 (`config` takes any load error; `profiles_dir` names the failing path), §5.3
+  (`resolution` skips on a discovery error; repository-local lookup uses the real cwd; `launch_environment`
+  never reads a value) and §5.1/§5.3 (writability is Unix-only).
 - C6: a profile directory's mode is reported as data, never judged, because the tool itself creates them with
   the default umask (§2) and judging would flag every profile it made.
 
