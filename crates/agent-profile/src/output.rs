@@ -1544,4 +1544,46 @@ mod tests {
             Report { checks: vec![check(CheckId::Platform, None, Status::Warn, "w")], ..report };
         assert_eq!(doctor_lines(&clean).last().unwrap(), "doctor: no failures, 1 warnings");
     }
+
+    #[test]
+    fn doctor_lines_place_skips_and_agentless_repository_records() {
+        use crate::doctor::{Check, CheckId, Report, Status};
+        let check = |id, agent, status, message: &str| Check {
+            id,
+            agent,
+            subject: None,
+            status,
+            message: message.to_owned(),
+            data: serde_json::Value::Null,
+        };
+        let report = Report {
+            agent: Some(crate::name::AgentId::parse("fake").unwrap()),
+            profile: None,
+            repository: None,
+            checks: vec![
+                check(CheckId::Platform, None, Status::Info, "linux x86_64"),
+                check(CheckId::Repository, None, Status::Fail, "no repository"),
+                check(CheckId::Mapping, None, Status::Skip, "mapping skipped: config failed"),
+                check(CheckId::MappingAgent, None, Status::Warn, "unknown agent"),
+                check(CheckId::Resolution, Some("fake"), Status::Skip, "resolution skipped"),
+            ],
+        };
+        assert_eq!(
+            doctor_lines(&report),
+            [
+                "host",
+                "INFO  linux x86_64",
+                "",
+                "repositories",
+                "FAIL  no repository",
+                "SKIP  mapping skipped: config failed",
+                "WARN  unknown agent",
+                "",
+                "agent fake",
+                "SKIP  [fake] resolution skipped",
+                "",
+                "doctor: 1 failed, 1 warnings",
+            ]
+        );
+    }
 }

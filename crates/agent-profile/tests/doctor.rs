@@ -190,7 +190,7 @@ fn missing_repo_is_a_fail_record_not_an_error() {
     assert_eq!(records(&doc, "repository")[0]["status"], "fail");
 
     let output = run(&root, &["fake", "doctor", "--repo", "nope", "--json"]);
-    assert_ne!(code(&output), 4);
+    assert_eq!(code(&output), 5, "{}{}", stdout(&output), stderr(&output));
     let doc = json_of(&output);
     assert_eq!(records(&doc, "repository")[0]["status"], "fail");
     assert_eq!(records(&doc, "resolution")[0]["status"], "skip");
@@ -338,17 +338,17 @@ fn doctor_writes_nothing() {
     fs::create_dir_all(root.profile_dir("work")).unwrap();
 
     let before = (snapshot(root.path()), snapshot(&repo_dir));
-    for args in [
-        &["doctor"][..],
-        &["fake", "doctor", "work"],
-        &["fake", "doctor"],
-        &["fake", "doctor", "missing"],
-        &["doctor", "--json"],
+    for (args, expected) in [
+        (&["doctor"][..], 0),
+        (&["fake", "doctor", "work"], 0),
+        (&["fake", "doctor"], 0),
+        (&["fake", "doctor", "missing"], 0),
+        (&["doctor", "--json"], 0),
     ] {
         let mut command = root.agent_profile(args);
         command.current_dir(&repo_dir);
         let output = command.output().unwrap();
-        assert_ne!(code(&output), 2, "{args:?}: {}", stderr(&output));
+        assert_eq!(code(&output), expected, "{args:?}: {}{}", stdout(&output), stderr(&output));
     }
     let after = (snapshot(root.path()), snapshot(&repo_dir));
     assert!(before == after, "doctor changed the root or the repository");
@@ -391,8 +391,8 @@ fn case_twins_end_to_end() {
         assert_eq!(code(&output), 5);
         assert_eq!(twins.len(), 1, "{twins:?}");
         assert_eq!(twins[0]["status"], "fail");
-        let shown = twins[0].to_string();
-        assert!(shown.contains("work") && shown.contains("Work"), "{shown}");
+        assert_eq!(twins[0]["subject"], "Work", "{}", twins[0]);
+        assert_eq!(twins[0]["data"]["names"], serde_json::json!(["Work", "work"]));
     } else {
         assert!(twins.is_empty(), "{twins:?}");
     }
@@ -451,4 +451,139 @@ fn non_executable_override_verdict_matches_the_launch() {
     assert_eq!(code(&doctor), 5, "{}{}", stdout(&doctor), stderr(&doctor));
     let launch = run(&root, &["fake", "work", "--", "--version"]);
     assert_eq!(code(&launch), 6, "{}", stderr(&launch));
+}
+
+/// Every regular file and directory below `path`, with file contents, for the no-write checks.
+fn tree(path: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    let mut found = Vec::new();
+    let mut pending = vec![path.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            let kind = entry.file_type().unwrap();
+            if kind.is_dir() {
+                pending.push(entry_path.clone());
+                found.push((entry_path, None));
+            } else {
+                found.push((entry_path.clone(), fs::read(&entry_path).ok()));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn doctor_writes_nothing_on_failure_branches() {
+    let invalid_config = Root::empty();
+    invalid_config.write_config("not = [valid");
+    let profile_is_a_file = Root::new();
+    fs::create_dir_all(profile_is_a_file.path().join("profiles")).unwrap();
+    fs::write(profile_is_a_file.path().join("profiles").join("work"), "x").unwrap();
+    let profiles_is_a_file = Root::new();
+    fs::write(profiles_is_a_file.path().join("profiles"), "x").unwrap();
+    for (name, root, bare_code) in [
+        ("invalid config", &invalid_config, 5),
+        ("profile is a file", &profile_is_a_file, 0),
+        ("profiles is a file", &profiles_is_a_file, 5),
+    ] {
+        let before = tree(root.path());
+        for (args, expected) in [
+            (&["doctor"][..], bare_code),
+            (&["fake", "doctor", "work"], 5),
+            (&["fake", "doctor", "work", "--json"], 5),
+        ] {
+            let output = run(root, args);
+            let shown = format!("{name} {args:?}: {}{}", stdout(&output), stderr(&output));
+            assert_eq!(code(&output), expected, "{shown}");
+        }
+        assert!(tree(root.path()) == before, "doctor changed the root: {name}");
+    }
+
+    let (_dir, base) = scratch();
+    let home = base.join("absent").join("app");
+    let root = Root::empty();
+    // With no root there is no config, so the targeted form fails on the uninstalled fake agent.
+    for (args, expected) in [(&["doctor"][..], 0), (&["fake", "doctor", "work"], 5)] {
+        let mut command = root.agent_profile(args);
+        command.env("AGENT_PROFILE_HOME", &home);
+        let output = command.output().unwrap();
+        assert_eq!(code(&output), expected, "{args:?}: {}{}", stdout(&output), stderr(&output));
+    }
+    assert!(!base.join("absent").exists(), "doctor created the missing root");
+}
+
+#[test]
+fn bare_and_targeted_doctor_share_host_records() {
+    let (_dir, base) = scratch();
+    let repo_dir = base.join("acme");
+    git_dir(&repo_dir);
+    let root = Root::empty();
+    configure(&root, &table(repo_dir.to_str().unwrap(), "profile = \"work\""));
+    fs::create_dir_all(root.profile_dir("work")).unwrap();
+    let mut documents = Vec::new();
+    for args in [&["doctor", "--json"][..], &["fake", "doctor", "work", "--json"]] {
+        let mut command = root.agent_profile(args);
+        command.current_dir(&repo_dir);
+        documents.push(json_of(&command.output().unwrap()));
+    }
+    let agentless = |doc: &Value| -> Vec<Value> {
+        doc["checks"].as_array().unwrap().iter().filter(|c| c["agent"].is_null()).cloned().collect()
+    };
+    let bare = agentless(&documents[0]);
+    assert!(bare.len() >= 8, "{bare:?}");
+    assert!(bare.iter().any(|c| c["id"] == "default_profile"), "{bare:?}");
+    assert!(bare.iter().any(|c| c["id"] == "mapping"), "{bare:?}");
+    assert_eq!(bare, agentless(&documents[1]));
+}
+
+#[test]
+fn targeted_case_twin_profile_end_to_end() {
+    let root = Root::new();
+    let profiles = root.path().join("profiles");
+    fs::create_dir_all(&profiles).unwrap();
+    fs::write(root.path().join("a"), "").unwrap();
+    if root.path().join("A").exists() {
+        println!("skipped: the filesystem is case-insensitive");
+        return;
+    }
+    fs::create_dir_all(profiles.join("Work").join("fake")).unwrap();
+    let output = run(&root, &["fake", "doctor", "work", "--json"]);
+    assert_eq!(code(&output), 5, "{}{}", stdout(&output), stderr(&output));
+    let doc = json_of(&output);
+    let profile = records(&doc, "profile");
+    assert_eq!(profile.len(), 1, "{profile:?}");
+    assert_eq!(profile[0]["status"], "fail");
+    assert!(profile[0]["message"].as_str().unwrap().contains("Work"), "{}", profile[0]);
+    let create = run(&root, &["fake", "create", "work"]);
+    assert_eq!(code(&create), 4, "{}", stderr(&create));
+}
+
+#[cfg(unix)]
+#[test]
+fn deleted_working_directory_falls_back_to_dot() {
+    let root = Root::new();
+    let gone = root.path().join("gone");
+    fs::create_dir(&gone).unwrap();
+    let template = root.agent_profile(["doctor", "--json"]);
+    let mut command = Command::new("sh");
+    for (name, value) in template.get_envs() {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
+    command.current_dir(&gone).args([
+        "-c",
+        r#"rmdir "$PWD" && exec "$0" doctor --json"#,
+        env!("CARGO_BIN_EXE_agent-profile"),
+    ]);
+    let output = command.output().unwrap();
+    assert!(!gone.exists());
+    assert_eq!(stderr(&output), "");
+    let doc = json_of(&output);
+    let expected = if doc["result"] == "fail" { 5 } else { 0 };
+    assert_eq!(code(&output), expected, "{}", stdout(&output));
+    assert_eq!(records(&doc, "repository").len(), 1, "{}", stdout(&output));
 }

@@ -1551,6 +1551,16 @@ mod tests {
             |path: &Path| by_key.iter().find(|(_, key)| *key == path.to_str().unwrap()).unwrap().0;
         assert_eq!(status_of(&acme), Status::Pass);
         assert_eq!(status_of(&sub), Status::Warn);
+        let moved = found.iter().find(|check| check.subject.as_deref() == sub.to_str()).unwrap();
+        assert!(
+            moved.message.starts_with(&format!(
+                "mapping {} is below the repository rooted at {}, so it no longer applies",
+                sub.display(),
+                acme.display()
+            )),
+            "{}",
+            moved.message
+        );
         assert_eq!(status_of(&gone), Status::Warn);
         assert_eq!(status_of(&plain), Status::Warn);
         assert_eq!(status_of(&file), Status::Warn);
@@ -2067,5 +2077,38 @@ mod tests {
         let found = only(&report, CheckId::Profile);
         assert_eq!(found.status, Status::Fail);
         assert!(found.message.contains("Work"), "{}", found.message);
+    }
+
+    #[test]
+    fn targeted_doctor_skips_profile_checks_when_profiles_dir_fails() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        fs::write(f.root.join("profiles"), "x").unwrap();
+        let report = run_fake(&f, Some("work"));
+        assert_eq!(only(&report, CheckId::ProfilesDir).status, Status::Fail);
+        for id in [CheckId::Profile, CheckId::ProfilePath] {
+            let found = only(&report, id);
+            assert_eq!(found.status, Status::Skip, "{id:?}");
+            assert_eq!(found.message, format!("{} skipped: profiles_dir failed", id.token()));
+        }
+        assert_ne!(only(&report, CheckId::LaunchEnvironment).status, Status::Skip);
+    }
+
+    #[test]
+    fn configured_directory_executable_fails() {
+        let f = fixture();
+        fs::create_dir_all(&f.root).unwrap();
+        let bin = bin_dir(&f, true);
+        let dir = f.base.join("a-directory");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            f.root.join("config.toml"),
+            format!("[agents.fake]\nexecutable = '{}'\n", dir.display()),
+        )
+        .unwrap();
+        let report = run_with(&f, &agent_target(None), Some(bin.as_os_str()), &|_| false);
+        let found = only(&report, CheckId::Executable);
+        assert_eq!(found.status, Status::Fail);
+        assert_eq!(found.data["state"], json!("configured_missing"));
     }
 }

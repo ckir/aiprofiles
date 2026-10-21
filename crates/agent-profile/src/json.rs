@@ -768,6 +768,12 @@ mod tests {
         assert_eq!(value["counts"]["pass"], 0);
         let check = &value["checks"][0];
         assert_eq!(keys(check), ["agent", "data", "id", "message", "status", "subject"]);
+        let rendered = &text[text.find("\"checks\"").unwrap()..];
+        let check_order: Vec<usize> = ["id", "agent", "subject", "status", "message", "data"]
+            .iter()
+            .map(|key| rendered.find(&format!("\"{key}\":")).unwrap())
+            .collect();
+        assert!(check_order.windows(2).all(|pair| pair[0] < pair[1]), "{rendered}");
         assert_eq!(check["id"], "platform");
         assert_eq!(check["status"], "info");
         assert!(check["agent"].is_null() && check["subject"].is_null() && check["data"].is_null());
