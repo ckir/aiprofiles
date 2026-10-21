@@ -13,6 +13,10 @@
 # This is a SYNTACTIC check. It cannot tell a real commit from a mistyped one; resolving each SHA against
 # its repository is a separate, manual step done when a pin is written or bumped.
 #
+# BLOCK STYLE ONLY: a `uses:` written in flow style (`- { uses: ... }`, `{ name: x, uses: ... }`) is refused
+# outright, even with a full SHA. The scan reads one `uses:` per line and does not parse flow YAML, so a
+# flow-style step would otherwise be invisible to it and a floating action could pass beside a pinned one.
+#
 # Usage: sh scripts/check-action-pins.sh [dir]   (default: <repo>/.github/workflows)
 # Output: one `<file>:<line>: <text>` per violation and exit 1; otherwise `check-action-pins: <n> uses checked`.
 
@@ -22,6 +26,8 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 . "$repo_root/scripts/lib/scan-guard.sh"
 
 dir=${1:-$repo_root/.github/workflows}
+block='^[[:space:]]*(- )?uses:'
+flow='[{,][[:space:]]*uses:[[:space:]]'
 pin='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@ ]+)?@[0-9a-f]{40} # [A-Za-z0-9_.-]+$'
 
 files=$(mktemp)
@@ -34,12 +40,24 @@ violations=0
 scan_expand "$files" must-find "workflow files under $dir" "$dir"/*.yml
 
 while IFS= read -r file; do
-    scan_grep -n -E '^[[:space:]]*(- )?uses:' "$file" > "$hits"
+    scan_grep -n -E "$block|$flow" "$file" > "$hits"
     # Read from a file, never a pipe: a pipe runs the loop in a subshell and loses the counters.
     while IFS= read -r hit; do
         lineno=${hit%%:*}
         text=${hit#*:}
+        case "$text" in
+            [[:space:]]*#* | '#'*)
+                trimmed=$(printf '%s\n' "$text" | sed -E 's/^[[:space:]]+//')
+                case "$trimmed" in '#'*) continue ;; esac
+                ;;
+        esac
         checked=$((checked + 1))
+        if ! printf '%s\n' "$text" | grep -qE "$block"; then
+            trimmed=$(printf '%s\n' "$text" | sed -E 's/^[[:space:]]+//')
+            printf '%s:%s: %s\n' "$file" "$lineno" "$trimmed"
+            violations=1
+            continue
+        fi
         value=$(printf '%s\n' "$text" | sed -E 's/^[[:space:]]*(- )?uses:[[:space:]]*//; s/[[:space:]]+$//')
         case "$value" in
             ./*) continue ;;

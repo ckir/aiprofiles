@@ -103,6 +103,16 @@ check "every violation in a file is named: status" "$status" "1"
 check "every violation in a file is named: first" "$(printf '%s\n' "$out" | grep -c 'w.yml:7:')" "1"
 check "every violation in a file is named: second" "$(printf '%s\n' "$out" | grep -c 'w.yml:8:')" "1"
 
+# Flow style is refused outright (block style only), so a floating action cannot hide beside a pinned one.
+rejected "flow-style floating use beside a pinned one is rejected" 8 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "      - { uses: actions/checkout@v7 }"
+rejected "flow-style pinned use is rejected" 7 \
+    "      - { uses: actions/checkout@$sha # v7.0.1 }"
+accepted "commented-out flow-style use is ignored" \
+    "      # - { uses: x/y@v1 }" \
+    "      - uses: actions/checkout@$sha # v7.0.1"
+
 mkdir -p "$tmp/empty"
 run "$tmp/empty"
 if [ "$status" -ne 0 ]; then got=nonzero; else got=zero; fi
