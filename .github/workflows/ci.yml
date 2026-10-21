@@ -110,9 +110,15 @@ jobs:
       - run: sh sandbox/tests/resolve-agents.sh
       - run: sh sandbox/tests/verify-transcripts.sh
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
+  clippy-matrix:
+    # A warning that exists only under `cfg(windows)` or `cfg(target_os = "macos")` compiled cleanly on the
+    # Linux-only job this replaces and was never linted (ROADMAP "Clippy runs on Linux only", closed here).
+    name: Clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -121,6 +127,26 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  clippy:
+    # Branch protection requires a check named `Clippy`. The matrix legs are named `Clippy (<os>)`, so this
+    # job keeps the required name and fails unless every leg succeeded. `!cancelled()` runs it after a
+    # failed or timed-out leg (and fails it) but not after the run was cancelled, so a cancelled run does
+    # not show a red Clippy. The result is read through `env`, never interpolated into the script.
+    name: Clippy
+    needs: [clippy-matrix]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Clippy leg to succeed
+        env:
+          RESULT: ${{ needs.clippy-matrix.result }}
+        run: |
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::Clippy matrix result is '$RESULT'; see the 'Clippy (<os>)' jobs"
+            exit 1
+          fi
+          echo "every Clippy leg succeeded"
 
   deny:
     name: Cargo deny

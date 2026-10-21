@@ -1706,6 +1706,7 @@ mod tests {
         assert!(targeted.failed());
     }
 
+    #[cfg(unix)]
     fn run_at_root(f: &Fixture, root: PathBuf) -> Report {
         let environment = env(Ok(AppRoot::from_path(root)), &f.base);
         run(&Target::Host, &environment)
