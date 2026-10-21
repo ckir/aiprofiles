@@ -69,7 +69,11 @@ Anti-goals (a failure even if everything compiles)
 The exact wording of the rows marked "existing" is whatever the dispatcher emits today for the same mistake on
 `agents`. The test asserts it by comparison with `agents`, not by a copied literal.
 
-If writing to stdout fails, the command behaves like the other commands that print through `write_out`.
+If writing to stdout fails, the command behaves like the other commands that print through `write_out`. The
+script is therefore generated into an in-memory `Vec<u8>` and then written with `write_out`, never generated
+straight into `io::stdout()`. `clap_complete::generate` returns `()`, and its bash generator calls
+`try_generate(..).expect("failed to write completion file")` (clap_complete 4.6.11 `src/aot/shells/bash.rs`),
+so a closed pipe would panic instead of exiting 1.
 
 `completions` must not construct an `AppRoot`, read `config.toml`, or touch the filesystem: it is executed
 before `run_command`'s root and configuration setup. The shell word is never passed through `ProfileName`
@@ -82,6 +86,11 @@ nothing else.
 only, like `Agents`, and takes one bare argument, its shell.
 - The clap `Command::Completions(Rest)` stub and `Command::reserved_name` are removed. After this change no
   reserved word reaches clap except through `external_subcommand`.
+- `split_top_level`/`validate_command` turn a valid `completions <shell>` into a new
+  `Invocation::Completions(clap_complete::Shell)`, which `execute` handles itself and never passes to
+  `run_command`. `run_command` resolves `AppRoot`, loads the configuration and parses `profile` as a
+  `ProfileName`, all of which `completions` must avoid (§2.1). The shell word therefore never travels in
+  `Invocation::Command`'s `profile` field.
 - `RESERVED_WORDS` in `name.rs` is unchanged: `completions` stays reserved.
 - `COMMANDS_HELP` gains the line `agent-profile completions <shell>` under a new heading "Shell completion:".
 - `Error::NotYetImplemented` stays, because `--json` on `create`/`delete` still uses it.
@@ -95,7 +104,10 @@ a `CommandWord` method that returns one fact:
   create, delete), or `Either` (status, link, unlink, list, doctor);
 - `accepts_repo`;
 - `accepts_json` (true only where `--json` is implemented; create and delete answer "not yet implemented"
-  today, so they are false);
+  today, so they are false). `validate_command` keeps its separate `create`/`delete` check that answers
+  `--json` with `Error::NotYetImplemented`. That check runs before the generic unknown-option check, exactly
+  as today, so `create --json` still exits 2 with "`--json` is not yet implemented". The completion model
+  offers `--json` only where `accepts_json` is true;
 - `accepts_yes`;
 - the bare positional it takes, as a function of whether an agent was given: none, a required profile, an
   optional profile, or a shell. Measured at `c0d5caf`: `doctor` takes an optional profile only with an agent
@@ -118,8 +130,13 @@ never used to parse input. Its content comes from §2.3's methods and `adapter::
 
 - Root: one subcommand per command word whose scope is `TopLevelOnly` or `Either`; one subcommand per id in
   `known_agents()`; the flags `-h`/`--help` and `-V`/`--version`.
-- Under each agent: one subcommand per command word whose scope is `AgentRequired` or `Either`; the launch
-  options `--dry-run` and `--verbose`; an optional positional `profile` with no candidate values.
+- Under each agent: one subcommand per command word whose scope is `AgentRequired` or `Either`, and the
+  launch options `--dry-run` and `--verbose`. There is no `profile` positional at the agent level.
+  clap_complete's zsh generator places subcommands at `$line[positionals + 1]` (`src/aot/shells/zsh.rs`), so
+  an empty positional would push subcommand completion to the second word. The profile is not completed
+  anyway (§1), so it is simply left out.
+- `disable_help_subcommand(true)` on every level. Measured in a throwaway build: without it clap adds a
+  `help` subcommand, which the script then offers although the dispatcher has no such command.
 - Under each command: `--repo <path>` with `ValueHint::DirPath` if `accepts_repo`; `--json` if `accepts_json`;
   `--yes` if `accepts_yes`; the positional from §2.3 (`completions` gets the five shell names as possible
   values; a profile positional has no candidates).
@@ -128,10 +145,30 @@ never used to parse input. Its content comes from §2.3's methods and `adapter::
 `known_agents()` includes `fake` in debug builds and not in release builds. The script follows the build, like
 the dispatcher's "unknown agent" message.
 
-`completions <shell>` writes `clap_complete::generate(shell, &mut model, "agent-profile", stdout)`.
+`completions <shell>` runs `clap_complete::generate(shell, &mut model, "agent-profile", &mut buffer)` and
+then writes the buffer with `write_out`.
+
+**Upstream bash defect and its workaround (measured 2026-10-21).** In clap_complete 4.6.11, and in clap's
+`main` branch on that date, the bash generator names states inconsistently when the binary name contains a
+`-`:
+- the traversal derives its names from `bin_name.replace('-', "__")` (`agent__profile__subcmd__claude`);
+- the `case` labels derive theirs from `sc.replace('-', "__subcmd__")` over a path that starts with the binary
+  name (`agent__subcmd__profile__subcmd__claude`).
+
+No label ever matches, so bash completes the first word and nothing after it. A throwaway build confirmed
+both the failure and the fix: rewriting every `agent__subcmd__profile` to `agent__profile` in the generated
+script makes `agent-profile claude <TAB>` offer the agent's commands and flags. The fish, zsh and PowerShell
+scripts from the same model name their states consistently.
+
+So, for bash only, the generated text has every occurrence of `agent__subcmd__profile` replaced with
+`agent__profile` before it is written. If a future clap_complete fixes the bug, the string no longer occurs
+and the replacement does nothing. §2.5 test 7 is the oracle in both cases. The ROADMAP records the upstream
+defect, so the workaround can be removed once it is fixed (§7).
 
 New dependency: `clap_complete` at the newest 4.x release at implementation time (4.6.11 on 2026-10-21),
-default features only, added under `[workspace.dependencies]` like `clap`. `cargo deny check` must stay green.
+default features only, added under `[workspace.dependencies]` like `clap`. Only `clap_complete` enters
+`Cargo.lock`: `clap` stays at 4.6.7, which satisfies clap_complete's `clap >= 4.6.6`, and no `cargo update`
+runs. `cargo deny check` must stay green.
 clap_complete's licence (MIT OR Apache-2.0) and MSRV (1.85) fit the repository's.
 
 The command's usage text (`CommandWord::Completions.usage()`):
@@ -151,10 +188,14 @@ Print a shell completion script to stdout. <shell> is bash, elvish, fish, powers
    path, and again set to a missing directory. A temp root's directory tree is identical before and after.
 4. **Grammar table pinned.** A `cli.rs` unit test lists every `CommandWord` with its expected scope,
    `accepts_repo`, `accepts_json`, `accepts_yes` and positional, written out in full. It asserts the methods
-   return exactly that. A second test checks, for every word and every flag, that the dispatcher's real
-   behaviour agrees with the table. Accepting a flag must mean `split`/`validate_command` does not reject it,
-   and rejecting a flag must mean it does. This catches the methods and the dispatcher disagreeing.
-5. **Model mirrors the table.** For the built `clap::Command`:
+   return exactly that. A second test drives the dispatcher (`split`) for every word, with and without an
+   agent, and for every flag. It compares the outcome against that same hand-written table, NOT against the
+   methods, because comparing against the methods would only test the dispatcher's delegation to them. A
+   flag the table accepts must not be rejected. A flag the table rejects must be rejected with the message
+   the dispatcher gives today. This includes `create --json` and `delete --json` answering "not yet
+   implemented".
+5. **Model mirrors the table.** For the `clap::Command` after `build()`, so that anything clap adds
+   implicitly, such as a `help` subcommand, is visible:
    - the root's subcommand names equal the expected set exactly, so nothing is extra and nothing is missing;
    - each agent's subcommand names do the same;
    - each command's argument ids do the same.
@@ -265,7 +306,8 @@ Rewrite the stale parts and keep the parts that are current. Current means the a
 cannot be isolated", Architecture, Workspace and Licence; their content stays as it is.
 - Status paragraph: all v0.1 commands are implemented, there are twelve adapters, and a pointer to
   `ROADMAP.md`. No claim that v0.1 is released.
-- `## Usage` block: add `agent-profile doctor [--repo <path>] [--json]`,
+- `## Usage` block: split the combined `agent-profile <agent> resolve|status ...` line into the two lines
+  `COMMANDS_HELP` uses, and add `agent-profile doctor [--repo <path>] [--json]`,
   `agent-profile <agent> doctor [<profile>] [--repo <path>] [--json]` and `agent-profile completions <shell>`.
   A test (my call, §10) reads `README.md` with `include_str!` and asserts that every `agent-profile ...` line
   of `COMMANDS_HELP` appears verbatim in the README's usage block. The README may carry more lines (the launch
@@ -296,6 +338,9 @@ cannot be isolated", Architecture, Workspace and Licence; their content stays as
 - Delete the two debt entries "Two contradictory action-pinning idioms" and "Clippy runs on Linux only".
 - Add the unverified `dtolnay/rust-toolchain` branch-pin limit (§3.2).
 - Add profile-name completion as a future enhancement, outside v0.1.
+- Add the upstream clap_complete bash defect for binary names containing `-`, with the workaround's location,
+  so the workaround is removed once upstream fixes it. Reporting it upstream is an outward action; it is done
+  only with the owner's OK.
 
 `TODO.md` is updated to match.
 
@@ -332,3 +377,17 @@ AGY-TEST-AUDIT. Pushing and opening the PR need the owner's OK.
 - `rust-toolchain` is pinned to its `stable` branch tip, with an explicit `toolchain: stable`.
 - The `Action pins` job is not required by branch protection unless the owner adds it.
 - The empty "Planned adapters" README section is deleted.
+- The bash workaround (§2.4) is a string replacement on the generated script, not a fork or a hand-written
+  bash script.
+
+## Panel ledger
+
+Round 1 (solo + agy):
+- folded: the positional depends on whether an agent is given; completions runs before root/config and
+  bypasses profile validation; README is pinned to COMMANDS_HELP by a test; the pin counts;
+  AB-1 (no agent-level profile positional, because of zsh); CA-1 (buffer + write_out); LI-1
+  (`Invocation::Completions`); MG-1 (keep create/delete `--json` NotYetImplemented; test 4's second half
+  checks against the table, not the methods); PP-1 (split `resolve|status`); DC-1 (no clap bump); the help
+  subcommand; the bash hyphen defect workaround.
+- REJECTED: agy's Q4 claim that bash completes subcommands under an agent. A throwaway build at clap_complete
+  4.6.11 showed `agent-profile claude <TAB>` offering nothing until the state names were corrected.
