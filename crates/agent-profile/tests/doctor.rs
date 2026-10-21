@@ -504,9 +504,11 @@ fn doctor_writes_nothing_on_failure_branches() {
     let (_dir, base) = scratch();
     let home = base.join("absent").join("app");
     let root = Root::empty();
-    // With no root there is no config, so the targeted form fails on the uninstalled fake agent.
+    let empty_path = tempfile::tempdir().unwrap();
+    // With no root there is no config, so the targeted form fails on the uninstalled fake agent. The empty `PATH`
+    // keeps it uninstalled: on Windows the test runner puts the fixture's directory on `PATH`.
     for (args, expected) in [(&["doctor"][..], 0), (&["fake", "doctor", "work"], 5)] {
-        let mut command = root.agent_profile(args);
+        let mut command = command_with_path(&root, args, empty_path.path());
         command.env("AGENT_PROFILE_HOME", &home);
         let output = command.output().unwrap();
         assert_eq!(code(&output), expected, "{args:?}: {}{}", stdout(&output), stderr(&output));

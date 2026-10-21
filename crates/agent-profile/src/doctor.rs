@@ -1394,7 +1394,9 @@ mod tests {
     fn unknown_configured_agent_warns() {
         let f = fixture();
         fs::create_dir_all(&f.root).unwrap();
-        fs::write(f.root.join("config.toml"), "[agents.claud]\nexecutable = \"/x\"\n").unwrap();
+        // The executable must be absolute on this host, or the config is invalid and the check is skipped.
+        let config = format!("[agents.claud]\nexecutable = '{}'\n", f.root.join("x").display());
+        fs::write(f.root.join("config.toml"), config).unwrap();
         let report = run_host(&f);
         let found = find(&report, CheckId::ConfigAgent);
         assert_eq!(found.len(), 1);
