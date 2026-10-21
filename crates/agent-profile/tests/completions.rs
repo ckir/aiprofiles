@@ -120,6 +120,30 @@ fn each_shell_prints_a_script() {
     }
 }
 
+/// One line only that shell's generator emits; every shell's script names every agent and command word, so
+/// the substring checks above cannot tell a misrouted shell from the right one.
+#[test]
+fn each_shell_prints_its_own_dialect() {
+    let root = Root::new();
+    let signatures = [
+        ("bash", "_agent__profile() {"),
+        ("elvish", "edit:completion:arg-completer"),
+        ("fish", "complete -c agent-profile"),
+        ("powershell", "Register-ArgumentCompleter"),
+        ("zsh", "#compdef agent-profile"),
+    ];
+    assert_eq!(signatures.map(|(shell, _)| shell), SHELLS);
+    for (shell, signature) in signatures {
+        let text = stdout(&root.agent_profile(["completions", shell]).output().unwrap());
+        assert!(text.contains(signature), "{shell}: script lacks {signature:?}");
+        for (other, other_signature) in signatures {
+            if other != shell {
+                assert!(!text.contains(other_signature), "{shell}: carries the {other} signature");
+            }
+        }
+    }
+}
+
 #[test]
 fn completions_needs_no_root() {
     let root = Root::new();
