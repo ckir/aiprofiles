@@ -86,7 +86,8 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 . "$repo_root/scripts/lib/scan-guard.sh"
 dir=${1:-$repo_root/.github/workflows}
 pin='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@ ]+)?@[0-9a-f]{40} # [A-Za-z0-9_.-]+$'
-files=$(mktemp); trap 'rm -f "$files"' EXIT INT TERM
+files=$(mktemp); hits=$(mktemp); trap 'rm -f "$files" "$hits"' EXIT INT TERM
+checked=0; violations=0          # before the file loop, not inside it
 scan_expand "$files" must-find "workflow files under $dir" "$dir"/*.yml
 # For each file: scan_grep -n -E '^[[:space:]]*(- )?uses:' "$file" > "$hits"  → lines "N:text". Read $hits with
 # `while IFS= read -r hit; do …; done < "$hits"` — never through a pipe, which runs the loop in a subshell and
