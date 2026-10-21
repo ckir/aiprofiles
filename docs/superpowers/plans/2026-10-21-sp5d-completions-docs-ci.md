@@ -125,14 +125,9 @@ action-pins:
 
 and change the `check` line to `check: fmt-check clippy typos shellcheck line-citations action-pins test probe-tests tools-doc-check doc-check`, updating the comment above it to list `action-pins`. In `.claude/recommended-tools.json`, the `just` entry's `why` gains `+ action-pins` after `line-citations`. Then `sh scripts/gen-tool-table.sh` regenerates `docs/dev-tooling.md`; `sh scripts/gen-tool-table.sh --check` must pass.
 
-- [ ] **Step 7: Commit (the gate is red by design until Task 2 — commit only the script, its test, the justfile and the tools files; run `just fmt-check typos shellcheck line-citations tools-doc-check` and the two new scripts instead of the full `check`)**
+- [ ] **Step 7: Do NOT commit yet**
 
-```bash
-git add scripts/check-action-pins.sh scripts/tests/check-action-pins.sh justfile .claude/recommended-tools.json docs/dev-tooling.md
-git commit -m "ci: add the action-pin check and its tests"
-```
-
-Note in the commit body that `just action-pins` fails on this commit's own workflows until the next commit pins them.
+`just action-pins` is red on the tree until Task 2 pins the workflows, and the spec requires a green gate after every commit (§8). Task 2 commits this task's files together with the pins. Run `just fmt-check typos shellcheck line-citations tools-doc-check` plus the two new scripts here as the interim check.
 
 ---
 
@@ -193,10 +188,10 @@ After the `tools-doc` job:
 Run: `sh scripts/check-action-pins.sh && grep -nE '@(v[0-9]+|stable|nextest)$' .github/workflows/*.yml; just check`
 Expected: `check-action-pins: 46 uses checked` (the 45 lines measured in Task 1 plus the new job's checkout; re-count with `grep -cE '^[[:space:]]*(- )?uses:' .github/workflows/*.yml` and report a different total as `STATE_MISMATCH`), no grep hits, `just check` green.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit Tasks 1 and 2 together**
 
 ```bash
-git add .github/workflows/ci.yml .github/workflows/docs.yml .github/workflows/dependabot-automerge.yml .github/workflows/release-plz.yml .github/workflows/release.yml
+git add scripts/check-action-pins.sh scripts/tests/check-action-pins.sh justfile .claude/recommended-tools.json docs/dev-tooling.md .github/workflows/ci.yml .github/workflows/docs.yml .github/workflows/dependabot-automerge.yml .github/workflows/release-plz.yml .github/workflows/release.yml
 git commit -m "ci: pin every action to a commit SHA and gate it"
 ```
 
@@ -283,7 +278,8 @@ git commit -m "ci: run clippy on ubuntu, macos and windows behind the Clippy che
 enum AgentScope { TopLevelOnly, AgentRequired, Either }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Positional { None, RequiredProfile, OptionalProfile }   // Task 6 adds `Shell`
+enum Positional { None, RequiredProfile, OptionalProfile, Shell }
+// `Shell` carries `#[allow(dead_code)] // constructed by `completions`, Task 6` until Task 6 removes it.
 
 impl CommandWord {
     const ALL: [CommandWord; 12];                 // Task 6 makes it 13
@@ -342,7 +338,7 @@ Add the enums and methods after `fn usage` in `impl CommandWord`; every method i
 
 `split_top_level`: replace the two `matches!` blocks with one: if `command.scope() == AgentScope::AgentRequired`, the message is `` `{name}` needs an agent: agent-profile <agent> {name}`` plus `" <profile>"` when `command.positional(true) == Positional::RequiredProfile`.
 
-`validate_command`, keeping the ORDER of checks exactly as today: `has_cut` → `scope() == TopLevelOnly && agent.is_some()` → repo refused when `!accepts_repo()` → repo count/empty → the literal `Create | Delete` `--json` `NotYetImplemented` check (kept) → `json_accepted = command.accepts_json()` → `yes = command.accepts_yes() && …` → unknown option → `allowed = usize::from(command.positional(agent.is_some()) != Positional::None)` → the `link` needs-a-profile check (kept literal) → the too-many check, whose message is chosen by the positional kind: `RequiredProfile` → `` `{name}` takes one profile``, `OptionalProfile` → `` `{name}` takes one profile``, `None` → `` `{name}` takes no arguments`` → the `create`/`delete` needs-a-profile check (kept literal) → profile → `Ok`.
+`validate_command`, keeping the ORDER of checks exactly as today: `has_cut` → `scope() == TopLevelOnly && agent.is_some()` → repo refused when `!accepts_repo()` → repo count/empty → the literal `Create | Delete` `--json` `NotYetImplemented` check (kept) → `json_accepted = command.accepts_json()` → `yes = command.accepts_yes() && …` → unknown option → `allowed = usize::from(command.positional(agent.is_some()) != Positional::None)` → the `link` needs-a-profile check (kept literal) → the too-many check, whose message is chosen by the positional kind: `RequiredProfile` → `` `{name}` takes one profile``, `OptionalProfile` → `` `{name}` takes one profile``, `Shell` → `` `{name}` takes one shell`` (unreachable until Task 6), `None` → `` `{name}` takes no arguments`` → the `create`/`delete` needs-a-profile check (kept literal) → profile → `Ok`.
 
 - [ ] **Step 4: Run the whole suite**
 
@@ -365,7 +361,7 @@ git commit -m "refactor(cli): describe the command grammar in one table"
 - Modify: `crates/agent-profile/Cargo.toml` (`clap_complete = { workspace = true }`)
 - Modify: `Cargo.lock` (gains `clap_complete 4.6.11` only)
 - Create: `crates/agent-profile/src/cli/completions.rs`
-- Modify: `crates/agent-profile/src/cli.rs` (`mod completions;` after the `use` block; `Positional::Shell` variant; in Task 4's `positional` matches nothing returns it yet — the variant is constructed only by Task 6, so mark it `#[allow(dead_code)]` here and remove the attribute in Task 6)
+- Modify: `crates/agent-profile/src/cli.rs` (`mod completions;` after the `use` block; nothing else — `Positional::Shell` already exists from Task 4)
 
 **Interfaces:**
 - Consumes: `CommandWord::ALL`, `scope()`, `accepts_repo()`, `accepts_json()`, `accepts_yes()`, `positional()` (Task 4); `adapter::known_agents()`.
@@ -474,9 +470,9 @@ Expected: the new file fails to find the behaviour (exit 2 "not yet implemented"
 
 1. `COMMANDS_HELP`: append `"\n\nShell completion:\n  agent-profile completions <shell>"` after the `profiles` line.
 2. Delete `Command::Completions(Rest)`, `struct Rest`, `impl Command { fn reserved_name }`, the `Args` import if now unused, and in `run` the `if let Some(name) = cli.command.reserved_name()` block; the `let Command::Agent(argv) = cli.command else { unreachable!(..) }` becomes the irrefutable `let Command::Agent(argv) = cli.command;`. Update the doc comment on `enum Command` (every reserved word is now dispatched before clap). A `Subcommand` enum whose only variant is the `external_subcommand` compiles and parses (measured in a throwaway build on 2026-10-21: `completions bash` arrives as `Agent(["completions","bash"])`, bare invocation still prints help and exits 2).
-3. `CommandWord::Completions`: `parse` `"completions"`, `as_str`, `usage` returning exactly `"Usage: agent-profile completions <shell>\nPrint a shell completion script to stdout. <shell> is bash, elvish, fish, powershell or zsh.\n"`, `scope` `TopLevelOnly`, `accepts_*` false, `positional` `Positional::Shell` for both, `ALL` now 13 (remove Task 5's `#[allow(dead_code)]`).
+3. `CommandWord::Completions`: `parse` `"completions"`, `as_str`, `usage` returning exactly `"Usage: agent-profile completions <shell>\nPrint a shell completion script to stdout. <shell> is bash, elvish, fish, powershell or zsh.\n"`, `scope` `TopLevelOnly`, `accepts_*` false, `positional` `Positional::Shell` for both, `ALL` now 13 (remove Task 4's `#[allow(dead_code)]` on `Positional::Shell`).
 4. `Invocation::Completions(clap_complete::Shell)` (derive `PartialEq` holds: `Shell` is `PartialEq`).
-5. `validate_command`: in the too-many check, `Positional::Shell` → `` `{name}` takes one shell``. After the `create`/`delete` needs-a-profile check and before building `profile`: `if command.positional(agent.is_some()) == Positional::Shell { let Some(word) = bare.first() else { return Err(usage(format!("`{name}` needs a shell: agent-profile {name} <{}>", SHELL_NAMES.join("|")))) }; let word = word.to_string_lossy(); return completions::parse_shell(&word).map(Invocation::Completions).ok_or_else(|| usage(format!("unknown shell `{word}` (shells: {})", SHELL_NAMES.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ")))); }`.
+5. `validate_command` (the `Shell` arm of the too-many check exists since Task 4). After the `create`/`delete` needs-a-profile check and before building `profile`: `if command.positional(agent.is_some()) == Positional::Shell { let Some(word) = bare.first() else { return Err(usage(format!("`{name}` needs a shell: agent-profile {name} <{}>", SHELL_NAMES.join("|")))) }; let word = word.to_string_lossy(); return completions::parse_shell(&word).map(Invocation::Completions).ok_or_else(|| usage(format!("unknown shell `{word}` (shells: {})", SHELL_NAMES.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ")))); }`.
 6. `execute`: `Invocation::Completions(shell) => { write_out(&completions::script(shell))?; Ok(0) }`.
 
 `run` needs no change: `CommandWord::parse("completions")` now succeeds at `args.get(1)`, so `completions …` goes through `split_top_level`; `<agent> completions` reaches `validate_command` through `split` step 4 and is refused by the scope check.
@@ -517,7 +513,7 @@ Expected: FAIL naming `agent-profile <agent> resolve [--repo <path>] [--json]` (
 
 - Lines 11–14, the status paragraph, become: `**Status: v0.1 command set complete.** Every v0.1 command is implemented — launch, repository resolution (`current`, `resolve`, `status`, `link`, `unlink`, `repositories`), the profile lifecycle (`create`, `list`, `delete`, `profiles`, `agents`), `doctor`, `--json` on the report commands and `completions` — backed by twelve evidence-measured adapters; see [ROADMAP.md](ROADMAP.md) for what remains before a release. The authoritative design is …` (keep the spec link sentence).
 - The usage block (lines 40–54): replace line 44 with the two lines `agent-profile <agent> resolve [--repo <path>] [--json]` and `agent-profile [<agent>] status [--repo <path>] [--json]`; delete line 47 (`agent-profile status …`, now covered); after the `repositories` line add `agent-profile doctor [--repo <path>] [--json]`, `agent-profile <agent> doctor [<profile>] [--repo <path>] [--json]` and `agent-profile completions <shell>`. Keep the two launch lines.
-- After the `repositories` paragraph (ends line 84), a new paragraph: `doctor` checks the host (platform, application root and whether it is writable, `config.toml`, the profiles directory and case-twin names, the default profile), the current repository and every stored mapping, and each agent's executable and support level; `<agent> doctor [<profile>]` adds the profile that would resolve, its paths and the launch environment the adapter would set, by name only. It never launches an agent, and prints no secret or environment value. Exit codes: 0 when nothing failed, 5 when any check failed, 2 for a usage error and 1 when the report cannot be written (verified against `run_doctor` and `Error::exit_code` at implementation time).
+- After the `repositories` paragraph (ends line 84), a new paragraph: `doctor` checks the host (platform, application root and, on Unix, whether it is writable, `config.toml`, the profiles directory and case-twin names, the default profile), the current repository and every stored mapping, and each agent's executable and support level; `<agent> doctor [<profile>]` adds the profile that would resolve, its paths and the launch environment the adapter would set, by name only. It never launches an agent, and prints no secret or environment value. Exit codes: 0 when nothing failed, 5 when any check failed, 2 for a usage error and 1 when the report cannot be written (verified against `run_doctor` and `Error::exit_code` at implementation time).
 - Before `## Supported agents` (line 98), a new section:
 
   ````markdown
