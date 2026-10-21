@@ -20,6 +20,8 @@ use crate::repo::{self, Discovery};
 use crate::repositories;
 use crate::resolve;
 
+mod completions;
+
 const LAUNCH_USAGE: &str = "\
 Usage: agent-profile <agent> <profile> [--dry-run] [--verbose] [-- <agent args>...]
 
