@@ -7,9 +7,6 @@
 //! binary whose name contains a hyphen the state labels name a function path that is never reached.
 //! `script` rewrites the label back. Remove once upstream names them consistently.
 
-// Removed in Task 6 once `completions` calls these.
-#![allow(dead_code)]
-
 use clap::{Arg, ArgAction, Command, ValueHint};
 use clap_complete::Shell;
 

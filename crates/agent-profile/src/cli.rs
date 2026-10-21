@@ -5,7 +5,8 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
@@ -21,6 +22,7 @@ use crate::repositories;
 use crate::resolve;
 
 mod completions;
+use completions::SHELL_NAMES;
 
 const LAUNCH_USAGE: &str = "\
 Usage: agent-profile <agent> <profile> [--dry-run] [--verbose] [-- <agent args>...]
@@ -50,7 +52,10 @@ Profile commands:
   agent-profile <agent> delete <profile> [--yes]
   agent-profile [<agent>] list [--json]
   agent-profile agents [--json]
-  agent-profile profiles [--json]";
+  agent-profile profiles [--json]
+
+Shell completion:
+  agent-profile completions <shell>";
 
 /// Select and launch profiles for multiple coding agents.
 #[derive(Parser)]
@@ -68,31 +73,12 @@ struct Cli {
     command: Command,
 }
 
-/// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
-/// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
-/// (SP3 design §7.2), as are `resolve`, `current`, `repositories` and `doctor`.
+/// Every reserved word — the eight of spec §5.3 plus `resolve`, `current`, `repositories`, `doctor` and
+/// `completions` — is dispatched before Clap (SP3 design §7.2), so Clap sees only the agent form.
 #[derive(Subcommand)]
 enum Command {
-    /// Not yet implemented.
-    Completions(Rest),
     #[command(external_subcommand)]
     Agent(Vec<OsString>),
-}
-
-#[derive(Args)]
-#[command(disable_help_flag = true)]
-struct Rest {
-    #[arg(hide = true, trailing_var_arg = true, allow_hyphen_values = true)]
-    _rest: Vec<OsString>,
-}
-
-impl Command {
-    fn reserved_name(&self) -> Option<&'static str> {
-        Some(match self {
-            Command::Completions(_) => "completions",
-            Command::Agent(_) => return None,
-        })
-    }
 }
 
 /// The repository commands (SP3 design §7.1).
@@ -110,6 +96,7 @@ enum CommandWord {
     Profiles,
     Repositories,
     Doctor,
+    Completions,
 }
 
 /// Where a command word may appear: with an agent, without one, or both.
@@ -126,7 +113,6 @@ enum Positional {
     None,
     RequiredProfile,
     OptionalProfile,
-    #[allow(dead_code)] // constructed by `completions`, Task 6
     Shell,
 }
 
@@ -146,6 +132,7 @@ impl CommandWord {
             "profiles" => CommandWord::Profiles,
             "repositories" => CommandWord::Repositories,
             "doctor" => CommandWord::Doctor,
+            "completions" => CommandWord::Completions,
             _ => return None,
         })
     }
@@ -164,11 +151,11 @@ impl CommandWord {
             CommandWord::Profiles => "profiles",
             CommandWord::Repositories => "repositories",
             CommandWord::Doctor => "doctor",
+            CommandWord::Completions => "completions",
         }
     }
 
-    #[allow(dead_code)] // read by `completions`, Task 6; until then only the tests use it
-    const ALL: [CommandWord; 12] = [
+    const ALL: [CommandWord; 13] = [
         CommandWord::Current,
         CommandWord::Resolve,
         CommandWord::Status,
@@ -181,6 +168,7 @@ impl CommandWord {
         CommandWord::Profiles,
         CommandWord::Repositories,
         CommandWord::Doctor,
+        CommandWord::Completions,
     ];
 
     fn scope(self) -> AgentScope {
@@ -189,9 +177,10 @@ impl CommandWord {
             | CommandWord::Resolve
             | CommandWord::Create
             | CommandWord::Delete => AgentScope::AgentRequired,
-            CommandWord::Agents | CommandWord::Profiles | CommandWord::Repositories => {
-                AgentScope::TopLevelOnly
-            }
+            CommandWord::Agents
+            | CommandWord::Profiles
+            | CommandWord::Repositories
+            | CommandWord::Completions => AgentScope::TopLevelOnly,
             CommandWord::Status
             | CommandWord::Link
             | CommandWord::Unlink
@@ -213,7 +202,8 @@ impl CommandWord {
             | CommandWord::List
             | CommandWord::Agents
             | CommandWord::Profiles
-            | CommandWord::Repositories => false,
+            | CommandWord::Repositories
+            | CommandWord::Completions => false,
         }
     }
 
@@ -230,7 +220,8 @@ impl CommandWord {
             | CommandWord::Link
             | CommandWord::Unlink
             | CommandWord::Create
-            | CommandWord::Delete => false,
+            | CommandWord::Delete
+            | CommandWord::Completions => false,
         }
     }
 
@@ -247,7 +238,8 @@ impl CommandWord {
             | CommandWord::Agents
             | CommandWord::Profiles
             | CommandWord::Repositories
-            | CommandWord::Doctor => false,
+            | CommandWord::Doctor
+            | CommandWord::Completions => false,
         }
     }
 
@@ -256,6 +248,7 @@ impl CommandWord {
             CommandWord::Link | CommandWord::Create | CommandWord::Delete => {
                 Positional::RequiredProfile
             }
+            CommandWord::Completions => Positional::Shell,
             CommandWord::Doctor if with_agent => Positional::OptionalProfile,
             CommandWord::Doctor
             | CommandWord::Current
@@ -337,6 +330,10 @@ impl CommandWord {
                  --repo <path>  Use the repository at <path> instead of the current directory\n  \
                  --json         Print a JSON document instead of the report\n"
             }
+            CommandWord::Completions => {
+                "Usage: agent-profile completions <shell>\n\
+                 Print a shell completion script to stdout. <shell> is bash, elvish, fish, powershell or zsh.\n"
+            }
         }
     }
 }
@@ -360,12 +357,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
             return error.exit_code();
         }
     };
-    if let Some(name) = cli.command.reserved_name() {
-        return report(Error::NotYetImplemented { command: name.to_owned() });
-    }
-    let Command::Agent(argv) = cli.command else {
-        unreachable!("reserved commands returned above")
-    };
+    let Command::Agent(argv) = cli.command;
     let known = adapter::known_agents();
     match split(argv, &known)
         .map_err(|error| with_unknown_configured(error, None, &known))
@@ -387,6 +379,7 @@ enum Invocation {
     Help,
     CommandHelp(CommandWord),
     Version,
+    Completions(Shell),
     Launch {
         agent: String,
         profile: Option<String>,
@@ -671,6 +664,21 @@ fn validate_command(
             "`{name}` needs a profile: agent-profile <agent> {name} <profile>"
         )));
     }
+    if positional == Positional::Shell {
+        let Some(word) = bare.first() else {
+            return Err(usage(format!(
+                "`{name}` needs a shell: agent-profile {name} <{}>",
+                SHELL_NAMES.join("|")
+            )));
+        };
+        let word = word.to_string_lossy();
+        return completions::parse_shell(&word).map(Invocation::Completions).ok_or_else(|| {
+            usage(format!(
+                "unknown shell `{word}` (shells: {})",
+                SHELL_NAMES.iter().map(|shell| format!("`{shell}`")).collect::<Vec<_>>().join(", ")
+            ))
+        });
+    }
     let profile = match bare.first() {
         Some(word) => Some(
             word.to_str().ok_or_else(|| usage("the profile name is not valid UTF-8"))?.to_owned(),
@@ -699,6 +707,10 @@ fn execute(invocation: Invocation) -> Result<i32> {
         }
         Invocation::Version => {
             write_out(&format!("agent-profile {}\n", env!("CARGO_PKG_VERSION")))?;
+            Ok(0)
+        }
+        Invocation::Completions(shell) => {
+            write_out(&completions::script(shell))?;
             Ok(0)
         }
         Invocation::Launch { agent, profile, dry_run, verbose, opaque } => {
@@ -974,6 +986,7 @@ fn run_command(
         | CommandWord::Profiles
         | CommandWord::Repositories => unreachable!("lifecycle commands returned above"),
         CommandWord::Doctor => unreachable!("doctor returned above"),
+        CommandWord::Completions => unreachable!("completions returned above"),
     };
     write_lines(&lines)?;
     Ok(0)
@@ -1977,6 +1990,15 @@ mod tests {
             top_level: Positional::None,
             with_agent: Positional::OptionalProfile,
         },
+        Row {
+            word: CommandWord::Completions,
+            scope: AgentScope::TopLevelOnly,
+            repo: false,
+            json: false,
+            yes: false,
+            top_level: Positional::Shell,
+            with_agent: Positional::Shell,
+        },
     ];
 
     #[test]
@@ -2015,7 +2037,11 @@ mod tests {
             let name = row.word.as_str();
             let word = row.word;
             let profiles = |positional: Positional| -> &'static [&'static str] {
-                if positional == Positional::RequiredProfile { &["p"] } else { &[] }
+                match positional {
+                    Positional::RequiredProfile => &["p"],
+                    Positional::Shell => &["bash"],
+                    _ => &[],
+                }
             };
 
             // Bare, top level.
@@ -2029,7 +2055,11 @@ mod tests {
             } else {
                 assert_eq!(
                     result.unwrap(),
-                    command(None, word, prof.first().copied(), None, false, false),
+                    if row.top_level == Positional::Shell {
+                        Invocation::Completions(Shell::Bash)
+                    } else {
+                        command(None, word, prof.first().copied(), None, false, false)
+                    },
                     "{name} top level"
                 );
             }
@@ -2136,9 +2166,32 @@ mod tests {
                             format!("`{name}` takes one profile")
                         );
                     }
-                    Positional::Shell => unreachable!("no row takes a shell yet"),
+                    Positional::Shell => {
+                        assert!(
+                            usage_message(run(with_agent, name, &[]))
+                                .starts_with(&format!("`{name}` needs a shell")),
+                            "{name} bare"
+                        );
+                        assert_eq!(
+                            usage_message(run(with_agent, name, &["bash", "zsh"])),
+                            format!("`{name}` takes one shell")
+                        );
+                    }
                 }
             }
         }
+    }
+    #[test]
+    fn completions_binds_the_shell_only_in_lower_case() {
+        assert_eq!(top(&["completions", "zsh"]).unwrap(), Invocation::Completions(Shell::Zsh));
+        assert_eq!(
+            usage_message(top(&["completions", "ZSH"])),
+            "unknown shell `ZSH` (shells: `bash`, `elvish`, `fish`, `powershell`, `zsh`)"
+        );
+        let result = split_top_level(CommandWord::Completions, vec![non_utf8()]);
+        assert!(
+            usage_message(result).starts_with("unknown shell `"),
+            "a non-UTF-8 shell must be a usage error"
+        );
     }
 }
