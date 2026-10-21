@@ -231,6 +231,20 @@ mod tests {
     }
 
     #[test]
+    fn completions_shell_argument_accepts_exactly_the_shell_names() {
+        let mut root = model();
+        root.build();
+        let completions = root.find_subcommand("completions").expect("completions subcommand");
+        let shell = completions
+            .get_arguments()
+            .find(|arg| arg.get_id() == "shell")
+            .expect("shell argument");
+        let values: Vec<String> =
+            shell.get_possible_values().iter().map(|v| v.get_name().to_owned()).collect();
+        assert_eq!(values, SHELL_NAMES);
+    }
+
+    #[test]
     fn parse_shell_is_exact_lower_case() {
         let want = [Shell::Bash, Shell::Elvish, Shell::Fish, Shell::PowerShell, Shell::Zsh];
         for (name, shell) in SHELL_NAMES.iter().zip(want) {

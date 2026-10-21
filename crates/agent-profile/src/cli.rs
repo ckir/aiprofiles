@@ -2181,6 +2181,7 @@ mod tests {
             }
         }
     }
+
     #[test]
     fn completions_binds_the_shell_only_in_lower_case() {
         assert_eq!(top(&["completions", "zsh"]).unwrap(), Invocation::Completions(Shell::Zsh));
