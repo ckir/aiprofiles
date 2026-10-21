@@ -13,9 +13,12 @@
 # This is a SYNTACTIC check. It cannot tell a real commit from a mistyped one; resolving each SHA against
 # its repository is a separate, manual step done when a pin is written or bumped.
 #
-# BLOCK STYLE ONLY: a `uses:` written in flow style (`- { uses: ... }`, `{ name: x, uses: ... }`) is refused
-# outright, even with a full SHA. The scan reads one `uses:` per line and does not parse flow YAML, so a
-# flow-style step would otherwise be invisible to it and a floating action could pass beside a pinned one.
+# FAIL CLOSED ON SHAPE: the scan is not a YAML parser, so it does not enumerate the shapes a `uses` key can
+# take; it flags every non-comment line where `uses` appears as a key token (after line start, whitespace,
+# `{`, `,`, `[` or `-`, optionally quoted, optionally followed by blanks before the colon). Each such line
+# must then be the canonical form: an unquoted `uses:` key with no space before the colon, one value per
+# line, optionally after `-` and any blanks. Quoted keys, `uses :`, flow `{ uses: ... }` and `[ uses: ... ]`
+# are refused outright, even with a full SHA, so a floating action cannot hide beside a pinned one.
 #
 # Usage: sh scripts/check-action-pins.sh [dir]   (default: <repo>/.github/workflows)
 # Output: one `<file>:<line>: <text>` per violation and exit 1; otherwise `check-action-pins: <n> uses checked`.
@@ -26,8 +29,8 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 . "$repo_root/scripts/lib/scan-guard.sh"
 
 dir=${1:-$repo_root/.github/workflows}
-block='^[[:space:]]*(- )?uses:'
-flow='[{,][[:space:]]*uses:[[:space:]]'
+scan='(^|[[:space:]{,[-])["'"'"']?uses["'"'"']?[[:space:]]*:'
+canon='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+'
 pin='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@ ]+)?@[0-9a-f]{40} # [A-Za-z0-9_.-]+$'
 
 files=$(mktemp)
@@ -40,7 +43,7 @@ violations=0
 scan_expand "$files" must-find "workflow files under $dir" "$dir"/*.yml
 
 while IFS= read -r file; do
-    scan_grep -n -E "$block|$flow" "$file" > "$hits"
+    scan_grep -n -E "$scan" "$file" > "$hits"
     # Read from a file, never a pipe: a pipe runs the loop in a subshell and loses the counters.
     while IFS= read -r hit; do
         lineno=${hit%%:*}
@@ -52,13 +55,13 @@ while IFS= read -r file; do
                 ;;
         esac
         checked=$((checked + 1))
-        if ! printf '%s\n' "$text" | grep -qE "$block"; then
+        if ! printf '%s\n' "$text" | grep -qE "$canon"; then
             trimmed=$(printf '%s\n' "$text" | sed -E 's/^[[:space:]]+//')
             printf '%s:%s: %s\n' "$file" "$lineno" "$trimmed"
             violations=1
             continue
         fi
-        value=$(printf '%s\n' "$text" | sed -E 's/^[[:space:]]*(- )?uses:[[:space:]]*//; s/[[:space:]]+$//')
+        value=$(printf '%s\n' "$text" | sed -E 's/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+//; s/[[:space:]]+$//')
         case "$value" in
             ./*) continue ;;
         esac

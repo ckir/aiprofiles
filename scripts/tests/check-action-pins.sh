@@ -113,6 +113,23 @@ accepted "commented-out flow-style use is ignored" \
     "      # - { uses: x/y@v1 }" \
     "      - uses: actions/checkout@$sha # v7.0.1"
 
+# Fail closed on any shape of the `uses` key: each is refused beside a valid pinned use (line 8).
+tab=$(printf '\t')
+shape() {
+    rejected "$1" 8 "      - uses: actions/checkout@$sha # v7.0.1" "$2"
+}
+shape "two spaces after the hyphen are refused when floating" "      -  uses: actions/checkout@v7"
+shape "tab after the hyphen is refused when floating" "      -${tab}uses: actions/checkout@v7"
+shape "double-quoted key is refused" '      - "uses": actions/checkout@v7'
+shape "single-quoted key is refused" "      - 'uses': actions/checkout@v7"
+shape "space before the colon is refused" "      - uses : actions/checkout@v7"
+shape "array form is refused" "      - [ uses: actions/checkout@v7 ]"
+shape "space before the colon without a hyphen is refused" "        uses : actions/checkout@v7"
+accepted "extra spaces after the hyphen with a sha are accepted" \
+    "      -   uses: actions/checkout@$sha # v7.0.1"
+accepted "local use with two spaces after the hyphen is accepted" \
+    "      -  uses: ./.github/workflows/x.yml"
+
 mkdir -p "$tmp/empty"
 run "$tmp/empty"
 if [ "$status" -ne 0 ]; then got=nonzero; else got=zero; fi
