@@ -394,10 +394,10 @@ Round 1 (solo + agy):
   (`Invocation::Completions`); MG-1 (keep create/delete `--json` NotYetImplemented; test 4's second half
   checks against the table, not the methods); PP-1 (split `resolve|status`); DC-1 (no clap bump); the help
   subcommand; the bash hyphen defect workaround.
+- REJECTED (round 1): agy's Q4 claim that bash completes subcommands under an agent. A throwaway build at
+  clap_complete 4.6.11 showed `agent-profile claude <TAB>` offering nothing until the state names were corrected.
 Round 2 (agy; seats Axiom Breaker, Cascade Analyst, Activation Auditor, Blindspot Auditor, Mechanism Gamer):
 - folded: AA-1 (the Action pins job has a pinned checkout); AA-2 (the aggregator uses `!cancelled()`, so a
   cancelled run does not turn red; a leg that times out or fails still runs it and fails it, and a cancelled
   run's required Test checks block the merge regardless); MG-2 (the `create <TAB>` assertion gains a positive
   half); BA-1 (fish needs `mkdir -p`); CA-2 (`from_utf8_lossy`).
-- REJECTED: agy's Q4 claim that bash completes subcommands under an agent. A throwaway build at clap_complete
-  4.6.11 showed `agent-profile claude <TAB>` offering nothing until the state names were corrected.
