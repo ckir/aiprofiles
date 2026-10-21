@@ -93,6 +93,23 @@ fn search_path(
     Err(not_installed(agent, NotInstalledReason::NotOnPath { ignored_relative }))
 }
 
+/// Finds `name` through the RELATIVE entries of `path_var`, each resolved against `cwd`, in order; the first
+/// native (or, on Windows, unsupported) form wins. Absolute entries are skipped. Never runs anything.
+pub fn repository_local(name: &str, path_var: Option<&OsStr>, cwd: &Path) -> Option<PathBuf> {
+    for dir in path_var.into_iter().flat_map(std::env::split_paths) {
+        if dir.as_os_str().is_empty() || dir.is_absolute() {
+            continue;
+        }
+        match search_dir(&cwd.join(&dir), name) {
+            Some(Hit::Native(path)) => return Some(path),
+            #[cfg(windows)]
+            Some(Hit::Unsupported(path)) => return Some(path),
+            None => {}
+        }
+    }
+    None
+}
+
 /// What a `PATH` directory holds for an agent.
 enum Hit {
     Native(PathBuf),
@@ -135,14 +152,14 @@ fn unsupported(agent: &str, path: PathBuf, config_file: &Path) -> Error {
 }
 
 #[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
+pub(crate) fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     fs::metadata(path)
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(windows)]
-fn is_executable(path: &Path) -> bool {
+pub(crate) fn is_executable(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
@@ -336,5 +353,45 @@ mod tests {
             find("codex", None, Some(&path_var)).unwrap(),
             Found { path: exe, origin: Origin::Path }
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repository_local_finds_an_executable_through_a_relative_entry_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path().to_path_buf();
+        let bin = dir.join("bin");
+        let other = dir.join("other");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        make_file(&bin, "fake-agent", true);
+        make_file(&other, "only-absolute", true);
+        make_file(&bin, "not-executable", false);
+        let path_var = std::env::join_paths([Path::new("bin"), other.as_path()]).unwrap();
+        assert_eq!(
+            repository_local("fake-agent", Some(path_var.as_os_str()), &dir),
+            Some(dir.join("bin").join("fake-agent"))
+        );
+        // the same kind of file reachable only through an ABSOLUTE entry -> None
+        assert_eq!(repository_local("only-absolute", Some(path_var.as_os_str()), &dir), None);
+        // a non-executable file through the relative entry -> None
+        assert_eq!(repository_local("not-executable", Some(path_var.as_os_str()), &dir), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn repository_local_uses_the_windows_forms() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path().to_path_buf();
+        let bin = dir.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        make_file(&bin, "fake-agent.exe", true);
+        make_file(&bin, "bare-agent", true);
+        let path_var = std::env::join_paths([Path::new("bin")]).unwrap();
+        assert_eq!(
+            repository_local("fake-agent", Some(path_var.as_os_str()), &dir),
+            Some(dir.join("bin").join("fake-agent.exe"))
+        );
+        assert_eq!(repository_local("bare-agent", Some(path_var.as_os_str()), &dir), None);
     }
 }

@@ -9,7 +9,9 @@ use crate::adapter::{
     AdapterMetadata, Capability, CapabilityState, PathKind, PlannedLaunch, SupportLevel,
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
-use crate::exe::{Found, Origin};
+use crate::doctor::{Check, Report, Status};
+use crate::error::{Error, NotInstalledReason, Result};
+use crate::exe::{self, Found, Origin};
 use crate::lifecycle::{CreateOutcome, DeleteOutcome, Listing};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
@@ -393,6 +395,32 @@ pub enum ExecutableStatus {
     Unsupported(PathBuf),
 }
 
+impl ExecutableStatus {
+    /// Resolves an agent's executable to a listed fact. Not-installed and unsupported outcomes become
+    /// variants; any other discovery error propagates.
+    pub fn discover(
+        metadata: &AdapterMetadata,
+        explicit: Option<&Path>,
+        path_var: Option<&OsStr>,
+        config_file: &Path,
+    ) -> Result<ExecutableStatus> {
+        match exe::discover(metadata.id, metadata.executable, explicit, path_var, config_file) {
+            Ok(found) => Ok(ExecutableStatus::Found(found)),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::NotOnPath { .. }, ..
+            }) => Ok(ExecutableStatus::NotOnPath),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::ExplicitMissing(path),
+                ..
+            }) => Ok(ExecutableStatus::ConfiguredMissing(path)),
+            Err(Error::UnsupportedExecutable { path, .. }) => {
+                Ok(ExecutableStatus::Unsupported(path))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
 /// `repositories` (SP5b design §4): a block per stored mapping, a blank line between blocks. The key is
 /// printed as stored.
 pub fn repositories_lines(entries: &[crate::repositories::Entry]) -> Vec<String> {
@@ -579,6 +607,55 @@ fn is_dotted_identifier(name: &str) -> bool {
         !segment.is_empty()
             && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     })
+}
+
+/// The `doctor` report (SP5c design §7): records grouped under `host`, `repositories` and one
+/// `agent <id>` heading per agent, then the summary line.
+pub fn doctor_lines(report: &Report) -> Vec<String> {
+    use crate::doctor::CheckId;
+
+    fn group(check: &Check) -> String {
+        if let Some(agent) = check.agent {
+            return format!("agent {agent}");
+        }
+        match check.id {
+            CheckId::Repository | CheckId::Mapping | CheckId::MappingAgent => {
+                "repositories".to_owned()
+            }
+            _ => "host".to_owned(),
+        }
+    }
+
+    let mut groups: Vec<(String, Vec<&Check>)> = Vec::new();
+    for check in &report.checks {
+        let name = group(check);
+        match groups.iter_mut().find(|(existing, _)| *existing == name) {
+            Some((_, members)) => members.push(check),
+            None => groups.push((name, vec![check])),
+        }
+    }
+
+    let mut lines = Vec::new();
+    for (name, members) in groups {
+        lines.push(name);
+        for check in members {
+            let prefix = check.agent.map(|agent| format!("[{agent}] ")).unwrap_or_default();
+            lines.push(format!(
+                "{:<4}  {}{}",
+                check.status.token().to_uppercase(),
+                prefix,
+                check.message
+            ));
+        }
+        lines.push(String::new());
+    }
+    let warnings = report.count(Status::Warn);
+    lines.push(if report.failed() {
+        format!("doctor: {} failed, {warnings} warnings", report.count(Status::Fail))
+    } else {
+        format!("doctor: no failures, {warnings} warnings")
+    });
+    lines
 }
 
 fn render_arg(arg: &OsStr) -> String {
@@ -1421,5 +1498,92 @@ mod tests {
             .position(|line| *line == matrix[0])
             .expect("the matrix starts in the report");
         assert_eq!(&lines[start..start + matrix.len()], matrix.as_slice(), "{lines:?}");
+    }
+
+    #[test]
+    fn doctor_lines_group_and_summarize() {
+        use crate::doctor::{Check, CheckId, Report, Status};
+        let check = |id, agent, status, message: &str| Check {
+            id,
+            agent,
+            subject: None,
+            status,
+            message: message.to_owned(),
+            data: serde_json::Value::Null,
+        };
+        let report = Report {
+            agent: None,
+            profile: None,
+            repository: None,
+            checks: vec![
+                check(CheckId::Platform, None, Status::Info, "linux x86_64"),
+                check(CheckId::Config, None, Status::Fail, "config is unreadable"),
+                check(CheckId::Mapping, None, Status::Pass, "mapping ok"),
+                check(CheckId::Executable, Some("fake"), Status::Warn, "not found"),
+                check(CheckId::Support, Some("fake"), Status::Pass, "proven"),
+            ],
+        };
+        assert_eq!(
+            doctor_lines(&report),
+            [
+                "host",
+                "INFO  linux x86_64",
+                "FAIL  config is unreadable",
+                "",
+                "repositories",
+                "PASS  mapping ok",
+                "",
+                "agent fake",
+                "WARN  [fake] not found",
+                "PASS  [fake] proven",
+                "",
+                "doctor: 1 failed, 1 warnings",
+            ]
+        );
+        let clean =
+            Report { checks: vec![check(CheckId::Platform, None, Status::Warn, "w")], ..report };
+        assert_eq!(doctor_lines(&clean).last().unwrap(), "doctor: no failures, 1 warnings");
+    }
+
+    #[test]
+    fn doctor_lines_place_skips_and_agentless_repository_records() {
+        use crate::doctor::{Check, CheckId, Report, Status};
+        let check = |id, agent, status, message: &str| Check {
+            id,
+            agent,
+            subject: None,
+            status,
+            message: message.to_owned(),
+            data: serde_json::Value::Null,
+        };
+        let report = Report {
+            agent: Some(crate::name::AgentId::parse("fake").unwrap()),
+            profile: None,
+            repository: None,
+            checks: vec![
+                check(CheckId::Platform, None, Status::Info, "linux x86_64"),
+                check(CheckId::Repository, None, Status::Fail, "no repository"),
+                check(CheckId::Mapping, None, Status::Skip, "mapping skipped: config failed"),
+                check(CheckId::MappingAgent, None, Status::Warn, "unknown agent"),
+                check(CheckId::Resolution, Some("fake"), Status::Skip, "resolution skipped"),
+            ],
+        };
+        assert_eq!(
+            doctor_lines(&report),
+            [
+                "host",
+                "INFO  linux x86_64",
+                "",
+                "repositories",
+                "FAIL  no repository",
+                "SKIP  mapping skipped: config failed",
+                "WARN  unknown agent",
+                "",
+                "agent fake",
+                "SKIP  [fake] resolution skipped",
+                "",
+                "doctor: 1 failed, 1 warnings",
+            ]
+        );
     }
 }

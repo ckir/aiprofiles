@@ -9,8 +9,8 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
-use crate::error::{Error, NotInstalledReason, Result};
-use crate::exe;
+use crate::doctor;
+use crate::error::{Error, Result};
 use crate::json;
 use crate::launch::{self, LaunchOutcome};
 use crate::lifecycle;
@@ -40,6 +40,8 @@ Repository commands:
   agent-profile [<agent>] link <profile> [--repo <path>]
   agent-profile [<agent>] unlink [--repo <path>]
   agent-profile repositories [--json]
+  agent-profile doctor [--repo <path>] [--json]
+  agent-profile <agent> doctor [<profile>] [--repo <path>] [--json]
 
 Profile commands:
   agent-profile <agent> create <profile>
@@ -66,11 +68,9 @@ struct Cli {
 
 /// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
 /// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
-/// (SP3 design §7.2), as are `resolve`, `current` and `repositories`.
+/// (SP3 design §7.2), as are `resolve`, `current`, `repositories` and `doctor`.
 #[derive(Subcommand)]
 enum Command {
-    /// Not yet implemented.
-    Doctor(Rest),
     /// Not yet implemented.
     Completions(Rest),
     #[command(external_subcommand)]
@@ -87,7 +87,6 @@ struct Rest {
 impl Command {
     fn reserved_name(&self) -> Option<&'static str> {
         Some(match self {
-            Command::Doctor(_) => "doctor",
             Command::Completions(_) => "completions",
             Command::Agent(_) => return None,
         })
@@ -108,6 +107,7 @@ enum CommandWord {
     Agents,
     Profiles,
     Repositories,
+    Doctor,
 }
 
 impl CommandWord {
@@ -125,6 +125,7 @@ impl CommandWord {
             "agents" => CommandWord::Agents,
             "profiles" => CommandWord::Profiles,
             "repositories" => CommandWord::Repositories,
+            "doctor" => CommandWord::Doctor,
             _ => return None,
         })
     }
@@ -142,6 +143,7 @@ impl CommandWord {
             CommandWord::Agents => "agents",
             CommandWord::Profiles => "profiles",
             CommandWord::Repositories => "repositories",
+            CommandWord::Doctor => "doctor",
         }
     }
 
@@ -204,6 +206,14 @@ impl CommandWord {
                 "Usage: agent-profile repositories [--json]\n\
                  Show every stored repository mapping and whether it still applies.\n\n  \
                  --json  Print a JSON document instead of the report\n"
+            }
+            CommandWord::Doctor => {
+                "Usage: agent-profile doctor [--repo <path>] [--json]\n       \
+                 agent-profile <agent> doctor [<profile>] [--repo <path>] [--json]\n\
+                 Check this machine, its configuration, the repository mappings and the agents; with <agent>, \
+                 also <agent> and its profile here.\n\n  \
+                 --repo <path>  Use the repository at <path> instead of the current directory\n  \
+                 --json         Print a JSON document instead of the report\n"
             }
         }
     }
@@ -527,6 +537,7 @@ fn validate_command(
             | CommandWord::Agents
             | CommandWord::Profiles
             | CommandWord::Repositories
+            | CommandWord::Doctor
     );
     if json_accepted && json_count > 1 {
         return Err(usage("`--json` may be given only once"));
@@ -541,10 +552,10 @@ fn validate_command(
         return Err(usage(format!("unknown option {:?} for `{name}`", option_name(option))));
     }
     // `link`, `create` and `delete` take exactly one profile word (SP3 design §7.2, SP5a design §5).
-    let allowed = usize::from(matches!(
-        command,
-        CommandWord::Link | CommandWord::Create | CommandWord::Delete
-    ));
+    let allowed = usize::from(
+        matches!(command, CommandWord::Link | CommandWord::Create | CommandWord::Delete)
+            || (command == CommandWord::Doctor && agent.is_some()),
+    );
     if command == CommandWord::Link && bare.is_empty() {
         return Err(usage("`link` needs a profile: agent-profile [<agent>] link <profile>"));
     }
@@ -552,6 +563,7 @@ fn validate_command(
         return Err(usage(match command {
             CommandWord::Link => "`link` takes one profile".to_owned(),
             CommandWord::Create | CommandWord::Delete => format!("`{name}` takes one profile"),
+            CommandWord::Doctor if agent.is_some() => "`doctor` takes one profile".to_owned(),
             _ => format!("`{name}` takes no arguments"),
         }));
     }
@@ -729,6 +741,9 @@ fn run_command(
     yes: bool,
     json: bool,
 ) -> Result<i32> {
+    if command == CommandWord::Doctor {
+        return run_doctor(agent, profile, repo, json);
+    }
     let profile = profile.map(parse_profile).transpose()?;
     let root = AppRoot::resolve()?;
     let config = Config::load(&root)?;
@@ -859,6 +874,7 @@ fn run_command(
         | CommandWord::Agents
         | CommandWord::Profiles
         | CommandWord::Repositories => unreachable!("lifecycle commands returned above"),
+        CommandWord::Doctor => unreachable!("doctor returned above"),
     };
     write_lines(&lines)?;
     Ok(0)
@@ -918,26 +934,12 @@ fn run_agents(root: &AppRoot, config: &Config, json: bool) -> Result<i32> {
     let mut entries = Vec::new();
     for adapter in adapter::registry() {
         let metadata = adapter.metadata();
-        let status = match exe::discover(
-            metadata.id,
-            metadata.executable,
+        let status = output::ExecutableStatus::discover(
+            metadata,
             config.agent_executable(metadata.id),
             path_var.as_deref(),
             &root.config_path(),
-        ) {
-            Ok(found) => output::ExecutableStatus::Found(found),
-            Err(Error::AgentNotInstalled {
-                reason: NotInstalledReason::NotOnPath { .. }, ..
-            }) => output::ExecutableStatus::NotOnPath,
-            Err(Error::AgentNotInstalled {
-                reason: NotInstalledReason::ExplicitMissing(path),
-                ..
-            }) => output::ExecutableStatus::ConfiguredMissing(path),
-            Err(Error::UnsupportedExecutable { path, .. }) => {
-                output::ExecutableStatus::Unsupported(path)
-            }
-            Err(error) => return Err(error),
-        };
+        )?;
         entries.push((metadata, status));
     }
     if json {
@@ -1060,6 +1062,44 @@ fn run_unlink(
     let outcome = config::unlink(root, &keys, agent)?;
     write_lines(&output::unlink_lines(&outcome, agent, config, &keys))?;
     Ok(0)
+}
+
+/// SP5c design §3-§4: every check runs and prints; the exit code is 5 when any record failed. A working
+/// directory that cannot be read is not an error here: discovering `.` then yields the `repository` record.
+fn run_doctor(
+    agent: Option<String>,
+    profile: Option<String>,
+    repo: Option<OsString>,
+    json: bool,
+) -> Result<i32> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let start = match &repo {
+        Some(repo) => cwd.join(repo),
+        None => cwd.clone(),
+    };
+    let path_var = std::env::var_os("PATH");
+    let is_set = |name: &str| std::env::var_os(name).is_some();
+    let env = doctor::Environment {
+        root: AppRoot::resolve().map_err(|error| error.to_string()),
+        path_var: path_var.as_deref(),
+        cwd: &cwd,
+        start: &start,
+        is_set: &is_set,
+    };
+    let target = match agent {
+        Some(agent) => doctor::Target::Agent {
+            agent: AgentId::parse(&agent).expect("known agents are valid agent ids"),
+            profile,
+        },
+        None => doctor::Target::Host,
+    };
+    let report = doctor::run(&target, &env);
+    if json {
+        write_out(&json::render(&json::doctor(&report)))?;
+    } else {
+        write_lines(&output::doctor_lines(&report))?;
+    }
+    Ok(if report.failed() { 5 } else { 0 })
 }
 
 fn write_lines(lines: &[String]) -> Result<()> {
@@ -1482,11 +1522,39 @@ mod tests {
     }
 
     #[test]
-    fn doctor_stays_unimplemented() {
-        match split_err(&["fake", "doctor"]) {
-            Error::NotYetImplemented { command } => assert_eq!(command, "fake doctor"),
+    fn doctor_parses_in_both_forms() {
+        assert!(matches!(
+            top(&["doctor"]),
+            Ok(Invocation::Command {
+                agent: None,
+                command: CommandWord::Doctor,
+                profile: None,
+                ..
+            })
+        ));
+        match split(args(&["fake", "doctor", "work", "--json"]), KNOWN) {
+            Ok(Invocation::Command {
+                agent: Some(agent),
+                command: CommandWord::Doctor,
+                profile: Some(profile),
+                json: true,
+                ..
+            }) => assert_eq!((agent.as_str(), profile.as_str()), ("fake", "work")),
             other => panic!("{other:?}"),
         }
+        assert!(matches!(
+            split(args(&["fake", "doctor"]), KNOWN),
+            Ok(Invocation::Command { command: CommandWord::Doctor, profile: None, .. })
+        ));
+    }
+
+    #[test]
+    fn doctor_refuses_extra_words() {
+        assert_eq!(usage_message(top(&["doctor", "work"])), "`doctor` takes no arguments");
+        assert_eq!(
+            usage_message(Err(split_err(&["fake", "doctor", "a", "b"]))),
+            "`doctor` takes one profile"
+        );
     }
 
     #[test]

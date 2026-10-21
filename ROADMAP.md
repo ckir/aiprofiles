@@ -11,7 +11,7 @@ green on Linux, macOS and Windows.
 | SP2 | Architecture gate — adapter model, capability and evidence metadata, common contract suite, Claude Code, Codex CLI, Aider | 4A | done (#11) |
 | SP3 | Repository resolution — discovery, canonical identity, mapping storage, precedence, `resolve`, `current`, `status`, `link`, `unlink` | 2 + part of 5 | done (#19) |
 | SP4 | Remaining adapters — Gemini CLI, GitHub Copilot CLI, OpenCode, Cline CLI, Pi, Kiro CLI, Cursor Agent CLI, Continue CLI, Amp | 4B | done (branch `sp4b-adapters`) |
-| SP5 | Lifecycle and quality — `create`, `list`, `delete`, `repositories`, `doctor`, JSON output, shell completions, docs | rest of 5, 6 | SP5a done; SP5b done: --json on status/resolve/agents/profiles/list, repositories; SP5c–d next |
+| SP5 | Lifecycle and quality — `create`, `list`, `delete`, `repositories`, `doctor`, JSON output, shell completions, docs | rest of 5, 6 | SP5a done; SP5b done: --json on status/resolve/agents/profiles/list, repositories; SP5c done: doctor; SP5d next |
 
 `link`/`unlink` land with resolution (SP3), earlier than §35's Phase 5, so resolution never ships
 without a way to create the mappings it resolves. SP4 is done: the nine adapters named above are
@@ -63,5 +63,20 @@ its cost scales with the fixture count exactly as `probe-harness.sh` does — ye
 is treated as the slow one, and a contributor who runs the other in the foreground loses the run to a
 timeout. The mechanism is verified by reading; the wall-clock figure is not measured. A comment on the
 `probe-tests` recipe naming both would close it.
+
+**Profile directories are created with the process's default permissions.** `adapter::ensure_paths` calls
+`fs::create_dir_all` with no explicit mode, so under a common `022` umask a profile directory is `0755` and
+other local users can list it. Agents usually protect their own credential files, so this is defence in depth
+rather than a measured leak. Found while designing SP5c (2026-10-20); owner ruled it tracked debt, out of SP5c.
+The fix is `DirBuilder` with mode `0700` on Unix in `ensure_paths` (which `create` and lazy initialization
+share), plus a test asserting the mode; `doctor` reports the mode as data and would show the change.
+
+**Clippy runs on Linux only, so a platform-gated warning never fails CI.** The `clippy` job in
+`.github/workflows/ci.yml` runs `cargo clippy --workspace --all-targets -- -D warnings` on `ubuntu-latest`
+alone, while the test jobs cover macOS and Windows. A warning that exists only under `cfg(windows)` or
+`cfg(target_os = "macos")` — dead code, an `unused_mut` behind a platform gate — compiles cleanly on those
+runners and is never linted. Found during SP5c Task 3 review (2026-10-20), where `profile_path_record` held
+such an `unused_mut` on Windows. The fix is a clippy matrix over the three operating systems; slot it with the
+SP5d CI work alongside the action-pinning debt.
 
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
