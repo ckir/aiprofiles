@@ -2195,4 +2195,25 @@ mod tests {
             "a non-UTF-8 shell must be a usage error"
         );
     }
+
+    /// The README's usage block must carry every `COMMANDS_HELP` command line, so the two cannot drift.
+    #[test]
+    fn readme_usage_block_carries_every_command_help_line() {
+        let readme = include_str!("../../../README.md");
+        let after_usage = readme.split_once("## Usage").expect("README has a Usage section").1;
+        let block = after_usage
+            .split_once("```text\n")
+            .expect("the Usage section has a text block")
+            .1
+            .split_once("```")
+            .expect("the text block is closed")
+            .0;
+        for line in COMMANDS_HELP.lines().filter(|line| line.starts_with("  agent-profile ")) {
+            let wanted = line.trim_start();
+            assert!(
+                block.lines().any(|candidate| candidate == wanted),
+                "README usage block lacks the line `{wanted}`"
+            );
+        }
+    }
 }
