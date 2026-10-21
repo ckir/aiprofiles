@@ -116,7 +116,7 @@ back to its default after the command word.
 # bash — in ~/.bashrc
 source <(agent-profile completions bash)
 # zsh — once, into a directory on $fpath, then `compinit` in ~/.zshrc
-agent-profile completions zsh > ~/.zfunc/_agent-profile
+mkdir -p ~/.zfunc && agent-profile completions zsh > ~/.zfunc/_agent-profile
 # fish
 mkdir -p ~/.config/fish/completions && agent-profile completions fish > ~/.config/fish/completions/agent-profile.fish
 # elvish — in ~/.config/elvish/rc.elv
