@@ -146,7 +146,9 @@ never used to parse input. Its content comes from §2.3's methods and `adapter::
 the dispatcher's "unknown agent" message.
 
 `completions <shell>` runs `clap_complete::generate(shell, &mut model, "agent-profile", &mut buffer)` and
-then writes the buffer with `write_out`.
+then writes the buffer with `write_out`. The buffer becomes the `&str` that `write_out` takes through
+`String::from_utf8_lossy`. clap_complete writes only `str` data, so nothing is lost, and the conversion has no
+panic path.
 
 **Upstream bash defect and its workaround (measured 2026-10-21).** In clap_complete 4.6.11, and in clap's
 `main` branch on that date, the bash generator names states inconsistently when the binary name contains a
@@ -208,7 +210,8 @@ Print a shell completion script to stdout. <shell> is bash, elvish, fish, powers
    drive the completion function with `COMP_WORDS`/`COMP_CWORD`. Assert that:
    - `agent-profile <TAB>` offers `claude` and `agents`;
    - `agent-profile claude <TAB>` offers `create` and `--dry-run`, and not `agents`;
-   - `agent-profile claude create <TAB>` offers neither `--json` nor `--repo`.
+   - `agent-profile claude create <TAB>` offers `--help`, and offers neither `--json` nor `--repo`. The positive
+     half is what stops an empty, broken completion from passing.
    If `bash` is absent on Linux, the test fails rather than skips.
 
 ## 3. Action pinning
@@ -281,7 +284,9 @@ asserts an exit code and that the offending line is named:
 
 Wiring:
 - a `just action-pins` recipe runs both, and is added to `check`;
-- `ci.yml` gains a job `name: Action pins`, which runs the recipe's two commands with `sh`.
+- `ci.yml` gains a job `name: Action pins` on `ubuntu-latest`. Its first step is `actions/checkout`, pinned
+  like every other use. Its next two steps run the recipe's two commands with `sh`. This job adds one more
+  pinned checkout; the floating-reference counts in §3.2 describe `c0d5caf` and are unchanged.
 Making `Action pins` a required check is the owner's call, outside this branch, and is mentioned in the PR body.
 
 ## 4. Clippy on three operating systems
@@ -291,7 +296,7 @@ As agy-first ALIGNED on option A (`.clavity/seams/sp5d-clippy-matrix.md`):
   [ubuntu-latest, macos-latest, windows-latest] } }`, `runs-on: ${{ matrix.os }}`. Same steps as today:
   checkout, rust-toolchain with `components: clippy`, rust-cache, and
   `cargo clippy --workspace --all-targets -- -D warnings`.
-- Job `clippy`, `name: Clippy`, `needs: [clippy-matrix]`, `if: always()`, `runs-on: ubuntu-latest`, one step
+- Job `clippy`, `name: Clippy`, `needs: [clippy-matrix]`, `if: ${{ !cancelled() }}`, `runs-on: ubuntu-latest`, one step
   that exits 1 unless `needs.clippy-matrix.result == 'success'`. The value is passed through `env:`, not
   interpolated into the script. On failure the step prints an `::error::` line naming the result and pointing
   at the `Clippy (<os>)` legs.
@@ -327,7 +332,7 @@ cannot be isolated", Architecture, Workspace and Licence; their content stays as
 
 - bash: `source <(agent-profile completions bash)` in `~/.bashrc`.
 - zsh: write the script to a directory on `fpath` as `_agent-profile`, then `compinit`.
-- fish: `agent-profile completions fish > ~/.config/fish/completions/agent-profile.fish`.
+- fish: `mkdir -p ~/.config/fish/completions && agent-profile completions fish > ~/.config/fish/completions/agent-profile.fish`.
 - powershell: `agent-profile completions powershell | Out-String | Invoke-Expression` in `$PROFILE`.
 - elvish: `eval (agent-profile completions elvish | slurp)` in `rc.elv`.
 
@@ -389,5 +394,10 @@ Round 1 (solo + agy):
   (`Invocation::Completions`); MG-1 (keep create/delete `--json` NotYetImplemented; test 4's second half
   checks against the table, not the methods); PP-1 (split `resolve|status`); DC-1 (no clap bump); the help
   subcommand; the bash hyphen defect workaround.
+Round 2 (agy; seats Axiom Breaker, Cascade Analyst, Activation Auditor, Blindspot Auditor, Mechanism Gamer):
+- folded: AA-1 (the Action pins job has a pinned checkout); AA-2 (the aggregator uses `!cancelled()`, so a
+  cancelled run does not turn red; a leg that times out or fails still runs it and fails it, and a cancelled
+  run's required Test checks block the merge regardless); MG-2 (the `create <TAB>` assertion gains a positive
+  half); BA-1 (fish needs `mkdir -p`); CA-2 (`from_utf8_lossy`).
 - REJECTED: agy's Q4 claim that bash completes subcommands under an agent. A throwaway build at clap_complete
   4.6.11 showed `agent-profile claude <TAB>` offering nothing until the state names were corrected.
