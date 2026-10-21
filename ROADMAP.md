@@ -71,4 +71,12 @@ rather than a measured leak. Found while designing SP5c (2026-10-20); owner rule
 The fix is `DirBuilder` with mode `0700` on Unix in `ensure_paths` (which `create` and lazy initialization
 share), plus a test asserting the mode; `doctor` reports the mode as data and would show the change.
 
+**Clippy runs on Linux only, so a platform-gated warning never fails CI.** The `clippy` job in
+`.github/workflows/ci.yml` runs `cargo clippy --workspace --all-targets -- -D warnings` on `ubuntu-latest`
+alone, while the test jobs cover macOS and Windows. A warning that exists only under `cfg(windows)` or
+`cfg(target_os = "macos")` — dead code, an `unused_mut` behind a platform gate — compiles cleanly on those
+runners and is never linted. Found during SP5c Task 3 review (2026-10-20), where `profile_path_record` held
+such an `unused_mut` on Windows. The fix is a clippy matrix over the three operating systems; slot it with the
+SP5d CI work alongside the action-pinning debt.
+
 v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
