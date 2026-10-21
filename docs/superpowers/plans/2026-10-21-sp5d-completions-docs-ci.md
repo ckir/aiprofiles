@@ -154,14 +154,17 @@ Run the resolver (`gh api repos/<o>/<r>/releases/latest --jq .tag_name`, then `g
 | actions/upload-pages-artifact | `actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0` |
 | actions/deploy-pages | `actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1` |
 | dependabot/fetch-metadata | `dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0` |
+| release-plz/action | `release-plz/action@8b5bf233ecb5779f63508db7cd050e948ee77cc2 # v0.5.144` |
 
 If a newer release exists at execution time, use it and record the new value in the commit body; if a resolved SHA differs for the SAME tag, stop and report `STATE_MISMATCH`.
 
-Already at the newest SHA and left unchanged: `crate-ci/typos` (v1.51.1), `amannn/action-semantic-pull-request` (v6.1.1), `actions/upload-artifact` (v7.0.2), `actions/checkout` in release-plz.yml, release.yml and sandbox.yml (already v7.0.1). **Also left unchanged, my call:** `release-plz/action@…# v0.5.140` — Dependabot PR #45 (0.5.140 → 0.5.142) is open with auto-merge enabled, and that action appears in only one workflow, so the "same SHA everywhere" rule does not reach it.
+Already at the newest SHA and left unchanged: `crate-ci/typos` (v1.51.1), `amannn/action-semantic-pull-request` (v6.1.1), `actions/upload-artifact` (v7.0.2), `actions/checkout` in release-plz.yml, release.yml and sandbox.yml (already v7.0.1). `release-plz/action` (two uses in `release-plz.yml`, v0.5.140) also moves to the table's v0.5.144 SHA, as spec §3.2 says every workflow moves to the newest release. Dependabot PR #45 (0.5.140 → 0.5.142, not ours, left open) becomes superseded and Dependabot closes it; this also avoids a merge conflict on the adjacent lines. (agy quoted a v0.5.142 SHA of `b78759…`; measured `8921286…`, so agy's SHA was false and is not used.)
+
+The offline checker is syntactic only: it cannot tell a real SHA from a mistyped one. The `gh api` resolution in this step is the pre-flight oracle that every SHA exists, so run it for every row, including release-plz, before editing.
 
 - [ ] **Step 2: Replace every floating reference**
 
-Edit by hand, no `sed -i` on the whole directory. In `ci.yml`: 11 × checkout, 5 × rust-toolchain, 4 × rust-cache, 1 × install-action, 1 × cargo-deny-action. In `docs.yml`: checkout, rust-toolchain, rust-cache, upload-pages-artifact, deploy-pages. In `dependabot-automerge.yml`: fetch-metadata. In `release-plz.yml` (×2) and `release.yml` (×1): rust-toolchain `6bed0761d98439e5a578e2877258200ad565ba87` → the `b725eda…` value, so the same action has the same SHA in every workflow.
+Edit by hand, no `sed -i` on the whole directory. In `ci.yml`: 11 × checkout, 5 × rust-toolchain, 4 × rust-cache, 1 × install-action, 1 × cargo-deny-action. In `docs.yml`: checkout, rust-toolchain, rust-cache, upload-pages-artifact, deploy-pages. In `dependabot-automerge.yml`: fetch-metadata. In `release-plz.yml` (×2 rust-toolchain, ×2 release-plz/action) and `release.yml` (×1): rust-toolchain `6bed0761d98439e5a578e2877258200ad565ba87` → the `b725eda…` value, so the same action has the same SHA in every workflow.
 
 Inputs that a ref used to supply implicitly become explicit (spec §3.2):
 - every `dtolnay/rust-toolchain` use gets `with:` / `toolchain: stable` (merging with an existing `with: components: …` block; the `evidence` job's use keeps its `if:`);
@@ -588,4 +591,4 @@ Not part of the plan's tasks, required before the PR by the standing rules: AGY-
 - Spec coverage: §2.1 → Task 6 tests; §2.2 → Task 6 step 3; §2.3 → Task 4; §2.4 → Task 5; §2.5 tests 1–7 → Tasks 5/6 (1: contract rows; 2: launch.rs rows; 3: `completions_needs_no_root`; 4: Task 4's two tests; 5: the four model tests; 6: `each_shell_prints_a_script`; 7: `bash_script_completes_the_second_and_third_word`); §3 → Tasks 1–2; §4 → Task 3; §5–§6 → Task 7; §7 → Task 7; §8 → commit order and "After the last task".
 - Review Focus 1–5 each name their test and task.
 - Types: `AgentScope`, `Positional`, `CommandWord::ALL`, `SHELL_NAMES`, `parse_shell`, `model`, `script`, `Invocation::Completions(Shell)` are spelled the same in Tasks 4, 5 and 6.
-- Calls I made beyond the spec: `release-plz/action` left to Dependabot PR #45; the pin check also fails on an empty scan (repository idiom); the `CONTRIBUTING.md` gate comment fixed with the README's; the test harness file is `scripts/tests/` (new directory, already covered by the `shellcheck` recipe's `find scripts`).
+- Calls I made beyond the spec: `release-plz/action` moves to v0.5.144 and PR #45 is left to be superseded; the pin check also fails on an empty scan (repository idiom); the `CONTRIBUTING.md` gate comment fixed with the README's; the test harness file is `scripts/tests/` (new directory, already covered by the `shellcheck` recipe's `find scripts`).
