@@ -1,0 +1,135 @@
+#!/bin/sh
+# Tests for scripts/check-action-pins.sh, the gate that every workflow `uses:` is a commit SHA.
+#
+# Each case is its own directory holding one w.yml. A rejection must name the offending line exactly
+# once; a broken scan (nothing to read) must fail rather than report a clean tree.
+
+set -eu
+root=$(cd "$(dirname "$0")/../.." && pwd)
+failures=0
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+sha=3d3c42e5aac5ba805825da76410c181273ba90b1
+
+check() {
+    if [ "$2" = "$3" ]; then
+        echo "ok   - $1"
+    else
+        echo "FAIL - $1: expected '$3', got '$2'"
+        failures=$((failures + 1))
+    fi
+}
+
+# run <dir>: sets out and status.
+run() {
+    set +e
+    out=$(sh "$root/scripts/check-action-pins.sh" "$1" 2>&1)
+    status=$?
+    set -e
+}
+
+# fixture <name> <line>...: a directory holding w.yml with a minimal jobs skeleton; each <line> is
+# written verbatim after `steps:`. Sets dir.
+fixture() {
+    dir="$tmp/$1"
+    shift
+    mkdir -p "$dir"
+    {
+        printf 'name: t\n'
+        printf 'on: push\n'
+        printf 'jobs:\n'
+        printf '  j:\n'
+        printf '    runs-on: ubuntu-latest\n'
+        printf '    steps:\n'
+        for line in "$@"; do
+            printf '%s\n' "$line"
+        done
+    } > "$dir/w.yml"
+}
+
+# accepted <name> <line>...
+accepted() {
+    name=$1
+    fixture "$@"
+    run "$dir"
+    check "$name: status" "$status" "0"
+}
+
+# rejected <name> <line-number-of-offender> <line>...
+rejected() {
+    name=$1
+    lineno=$2
+    shift 2
+    fixture "$name" "$@"
+    run "$dir"
+    check "$name: status" "$status" "1"
+    check "$name: names the line" "$(printf '%s\n' "$out" | grep -c "w.yml:$lineno:")" "1"
+}
+
+# The skeleton is 6 lines, so the first fixture line is line 7.
+accepted "sha plus tag is accepted" \
+    "      - uses: actions/checkout@$sha # v7.0.1"
+accepted "bare uses form is accepted" \
+    "        uses: actions/checkout@$sha # v7.0.1"
+accepted "sub-path action is accepted" \
+    "      - uses: owner/repo/sub/dir@$sha # v1.2.3"
+accepted "job-level local workflow is exempt" \
+    "    uses: ./.github/workflows/release.yml"
+accepted "commented-out floating uses is ignored" \
+    "      # - uses: actions/checkout@v7" \
+    "      - uses: actions/checkout@$sha # v7.0.1"
+
+rejected "floating tag is rejected" 7 \
+    "      - uses: actions/checkout@v7"
+rejected "branch name is rejected" 7 \
+    "      - uses: dtolnay/rust-toolchain@stable"
+rejected "39-hex sha is rejected" 7 \
+    "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b # v7.0.1"
+rejected "upper-case sha is rejected" 7 \
+    "      - uses: actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1 # v7.0.1"
+rejected "sha without a comment is rejected" 7 \
+    "      - uses: actions/checkout@$sha"
+rejected "sha only in the comment is rejected" 7 \
+    "      - uses: actions/checkout@v7 # $sha"
+rejected "docker reference is rejected" 7 \
+    "      - uses: docker://alpine:3.20"
+
+fixture "every violation in a file is named" \
+    "      - uses: actions/checkout@v7" \
+    "      - uses: actions/cache@v4"
+run "$dir"
+check "every violation in a file is named: status" "$status" "1"
+check "every violation in a file is named: first" "$(printf '%s\n' "$out" | grep -c 'w.yml:7:')" "1"
+check "every violation in a file is named: second" "$(printf '%s\n' "$out" | grep -c 'w.yml:8:')" "1"
+
+mkdir -p "$tmp/empty"
+run "$tmp/empty"
+if [ "$status" -ne 0 ]; then got=nonzero; else got=zero; fi
+check "empty directory is a broken scan: status" "$got" "nonzero"
+check "empty directory is a broken scan: message" "$(printf '%s\n' "$out" | grep -c 'found nothing to scan')" "1"
+
+run "$tmp/absent"
+if [ "$status" -ne 0 ]; then got=nonzero; else got=zero; fi
+check "missing directory is a broken scan: status" "$got" "nonzero"
+check "missing directory is a broken scan: message" "$(printf '%s\n' "$out" | grep -c 'found nothing to scan')" "1"
+
+mkdir -p "$tmp/nouses"
+printf 'name: x\n' > "$tmp/nouses/w.yml"
+run "$tmp/nouses"
+if [ "$status" -ne 0 ]; then got=nonzero; else got=zero; fi
+check "a file with no uses lines is a broken scan: status" "$got" "nonzero"
+check "a file with no uses lines is a broken scan: message" "$(printf '%s\n' "$out" | grep -c 'found nothing to scan')" "1"
+
+fixture "success reports the count" \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "      - uses: actions/cache@$sha # v4.0.0"
+run "$dir"
+check "success reports the count: status" "$status" "0"
+check "success reports the count: output" "$out" "check-action-pins: 2 uses checked"
+
+if [ "$failures" -gt 0 ]; then
+    echo "$failures check(s) failed"
+    exit 1
+fi
+echo "all check-action-pins checks passed"
