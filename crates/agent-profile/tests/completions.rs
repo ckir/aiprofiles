@@ -145,6 +145,17 @@ fn each_shell_prints_its_own_dialect() {
 }
 
 #[test]
+fn completions_succeeds_even_when_config_toml_is_malformed() {
+    let root = Root::new();
+    let want = stdout(&root.agent_profile(["completions", "bash"]).output().unwrap());
+    root.write_config("this is = = not [valid toml");
+    let output = root.agent_profile(["completions", "bash"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(output.stderr.is_empty(), "{}", stderr(&output));
+    assert_eq!(stdout(&output), want);
+}
+
+#[test]
 fn completions_needs_no_root() {
     let root = Root::new();
     let output = root
