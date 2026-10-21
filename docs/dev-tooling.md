@@ -38,7 +38,7 @@ hand-written.
 | Tool | Config | Gates |
 |---|---|---|
 | `release-plz` (GitHub Action) | `release-plz.toml` (`git_only`, release PR, `v{{ version }}` tags, pre-releases until SP5) | merging the release PR releases |
-| GitHub Actions | `.github/workflows/ci.yml` | Format, Typos, Shellcheck, Tools doc, Clippy, Cargo deny, Docs build, Test ×3 OS, Evidence (pull requests only). Which of these are *required* is branch protection on `main`, configured in repository settings rather than here — the two sets are not the same, and a job existing does not make it required |
+| GitHub Actions | `.github/workflows/ci.yml` | Format, Typos, Shellcheck, Tools doc, Action pins, Clippy (an aggregator that requires the three `Clippy (<os>)` matrix legs), Cargo deny, Docs build, Test ×3 OS, Evidence (pull requests only). Which of these are *required* is branch protection on `main`, configured in repository settings rather than here — the two sets are not the same, and a job existing does not make it required |
 | GitHub Actions | `.github/workflows/docs.yml` | publishes rustdoc to Pages after merge |
 | GitHub Actions | `.github/workflows/release-plz.yml`, `.github/workflows/release.yml` | release PR on push to `main`; on its merge, tag, GitHub release and cross-platform `agent-profile` binaries |
 | GitHub Actions | `.github/workflows/pr-title.yml` | Conventional PR title (required check; PRs are squash-merged) |
