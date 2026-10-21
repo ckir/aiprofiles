@@ -319,8 +319,9 @@ cannot be isolated", Architecture, Workspace and Licence; their content stays as
   forms), not fewer.
 - New prose on `doctor`: what it checks (host, configuration, mappings, the agents, and with `<agent>` one
   profile's paths and launch environment names), that it never launches an agent and never prints a secret
-  or an environment value, and its exit codes. The exit codes come from SP5c's spec and `error.rs`, cited as
-  they are in the code at implementation time.
+  or an environment value, and its exit codes. The exit codes come from SP5c's spec: 5 when a check fails
+  (returned by `run_doctor` in `cli.rs`, not an `Error` variant), 0 otherwise, and the usual `error.rs` codes
+  for usage and I/O errors. They are checked against the code at implementation time.
 - New `## Shell completion` section, with one install snippet per shell. Each snippet loads
   `agent-profile completions <shell>` the way that shell expects, and the section notes that profile names are
   not completed.
@@ -401,3 +402,12 @@ Round 2 (agy; seats Axiom Breaker, Cascade Analyst, Activation Auditor, Blindspo
   cancelled run does not turn red; a leg that times out or fails still runs it and fails it, and a cancelled
   run's required Test checks block the merge regardless); MG-2 (the `create <TAB>` assertion gains a positive
   half); BA-1 (fish needs `mkdir -p`); CA-2 (`from_utf8_lossy`).
+Round 3 (agy; seats Axiom Breaker, Cascade Analyst, Docs Truth Auditor (bespoke), Dependency Cynic, Literal
+Implementer): no live challenge, PANEL VERDICT GREEN. agy ran the zsh, fish and PowerShell snippets on this host;
+elvish is not installed. Folded one clarification: doctor's exit 5 comes from `run_doctor`, not `error.rs`.
+
+## Stand-downs
+
+- UNVERIFIED-ACCEPTED (pending owner acceptance at spec approval): the elvish install snippet (§6) is checked only
+  against clap_complete's elvish generator source, not run, because elvish is not installed on the maintainer host
+  or the CI runners.
