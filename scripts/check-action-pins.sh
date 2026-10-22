@@ -24,6 +24,9 @@
 # so `Uses:` and `USES:` fail (the runner matches keys exactly, so they would not run, but this gate does not
 # vouch for them). A YAML explicit key (`? uses` with its `: value` on the next line) is the `uses` key to a
 # parser yet has no colon on its own line, so every explicit-key indicator line is flagged.
+# A double-quoted key can spell `uses` with an escape (a \u0075 for the u) that no match for the word can see, yet a
+# parser reads it as the key. So any closed double-quoted token followed by a colon is flagged, wherever it sits on
+# the line. Single-quoted scalars have no escapes, so a literal 'uses' is already caught by the key match.
 #
 # Usage: sh scripts/check-action-pins.sh [dir]   (default: <repo>/.github/workflows)
 # Output: one `<file>:<line>: <text>` per violation and exit 1; otherwise `check-action-pins: <n> uses checked`.
@@ -34,7 +37,7 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 . "$repo_root/scripts/lib/scan-guard.sh"
 
 dir=${1:-$repo_root/.github/workflows}
-scan='(^|[[:space:]{,[-])["'"'"']?uses["'"'"']?[[:space:]]*:|^[[:space:]]*(-[[:space:]]+)*\?([[:space:]]|$)'
+scan='(^|[[:space:]{,[-])["'"'"']?uses["'"'"']?[[:space:]]*:|^[[:space:]]*(-[[:space:]]+)*\?([[:space:]]|$)|"[^"]+"[[:space:]]*:'
 canon='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+'
 pin='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@ ]+)?@[0-9a-f]{40} # [A-Za-z0-9_.-]+$'
 
