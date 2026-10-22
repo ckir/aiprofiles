@@ -29,19 +29,30 @@ run() {
     set -e
 }
 
-# fixture <name> <line>...: a directory holding w.yml with a minimal jobs skeleton; each <line> is
-# written verbatim after `steps:`. Sets dir.
+# header: the minimal jobs skeleton every fixture starts with.
+header() {
+    printf 'name: t\n'
+    printf 'on: push\n'
+    printf 'jobs:\n'
+    printf '  j:\n'
+    printf '    runs-on: ubuntu-latest\n'
+    printf '    steps:\n'
+}
+skeleton=$(header | wc -l)
+
+# at <n>: the file line number of the n-th (1-based) fixture line.
+at() {
+    echo $((skeleton + $1))
+}
+
+# fixture <name> <line>...: a directory holding w.yml with the header; each <line> is written verbatim
+# after `steps:`. Sets dir.
 fixture() {
     dir="$tmp/$1"
     shift
     mkdir -p "$dir"
     {
-        printf 'name: t\n'
-        printf 'on: push\n'
-        printf 'jobs:\n'
-        printf '  j:\n'
-        printf '    runs-on: ubuntu-latest\n'
-        printf '    steps:\n'
+        header
         for line in "$@"; do
             printf '%s\n' "$line"
         done
@@ -56,10 +67,10 @@ accepted() {
     check "$name: status" "$status" "0"
 }
 
-# rejected <name> <line-number-of-offender> <line>...
+# rejected <name> <n-th-fixture-line-of-offender> <line>...
 rejected() {
     name=$1
-    lineno=$2
+    lineno=$(at "$2")
     shift 2
     fixture "$name" "$@"
     run "$dir"
@@ -67,7 +78,6 @@ rejected() {
     check "$name: names the line" "$(printf '%s\n' "$out" | grep -c "w.yml:$lineno:")" "1"
 }
 
-# The skeleton is 6 lines, so the first fixture line is line 7.
 accepted "sha plus tag is accepted" \
     "      - uses: actions/checkout@$sha # v7.0.1"
 accepted "bare uses form is accepted" \
@@ -80,19 +90,19 @@ accepted "commented-out floating uses is ignored" \
     "      # - uses: actions/checkout@v7" \
     "      - uses: actions/checkout@$sha # v7.0.1"
 
-rejected "floating tag is rejected" 7 \
+rejected "floating tag is rejected" 1 \
     "      - uses: actions/checkout@v7"
-rejected "branch name is rejected" 7 \
+rejected "branch name is rejected" 1 \
     "      - uses: dtolnay/rust-toolchain@stable"
-rejected "39-hex sha is rejected" 7 \
+rejected "39-hex sha is rejected" 1 \
     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b # v7.0.1"
-rejected "upper-case sha is rejected" 7 \
+rejected "upper-case sha is rejected" 1 \
     "      - uses: actions/checkout@3D3C42E5AAC5BA805825DA76410C181273BA90B1 # v7.0.1"
-rejected "sha without a comment is rejected" 7 \
+rejected "sha without a comment is rejected" 1 \
     "      - uses: actions/checkout@$sha"
-rejected "sha only in the comment is rejected" 7 \
+rejected "sha only in the comment is rejected" 1 \
     "      - uses: actions/checkout@v7 # $sha"
-rejected "docker reference is rejected" 7 \
+rejected "docker reference is rejected" 1 \
     "      - uses: docker://alpine:3.20"
 
 fixture "every violation in a file is named" \
@@ -100,23 +110,23 @@ fixture "every violation in a file is named" \
     "      - uses: actions/cache@v4"
 run "$dir"
 check "every violation in a file is named: status" "$status" "1"
-check "every violation in a file is named: first" "$(printf '%s\n' "$out" | grep -c 'w.yml:7:')" "1"
-check "every violation in a file is named: second" "$(printf '%s\n' "$out" | grep -c 'w.yml:8:')" "1"
+check "every violation in a file is named: first" "$(printf '%s\n' "$out" | grep -c "w.yml:$(at 1):")" "1"
+check "every violation in a file is named: second" "$(printf '%s\n' "$out" | grep -c "w.yml:$(at 2):")" "1"
 
 # Flow style is refused outright (block style only), so a floating action cannot hide beside a pinned one.
-rejected "flow-style floating use beside a pinned one is rejected" 8 \
+rejected "flow-style floating use beside a pinned one is rejected" 2 \
     "      - uses: actions/checkout@$sha # v7.0.1" \
     "      - { uses: actions/checkout@v7 }"
-rejected "flow-style pinned use is rejected" 7 \
+rejected "flow-style pinned use is rejected" 1 \
     "      - { uses: actions/checkout@$sha # v7.0.1 }"
 accepted "commented-out flow-style use is ignored" \
     "      # - { uses: x/y@v1 }" \
     "      - uses: actions/checkout@$sha # v7.0.1"
 
-# Fail closed on any shape of the `uses` key: each is refused beside a valid pinned use (line 8).
+# Fail closed on any shape of the `uses` key: each is refused beside a valid pinned use (fixture line 2).
 tab=$(printf '\t')
 shape() {
-    rejected "$1" 8 "      - uses: actions/checkout@$sha # v7.0.1" "$2"
+    rejected "$1" 2 "      - uses: actions/checkout@$sha # v7.0.1" "$2"
 }
 shape "two spaces after the hyphen are refused when floating" "      -  uses: actions/checkout@v7"
 shape "tab after the hyphen is refused when floating" "      -${tab}uses: actions/checkout@v7"
@@ -127,6 +137,8 @@ shape "array form is refused" "      - [ uses: actions/checkout@v7 ]"
 shape "space before the colon without a hyphen is refused" "        uses : actions/checkout@v7"
 accepted "extra spaces after the hyphen with a sha are accepted" \
     "      -   uses: actions/checkout@$sha # v7.0.1"
+accepted "local use with a trailing comment is accepted" \
+    "      - uses: ./.github/workflows/x.yml # local"
 accepted "local use with two spaces after the hyphen is accepted" \
     "      -  uses: ./.github/workflows/x.yml"
 
