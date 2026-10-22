@@ -27,7 +27,7 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
 - [ ] The Codex "new profile starts logged out" note keys on the home directory being absent, so a present but
       empty home gives no note.
 - [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
-- [ ] Adapter evidence is static; mechanism drift detection belongs to `doctor` (SP5).
+- [x] Adapter evidence is static; `doctor` surfaces the declared mechanism id. Drift detection is not built for v0.1 (spec section 28: "may"); see ROADMAP "Mechanism changes".
 
 ## SP3 known limits
 
