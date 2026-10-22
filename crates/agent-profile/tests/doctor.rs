@@ -659,3 +659,23 @@ fn claude_doctor_prints_the_caveats_for_its_non_supported_capabilities() {
     // `Supported` capabilities are not caveats.
     assert!(capabilities.iter().all(|check| check["subject"] != "config"), "{capabilities:?}");
 }
+
+/// The human `doctor` output names the adapter's mechanism id, as `--json` already does, so a mechanism
+/// change between releases can be seen without `--json` (spec section 28).
+#[test]
+fn doctor_text_names_the_mechanism_id_that_json_carries() {
+    let root = Root::empty();
+    root.write_config(&format!(
+        "[agents.claude]\nexecutable = {:?}\n",
+        env!("CARGO_BIN_EXE_fake-agent")
+    ));
+    let shown = stdout(&run(&root, &["claude", "doctor", "work"]));
+    let support = shown
+        .lines()
+        .find(|line| line.contains("[claude] claude is "))
+        .unwrap_or_else(|| panic!("no support line: {shown}"));
+    assert!(support.contains("; mechanism claude-config-dir-v1; "), "{support}");
+
+    let doc = json_of(&run(&root, &["claude", "doctor", "work", "--json"]));
+    assert_eq!(records(&doc, "support")[0]["data"]["mechanism"]["id"], "claude-config-dir-v1");
+}

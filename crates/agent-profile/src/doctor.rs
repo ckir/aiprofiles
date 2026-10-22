@@ -897,11 +897,12 @@ fn support_check(metadata: &AdapterMetadata) -> Check {
         None,
         Status::Info,
         format!(
-            "{} is {} against upstream version {} verified {}; the installed version is not probed",
+            "{} is {} against upstream version {} verified {}; mechanism {}; the installed version is not probed",
             metadata.id,
             json::support_token(metadata.support),
             metadata.evidence.upstream_version,
-            metadata.evidence.verified_at
+            metadata.evidence.verified_at,
+            metadata.evidence.mechanism_id
         ),
         data,
     )
