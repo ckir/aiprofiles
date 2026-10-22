@@ -135,6 +135,45 @@ shape "single-quoted key is refused" "      - 'uses': actions/checkout@v7"
 shape "space before the colon is refused" "      - uses : actions/checkout@v7"
 shape "array form is refused" "      - [ uses: actions/checkout@v7 ]"
 shape "space before the colon without a hyphen is refused" "        uses : actions/checkout@v7"
+# The runner matches keys exactly, so `Uses:` is not `uses` to it; it is still refused, as a spelling this gate
+# does not vouch for. An explicit key (`? uses` with its value on the next line) IS the `uses` key to a YAML
+# parser while carrying no colon on its own line, so the scan refuses every explicit-key indicator.
+shape "capitalised key is refused" "      - Uses: actions/checkout@v7"
+shape "upper-case key is refused" "      - USES: actions/checkout@v7"
+shape "capitalised key with a sha is refused" "      - Uses: actions/checkout@$sha # v7.0.1"
+rejected "explicit key after a hyphen is refused" 2 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "      - ? uses" \
+    "        : actions/checkout@v7"
+rejected "explicit key in a block mapping is refused" 2 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "        ? uses" \
+    "        : actions/checkout@v7"
+rejected "quoted explicit key is refused" 2 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "      - ? \"uses\"" \
+    "        : actions/checkout@v7"
+# A double-quoted key may spell `uses` with an escape (`"\u0075ses"`) that no text match for the word can see, and a
+# YAML parser reads it as the real key. Single-quoted scalars have no escapes, so `'uses'` is already refused literally.
+# The scan refuses any closed double-quoted token followed by a colon, wherever it sits on the line.
+shape "unicode-escaped key is refused" '      - "\u0075ses": actions/checkout@v7'
+shape "hex-escaped key with a spaced colon is refused" '      - "\x75ses"   : actions/checkout@v7'
+shape "escaped key with an escaped quote is refused" '      - "\"\u0075ses": actions/checkout@v7'
+shape "escaped key in a flow mapping is refused" '      - { "\u0075ses": actions/checkout@v7 }'
+shape "escaped key in a flow mapping without spaces is refused" '      - {"\u0075ses":actions/checkout@v7}'
+shape "escaped key followed by a doubled colon is refused" '      - {"\u0075ses"::actions/checkout@v7}'
+shape "escaped key in an array is refused" '      - [ "\u0075ses": actions/checkout@v7 ]'
+shape "escaped key after a tag is refused" '      - !!str "\u0075ses": actions/checkout@v7'
+shape "escaped key after an anchor is refused" '      - &a "\u0075ses": actions/checkout@v7'
+shape "escaped key after a comma is refused" '      - { name: x, "\u0075ses": actions/checkout@v7 }'
+# Quoted text that is not a key must still pass, so the rule does not break ordinary run lines.
+accepted "quoted annotation and shell strings are accepted" \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    '        run: echo "::error::x"' \
+    '        run: echo "a: b"' \
+    '        run: cut -d":" -f1 file' \
+    "        run: export PATH=\":\$PATH\"" \
+    '        name: "foo: bar"'
 accepted "extra spaces after the hyphen with a sha are accepted" \
     "      -   uses: actions/checkout@$sha # v7.0.1"
 accepted "local use with a trailing comment is accepted" \
