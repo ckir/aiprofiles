@@ -135,6 +135,24 @@ shape "single-quoted key is refused" "      - 'uses': actions/checkout@v7"
 shape "space before the colon is refused" "      - uses : actions/checkout@v7"
 shape "array form is refused" "      - [ uses: actions/checkout@v7 ]"
 shape "space before the colon without a hyphen is refused" "        uses : actions/checkout@v7"
+# The runner matches keys exactly, so `Uses:` is not `uses` to it; it is still refused, as a spelling this gate
+# does not vouch for. An explicit key (`? uses` with its value on the next line) IS the `uses` key to a YAML
+# parser while carrying no colon on its own line, so the scan refuses every explicit-key indicator.
+shape "capitalised key is refused" "      - Uses: actions/checkout@v7"
+shape "upper-case key is refused" "      - USES: actions/checkout@v7"
+shape "capitalised key with a sha is refused" "      - Uses: actions/checkout@$sha # v7.0.1"
+rejected "explicit key after a hyphen is refused" 2 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "      - ? uses" \
+    "        : actions/checkout@v7"
+rejected "explicit key in a block mapping is refused" 2 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "        ? uses" \
+    "        : actions/checkout@v7"
+rejected "quoted explicit key is refused" 2 \
+    "      - uses: actions/checkout@$sha # v7.0.1" \
+    "      - ? \"uses\"" \
+    "        : actions/checkout@v7"
 accepted "extra spaces after the hyphen with a sha are accepted" \
     "      -   uses: actions/checkout@$sha # v7.0.1"
 accepted "local use with a trailing comment is accepted" \

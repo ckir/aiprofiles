@@ -20,6 +20,11 @@
 # line, optionally after `-` and any blanks. Quoted keys, `uses :`, flow `{ uses: ... }` and `[ uses: ... ]`
 # are refused outright, even with a full SHA, so a floating action cannot hide beside a pinned one.
 #
+# Two more spellings are refused for the same reason. The key match ignores case, and `canon` below does not,
+# so `Uses:` and `USES:` fail (the runner matches keys exactly, so they would not run, but this gate does not
+# vouch for them). A YAML explicit key (`? uses` with its `: value` on the next line) is the `uses` key to a
+# parser yet has no colon on its own line, so every explicit-key indicator line is flagged.
+#
 # Usage: sh scripts/check-action-pins.sh [dir]   (default: <repo>/.github/workflows)
 # Output: one `<file>:<line>: <text>` per violation and exit 1; otherwise `check-action-pins: <n> uses checked`.
 
@@ -29,7 +34,7 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 . "$repo_root/scripts/lib/scan-guard.sh"
 
 dir=${1:-$repo_root/.github/workflows}
-scan='(^|[[:space:]{,[-])["'"'"']?uses["'"'"']?[[:space:]]*:'
+scan='(^|[[:space:]{,[-])["'"'"']?uses["'"'"']?[[:space:]]*:|^[[:space:]]*(-[[:space:]]+)*\?([[:space:]]|$)'
 canon='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+'
 pin='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@ ]+)?@[0-9a-f]{40} # [A-Za-z0-9_.-]+$'
 
@@ -43,7 +48,7 @@ violations=0
 scan_expand "$files" must-find "workflow files under $dir" "$dir"/*.yml
 
 while IFS= read -r file; do
-    scan_grep -n -E "$scan" "$file" > "$hits"
+    scan_grep -n -i -E "$scan" "$file" > "$hits"
     # Read from a file, never a pipe: a pipe runs the loop in a subshell and loses the counters.
     while IFS= read -r hit; do
         lineno=${hit%%:*}
