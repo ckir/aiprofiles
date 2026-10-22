@@ -57,13 +57,6 @@ is treated as the slow one, and a contributor who runs the other in the foregrou
 timeout. The mechanism is verified by reading; the wall-clock figure is not measured. A comment on the
 `probe-tests` recipe naming both would close it.
 
-**Profile directories are created with the process's default permissions.** `adapter::ensure_paths` calls
-`fs::create_dir_all` with no explicit mode, so under a common `022` umask a profile directory is `0755` and
-other local users can list it. Agents usually protect their own credential files, so this is defence in depth
-rather than a measured leak. Found while designing SP5c (2026-10-20); owner ruled it tracked debt, out of SP5c.
-The fix is `DirBuilder` with mode `0700` on Unix in `ensure_paths` (which `create` and lazy initialization
-share), plus a test asserting the mode; `doctor` reports the mode as data and would show the change.
-
 **`dtolnay/rust-toolchain` is pinned to a branch tip, and whether Dependabot bumps it is unverified.** `release-plz.yml` sat at `6bed076` from 2026-09-15 while the `stable` branch moved to `b725eda`; SP5d moved every use to the tip with an explicit `toolchain: stable`. If it stays put again, bump it by hand with `gh api repos/dtolnay/rust-toolchain/git/ref/heads/stable`.
 
 **Profile names are not completed.** The completion script is static (owner's choice, SP5d D1); completing profile names needs a runtime hook. A future enhancement outside v0.1.
