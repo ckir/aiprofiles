@@ -37,6 +37,10 @@ typos:
 deny:
     cargo deny check
 
+# Bans, licences and sources only: needs no advisory database, so it runs offline and in `check`
+deny-offline:
+    cargo deny check bans licenses sources
+
 # Every shell file in the repository. SP4a took this from three files to seventeen, and the harness is
 # now load-bearing: it decides what an evidence transcript says. `-s sh` because these run under the
 # container's /bin/sh, not bash, and `find` rather than a glob because an unmatched glob passes through
@@ -85,7 +89,7 @@ doc-check:
 # because CI runs the same command. One caveat it cannot fix: `shellcheck` is whatever version is on the
 # machine, and `ubuntu-latest`'s is older than a current local install. The older one reports SC2317 where
 # the newer reports SC2329, so a file can pass here and fail there; `sandbox/run.sh` carries both codes.
-check: fmt-check clippy typos shellcheck line-citations action-pins test probe-tests tools-doc-check doc-check
+check: fmt-check clippy typos shellcheck deny-offline line-citations action-pins test probe-tests tools-doc-check doc-check
 
 # Background watcher
 watch:

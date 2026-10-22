@@ -2,3 +2,9 @@
 msrv = "1.98"
 allow-dbg-in-tests = true
 allow-unwrap-in-tests = true
+# V3 §36/§37: no hidden network activity. `std::net` needs no dependency, so `deny.toml` cannot see it.
+disallowed-types = [
+    { path = "std::net::TcpStream", reason = "agent-profile does no networking (V3 §36)" },
+    { path = "std::net::TcpListener", reason = "agent-profile does no networking (V3 §36)" },
+    { path = "std::net::UdpSocket", reason = "agent-profile does no networking (V3 §36)" },
+]
