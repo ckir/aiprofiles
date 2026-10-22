@@ -235,9 +235,9 @@ fn help_and_version_after_the_agent_word() {
 fn behaviour_table_rows_with_non_zero_exits() {
     let root = Root::new();
     let cases: &[(&[&str], i32, &str)] = &[
-        (&["completions"], 2, "`completions` is not yet implemented"),
+        (&["completions"], 2, "`completions` needs a shell"),
         (&["link", "work", "extra"], 2, "`link` takes one profile"),
-        (&["fake", "completions"], 2, "`fake completions` is not yet implemented"),
+        (&["fake", "completions"], 2, "`completions` takes no agent: agent-profile completions"),
         (&["fake", "work", "--json"], 2, "`--json` is not yet implemented"),
         (
             &["zzz", "work"],

@@ -135,10 +135,6 @@ code — a metadata edit plus an `off-ci` transcript:
       "cannot spawn the sleeper: Access is denied") but passes under `cargo nextest`, the gate: it assumes one process
       per test. Isolate it (for example a nextest-only marker or a child process) or document it.
 
-- [ ] Pin the actions in `.github/workflows/ci.yml` (`actions/checkout@v7`, `dtolnay/rust-toolchain@stable`,
-      `Swatinem/rust-cache@v2`, `EmbarkStudios/cargo-deny-action@v2`, `taiki-e/install-action@nextest`) to commit SHAs
-      with version comments, as the release and sandbox workflows already are.
-
 - [ ] `sandbox/run.sh` picks the nextest download from the host `uname -m`; a Docker Desktop configured to build
       for another platform (`DOCKER_DEFAULT_PLATFORM`, Rosetta x86_64 default) gets the wrong binary. Pass the
       engine's build architecture instead if that setup is needed.

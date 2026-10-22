@@ -8,9 +8,10 @@ A local, privacy-first Rust CLI for selecting and launching profiles for multipl
 Agent Profile never copies credentials, extracts tokens, sends telemetry or trusts
 repository-controlled profile selection.
 
-**Status: repository resolution (SP3).** Profile-name validation, configuration, the launch path (`exec` on
-Unix, a supervised child on Windows), three evidence-backed adapters (Claude Code, Codex CLI, Aider) and
-repository mappings exist; see [ROADMAP.md](ROADMAP.md). The authoritative design is
+**Status: v0.1 command set complete.** Every v0.1 command is implemented — launch, repository resolution
+(`current`, `resolve`, `status`, `link`, `unlink`, `repositories`), the profile lifecycle (`create`, `list`,
+`delete`, `profiles`, `agents`), `doctor`, `--json` on the report commands and `completions` — backed by twelve
+evidence-measured adapters; see [ROADMAP.md](ROADMAP.md) for what remains before a release. The authoritative design is
 [`agent-profile-implementation-spec-v3.md`](agent-profile-implementation-spec-v3.md).
 
 ## Architecture
@@ -41,16 +42,19 @@ Adapters produce a `LaunchPlan`; they never spawn processes.
 agent-profile <agent> <profile> [WRAPPER OPTIONS] [-- <agent args...>]
 agent-profile <agent> [WRAPPER OPTIONS] [-- <agent args...>]
 agent-profile <agent> current [--repo <path>]
-agent-profile <agent> resolve|status [--repo <path>] [--json]
+agent-profile <agent> resolve [--repo <path>] [--json]
+agent-profile [<agent>] status [--repo <path>] [--json]
 agent-profile [<agent>] link <profile> [--repo <path>]
 agent-profile [<agent>] unlink [--repo <path>]
-agent-profile status [--repo <path>] [--json]
 agent-profile <agent> create <profile>
 agent-profile <agent> delete <profile> [--yes]
 agent-profile [<agent>] list [--json]
 agent-profile profiles [--json]
 agent-profile agents [--json]
 agent-profile repositories [--json]
+agent-profile doctor [--repo <path>] [--json]
+agent-profile <agent> doctor [<profile>] [--repo <path>] [--json]
+agent-profile completions <shell>
 ```
 
 Everything after `--` is passed to the agent untouched. `--dry-run` shows what would be launched without
@@ -83,6 +87,13 @@ stored path synchronously, so callers should run it under their own timeout; an 
 applying profile and its presence uses `<agent> status --json`, which exits 0 whether or not anything
 resolves.
 
+`doctor` checks the host (platform, application root and, on Unix, whether it is writable, `config.toml`, the
+profiles directory and case-twin names, the default profile), the current repository and every stored mapping,
+and each agent's executable and support level; `<agent> doctor [<profile>]` adds the profile that would resolve,
+its paths and the launch environment the adapter would set, by name only. It never launches an agent, and prints
+no secret or environment value. Exit codes: 0 when nothing failed, 5 when any check failed, 2 for a usage error
+and 1 when the report cannot be written.
+
 ```toml
 default_profile = "work"
 
@@ -94,6 +105,31 @@ agents = { claude = "personal" }
 The global default is set by editing `default_profile`. Discovery reads only the `.git` entry and Git's
 `gitdir`/`commondir` files; it never runs Git, never reads Git configuration, and ignores `GIT_DIR` and
 `core.worktree` (use `--repo`).
+
+## Shell completion
+
+`agent-profile completions <shell>` prints a completion script for `bash`, `elvish`, `fish`, `powershell` or
+`zsh`. It completes agents, commands and their options; profile names are not completed, so the shell falls
+back to its default after the command word.
+
+```sh
+# bash — in ~/.bashrc
+source <(agent-profile completions bash)
+# zsh — once, into a directory on $fpath, then `compinit` in ~/.zshrc
+mkdir -p ~/.zfunc && agent-profile completions zsh > ~/.zfunc/_agent-profile
+# fish
+mkdir -p ~/.config/fish/completions && agent-profile completions fish > ~/.config/fish/completions/agent-profile.fish
+# elvish — in ~/.config/elvish/rc.elv
+eval (agent-profile completions elvish | slurp)
+```
+
+```powershell
+# PowerShell — in $PROFILE
+agent-profile completions powershell | Out-String | Invoke-Expression
+```
+
+For zsh, add `fpath=(~/.zfunc $fpath)` before `compinit` if that directory is new. The elvish line is checked
+against clap_complete's elvish generator only.
 
 ## Supported agents
 
@@ -129,13 +165,6 @@ and its abbreviations) are refused before launch. On Windows an agent must be a 
 refused with a hint rather than parsed, so `executable` must be set in the configuration. Meanwhile the
 probes run in a Linux container, so the evidence behind every claim above is Linux evidence. Neither fact
 is hidden by the other: an agent can be both refused by default on Windows *and* unmeasured there.
-
-## Planned adapters — not yet implemented or evidence-verified
-
-The mechanisms below are the specification's starting point, not a claim about isolation. Each is cited
-from first-party documentation and none is yet measured; where a probe contradicts a row, the probe wins.
-
-_No adapters are currently planned: SP4b measured and registered the nine candidates from the design's §8 table, and every one landed._
 
 ## Agents that cannot be isolated
 
@@ -178,7 +207,7 @@ Requires Rust 1.98+ (edition 2024).
 
 ```
 cargo build --workspace
-just check              # the local gate: fmt + clippy + typos + test
+just check              # the local gate: fmt-check, clippy, typos, shellcheck, line-citations, action-pins, test, probe-tests, tools-doc-check, doc-check
 ```
 
 Tooling is listed in [`docs/dev-tooling.md`](docs/dev-tooling.md); see

@@ -30,7 +30,7 @@ lefthook install
 
 # Everyday
 just build      # cargo build --workspace
-just check      # the gate: fmt-check + clippy + typos + test
+just check      # the gate: fmt-check, clippy, typos, shellcheck, line-citations, action-pins, test, probe-tests, tools-doc-check, doc-check
 just watch      # bacon, in the background, while you work
 just test       # nextest + doctests
 just doc        # build and open the API docs

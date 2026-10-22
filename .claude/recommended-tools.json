@@ -10,7 +10,7 @@
   },
   {
     "name": "just",
-    "why": "Task runner and the single entry point for the local gate. `just check` = fmt-check + clippy + typos + shellcheck + line-citations + test + probe-tests + tools-doc-check + doc-check. Configured by the root justfile.",
+    "why": "Task runner and the single entry point for the local gate. `just check` = fmt-check + clippy + typos + shellcheck + line-citations + action-pins + test + probe-tests + tools-doc-check + doc-check. Configured by the root justfile.",
     "install": "cargo binstall -y just  (any platform; Ubuntu also has `sudo snap install --classic just`)",
     "in_path": "just",
     "config": "`justfile`",

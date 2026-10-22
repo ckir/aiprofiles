@@ -5,7 +5,8 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
@@ -19,6 +20,9 @@ use crate::output::{self, ReportMode};
 use crate::repo::{self, Discovery};
 use crate::repositories;
 use crate::resolve;
+
+mod completions;
+use completions::SHELL_NAMES;
 
 const LAUNCH_USAGE: &str = "\
 Usage: agent-profile <agent> <profile> [--dry-run] [--verbose] [-- <agent args>...]
@@ -48,7 +52,10 @@ Profile commands:
   agent-profile <agent> delete <profile> [--yes]
   agent-profile [<agent>] list [--json]
   agent-profile agents [--json]
-  agent-profile profiles [--json]";
+  agent-profile profiles [--json]
+
+Shell completion:
+  agent-profile completions <shell>";
 
 /// Select and launch profiles for multiple coding agents.
 #[derive(Parser)]
@@ -66,31 +73,12 @@ struct Cli {
     command: Command,
 }
 
-/// The reserved words that are not implemented yet. The eight reserved words of spec §5.3 — `status`,
-/// `link`, `unlink`, `create`, `delete`, `list`, `agents` and `profiles` — are dispatched before Clap
-/// (SP3 design §7.2), as are `resolve`, `current`, `repositories` and `doctor`.
+/// Every reserved word — the eight of spec §5.3 plus `resolve`, `current`, `repositories`, `doctor` and
+/// `completions` — is dispatched before Clap (SP3 design §7.2), so Clap sees only the agent form.
 #[derive(Subcommand)]
 enum Command {
-    /// Not yet implemented.
-    Completions(Rest),
     #[command(external_subcommand)]
     Agent(Vec<OsString>),
-}
-
-#[derive(Args)]
-#[command(disable_help_flag = true)]
-struct Rest {
-    #[arg(hide = true, trailing_var_arg = true, allow_hyphen_values = true)]
-    _rest: Vec<OsString>,
-}
-
-impl Command {
-    fn reserved_name(&self) -> Option<&'static str> {
-        Some(match self {
-            Command::Completions(_) => "completions",
-            Command::Agent(_) => return None,
-        })
-    }
 }
 
 /// The repository commands (SP3 design §7.1).
@@ -108,6 +96,24 @@ enum CommandWord {
     Profiles,
     Repositories,
     Doctor,
+    Completions,
+}
+
+/// Where a command word may appear: with an agent, without one, or both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentScope {
+    TopLevelOnly,
+    AgentRequired,
+    Either,
+}
+
+/// The positional words a command takes after its command word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Positional {
+    None,
+    RequiredProfile,
+    OptionalProfile,
+    Shell,
 }
 
 impl CommandWord {
@@ -126,6 +132,7 @@ impl CommandWord {
             "profiles" => CommandWord::Profiles,
             "repositories" => CommandWord::Repositories,
             "doctor" => CommandWord::Doctor,
+            "completions" => CommandWord::Completions,
             _ => return None,
         })
     }
@@ -144,6 +151,114 @@ impl CommandWord {
             CommandWord::Profiles => "profiles",
             CommandWord::Repositories => "repositories",
             CommandWord::Doctor => "doctor",
+            CommandWord::Completions => "completions",
+        }
+    }
+
+    const ALL: [CommandWord; 13] = [
+        CommandWord::Current,
+        CommandWord::Resolve,
+        CommandWord::Status,
+        CommandWord::Link,
+        CommandWord::Unlink,
+        CommandWord::Create,
+        CommandWord::Delete,
+        CommandWord::List,
+        CommandWord::Agents,
+        CommandWord::Profiles,
+        CommandWord::Repositories,
+        CommandWord::Doctor,
+        CommandWord::Completions,
+    ];
+
+    fn scope(self) -> AgentScope {
+        match self {
+            CommandWord::Current
+            | CommandWord::Resolve
+            | CommandWord::Create
+            | CommandWord::Delete => AgentScope::AgentRequired,
+            CommandWord::Agents
+            | CommandWord::Profiles
+            | CommandWord::Repositories
+            | CommandWord::Completions => AgentScope::TopLevelOnly,
+            CommandWord::Status
+            | CommandWord::Link
+            | CommandWord::Unlink
+            | CommandWord::List
+            | CommandWord::Doctor => AgentScope::Either,
+        }
+    }
+
+    fn accepts_repo(self) -> bool {
+        match self {
+            CommandWord::Current
+            | CommandWord::Resolve
+            | CommandWord::Status
+            | CommandWord::Link
+            | CommandWord::Unlink
+            | CommandWord::Doctor => true,
+            CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+            | CommandWord::Repositories
+            | CommandWord::Completions => false,
+        }
+    }
+
+    fn accepts_json(self) -> bool {
+        match self {
+            CommandWord::Resolve
+            | CommandWord::Status
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+            | CommandWord::Repositories
+            | CommandWord::Doctor => true,
+            CommandWord::Current
+            | CommandWord::Link
+            | CommandWord::Unlink
+            | CommandWord::Create
+            | CommandWord::Delete
+            | CommandWord::Completions => false,
+        }
+    }
+
+    fn accepts_yes(self) -> bool {
+        match self {
+            CommandWord::Delete => true,
+            CommandWord::Current
+            | CommandWord::Resolve
+            | CommandWord::Status
+            | CommandWord::Link
+            | CommandWord::Unlink
+            | CommandWord::Create
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+            | CommandWord::Repositories
+            | CommandWord::Doctor
+            | CommandWord::Completions => false,
+        }
+    }
+
+    fn positional(self, with_agent: bool) -> Positional {
+        match self {
+            CommandWord::Link | CommandWord::Create | CommandWord::Delete => {
+                Positional::RequiredProfile
+            }
+            CommandWord::Completions => Positional::Shell,
+            CommandWord::Doctor if with_agent => Positional::OptionalProfile,
+            CommandWord::Doctor
+            | CommandWord::Current
+            | CommandWord::Resolve
+            | CommandWord::Status
+            | CommandWord::Unlink
+            | CommandWord::List
+            | CommandWord::Agents
+            | CommandWord::Profiles
+            | CommandWord::Repositories => Positional::None,
         }
     }
 
@@ -215,6 +330,10 @@ impl CommandWord {
                  --repo <path>  Use the repository at <path> instead of the current directory\n  \
                  --json         Print a JSON document instead of the report\n"
             }
+            CommandWord::Completions => {
+                "Usage: agent-profile completions <shell>\n\
+                 Print a shell completion script to stdout. <shell> is bash, elvish, fish, powershell or zsh.\n"
+            }
         }
     }
 }
@@ -238,12 +357,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
             return error.exit_code();
         }
     };
-    if let Some(name) = cli.command.reserved_name() {
-        return report(Error::NotYetImplemented { command: name.to_owned() });
-    }
-    let Command::Agent(argv) = cli.command else {
-        unreachable!("reserved commands returned above")
-    };
+    let Command::Agent(argv) = cli.command;
     let known = adapter::known_agents();
     match split(argv, &known)
         .map_err(|error| with_unknown_configured(error, None, &known))
@@ -265,6 +379,7 @@ enum Invocation {
     Help,
     CommandHelp(CommandWord),
     Version,
+    Completions(Shell),
     Launch {
         agent: String,
         profile: Option<String>,
@@ -383,14 +498,12 @@ fn split_top_level(command: CommandWord, rest: Vec<OsString>) -> Result<Invocati
     if has_version(&tokens) {
         return Ok(Invocation::Version);
     }
-    if matches!(command, CommandWord::Resolve | CommandWord::Current) {
+    if command.scope() == AgentScope::AgentRequired {
         let name = command.as_str();
-        return Err(usage(format!("`{name}` needs an agent: agent-profile <agent> {name}")));
-    }
-    if matches!(command, CommandWord::Create | CommandWord::Delete) {
-        let name = command.as_str();
+        let profile =
+            if command.positional(true) == Positional::RequiredProfile { " <profile>" } else { "" };
         return Err(usage(format!(
-            "`{name}` needs an agent: agent-profile <agent> {name} <profile>"
+            "`{name}` needs an agent: agent-profile <agent> {name}{profile}"
         )));
     }
     let bare = bare_words(&tokens);
@@ -494,9 +607,7 @@ fn validate_command(
         return Err(usage(format!("`{name}` takes no agent arguments; remove `--`")));
     }
     // `agents`, `profiles` and `repositories` are top-level only (SP5a design §5, SP5b design §4).
-    if matches!(command, CommandWord::Agents | CommandWord::Profiles | CommandWord::Repositories)
-        && agent.is_some()
-    {
+    if command.scope() == AgentScope::TopLevelOnly && agent.is_some() {
         return Err(usage(format!("`{name}` takes no agent: agent-profile {name}")));
     }
     let repos: Vec<&OsString> = tokens
@@ -507,16 +618,7 @@ fn validate_command(
         })
         .collect();
     // The lifecycle words take no `--repo`; refused before the checks below so the message names the command.
-    if matches!(
-        command,
-        CommandWord::Create
-            | CommandWord::Delete
-            | CommandWord::List
-            | CommandWord::Agents
-            | CommandWord::Profiles
-            | CommandWord::Repositories
-    ) && !repos.is_empty()
-    {
+    if !command.accepts_repo() && !repos.is_empty() {
         return Err(usage(format!("unknown option \"--repo\" for `{name}`")));
     }
     if repos.len() > 1 {
@@ -529,48 +631,53 @@ fn validate_command(
     if matches!(command, CommandWord::Create | CommandWord::Delete) && json_count > 0 {
         return Err(Error::NotYetImplemented { command: "--json".to_owned() });
     }
-    let json_accepted = matches!(
-        command,
-        CommandWord::Status
-            | CommandWord::Resolve
-            | CommandWord::List
-            | CommandWord::Agents
-            | CommandWord::Profiles
-            | CommandWord::Repositories
-            | CommandWord::Doctor
-    );
+    let json_accepted = command.accepts_json();
     if json_accepted && json_count > 1 {
         return Err(usage("`--json` may be given only once"));
     }
     let json = json_accepted && json_count == 1;
     // `--yes` is exact and `delete`'s alone: `--yes=1` stays an unknown option, matched like `--dry-run=yes`
     // is (SP5a design §5).
-    let yes = command == CommandWord::Delete && options(tokens).any(|option| option == "--yes");
+    let yes = command.accepts_yes() && options(tokens).any(|option| option == "--yes");
     if let Some(option) = options(tokens)
         .find(|option| !(yes && **option == "--yes") && !(json && **option == "--json"))
     {
         return Err(usage(format!("unknown option {:?} for `{name}`", option_name(option))));
     }
     // `link`, `create` and `delete` take exactly one profile word (SP3 design §7.2, SP5a design §5).
-    let allowed = usize::from(
-        matches!(command, CommandWord::Link | CommandWord::Create | CommandWord::Delete)
-            || (command == CommandWord::Doctor && agent.is_some()),
-    );
+    let positional = command.positional(agent.is_some());
+    let allowed = usize::from(positional != Positional::None);
     if command == CommandWord::Link && bare.is_empty() {
         return Err(usage("`link` needs a profile: agent-profile [<agent>] link <profile>"));
     }
     if bare.len() > allowed {
-        return Err(usage(match command {
-            CommandWord::Link => "`link` takes one profile".to_owned(),
-            CommandWord::Create | CommandWord::Delete => format!("`{name}` takes one profile"),
-            CommandWord::Doctor if agent.is_some() => "`doctor` takes one profile".to_owned(),
-            _ => format!("`{name}` takes no arguments"),
+        return Err(usage(match positional {
+            Positional::RequiredProfile | Positional::OptionalProfile => {
+                format!("`{name}` takes one profile")
+            }
+            Positional::Shell => format!("`{name}` takes one shell"),
+            Positional::None => format!("`{name}` takes no arguments"),
         }));
     }
     if matches!(command, CommandWord::Create | CommandWord::Delete) && bare.is_empty() {
         return Err(usage(format!(
             "`{name}` needs a profile: agent-profile <agent> {name} <profile>"
         )));
+    }
+    if positional == Positional::Shell {
+        let Some(word) = bare.first() else {
+            return Err(usage(format!(
+                "`{name}` needs a shell: agent-profile {name} <{}>",
+                SHELL_NAMES.join("|")
+            )));
+        };
+        let word = word.to_string_lossy();
+        return completions::parse_shell(&word).map(Invocation::Completions).ok_or_else(|| {
+            usage(format!(
+                "unknown shell `{word}` (shells: {})",
+                SHELL_NAMES.iter().map(|shell| format!("`{shell}`")).collect::<Vec<_>>().join(", ")
+            ))
+        });
     }
     let profile = match bare.first() {
         Some(word) => Some(
@@ -600,6 +707,10 @@ fn execute(invocation: Invocation) -> Result<i32> {
         }
         Invocation::Version => {
             write_out(&format!("agent-profile {}\n", env!("CARGO_PKG_VERSION")))?;
+            Ok(0)
+        }
+        Invocation::Completions(shell) => {
+            write_out(&completions::script(shell))?;
             Ok(0)
         }
         Invocation::Launch { agent, profile, dry_run, verbose, opaque } => {
@@ -875,6 +986,7 @@ fn run_command(
         | CommandWord::Profiles
         | CommandWord::Repositories => unreachable!("lifecycle commands returned above"),
         CommandWord::Doctor => unreachable!("doctor returned above"),
+        CommandWord::Completions => unreachable!("completions returned above"),
     };
     write_lines(&lines)?;
     Ok(0)
@@ -1755,6 +1867,361 @@ mod tests {
                     yes: false,
                     json: false,
                 }
+            );
+        }
+    }
+
+    struct Row {
+        word: CommandWord,
+        scope: AgentScope,
+        repo: bool,
+        json: bool,
+        yes: bool,
+        top_level: Positional,
+        with_agent: Positional,
+    }
+    const TABLE: &[Row] = &[
+        // word          scope          repo   json   yes    top_level                  with_agent
+        Row {
+            word: CommandWord::Current,
+            scope: AgentScope::AgentRequired,
+            repo: true,
+            json: false,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Resolve,
+            scope: AgentScope::AgentRequired,
+            repo: true,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Status,
+            scope: AgentScope::Either,
+            repo: true,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Link,
+            scope: AgentScope::Either,
+            repo: true,
+            json: false,
+            yes: false,
+            top_level: Positional::RequiredProfile,
+            with_agent: Positional::RequiredProfile,
+        },
+        Row {
+            word: CommandWord::Unlink,
+            scope: AgentScope::Either,
+            repo: true,
+            json: false,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Create,
+            scope: AgentScope::AgentRequired,
+            repo: false,
+            json: false,
+            yes: false,
+            top_level: Positional::RequiredProfile,
+            with_agent: Positional::RequiredProfile,
+        },
+        Row {
+            word: CommandWord::Delete,
+            scope: AgentScope::AgentRequired,
+            repo: false,
+            json: false,
+            yes: true,
+            top_level: Positional::RequiredProfile,
+            with_agent: Positional::RequiredProfile,
+        },
+        Row {
+            word: CommandWord::List,
+            scope: AgentScope::Either,
+            repo: false,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Agents,
+            scope: AgentScope::TopLevelOnly,
+            repo: false,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Profiles,
+            scope: AgentScope::TopLevelOnly,
+            repo: false,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Repositories,
+            scope: AgentScope::TopLevelOnly,
+            repo: false,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::None,
+        },
+        Row {
+            word: CommandWord::Doctor,
+            scope: AgentScope::Either,
+            repo: true,
+            json: true,
+            yes: false,
+            top_level: Positional::None,
+            with_agent: Positional::OptionalProfile,
+        },
+        Row {
+            word: CommandWord::Completions,
+            scope: AgentScope::TopLevelOnly,
+            repo: false,
+            json: false,
+            yes: false,
+            top_level: Positional::Shell,
+            with_agent: Positional::Shell,
+        },
+    ];
+
+    #[test]
+    fn grammar_table_is_pinned() {
+        assert_eq!(CommandWord::ALL.len(), TABLE.len());
+        for row in TABLE {
+            assert!(CommandWord::ALL.contains(&row.word), "{:?} missing from ALL", row.word);
+        }
+        for word in CommandWord::ALL {
+            assert!(TABLE.iter().any(|row| row.word == word), "{word:?} missing from TABLE");
+        }
+        for row in TABLE {
+            let word = row.word;
+            assert_eq!(word.scope(), row.scope, "{word:?} scope");
+            assert_eq!(word.accepts_repo(), row.repo, "{word:?} repo");
+            assert_eq!(word.accepts_json(), row.json, "{word:?} json");
+            assert_eq!(word.accepts_yes(), row.yes, "{word:?} yes");
+            assert_eq!(word.positional(false), row.top_level, "{word:?} top level");
+            assert_eq!(word.positional(true), row.with_agent, "{word:?} with agent");
+        }
+    }
+
+    #[test]
+    fn dispatcher_follows_the_grammar_table() {
+        fn run(with_agent: bool, name: &str, rest: &[&str]) -> Result<Invocation> {
+            let mut items = vec![name];
+            items.extend_from_slice(rest);
+            if with_agent {
+                items.insert(0, "fake");
+                split(args(&items), KNOWN)
+            } else {
+                top(&items)
+            }
+        }
+        for row in TABLE {
+            let name = row.word.as_str();
+            let word = row.word;
+            let profiles = |positional: Positional| -> &'static [&'static str] {
+                match positional {
+                    Positional::RequiredProfile => &["p"],
+                    Positional::Shell => &["bash"],
+                    _ => &[],
+                }
+            };
+
+            // Bare, top level.
+            let prof = profiles(row.top_level);
+            let result = run(false, name, prof);
+            if row.scope == AgentScope::AgentRequired {
+                assert!(
+                    usage_message(result).starts_with(&format!("`{name}` needs an agent")),
+                    "{name} top level"
+                );
+            } else {
+                assert_eq!(
+                    result.unwrap(),
+                    if row.top_level == Positional::Shell {
+                        Invocation::Completions(Shell::Bash)
+                    } else {
+                        command(None, word, prof.first().copied(), None, false, false)
+                    },
+                    "{name} top level"
+                );
+            }
+
+            // Bare, with an agent.
+            let prof = profiles(row.with_agent);
+            let result = run(true, name, prof);
+            if row.scope == AgentScope::TopLevelOnly {
+                assert_eq!(
+                    usage_message(result),
+                    format!("`{name}` takes no agent: agent-profile {name}")
+                );
+            } else {
+                assert_eq!(
+                    result.unwrap(),
+                    command(Some("fake"), word, prof.first().copied(), None, false, false),
+                    "{name} with agent"
+                );
+            }
+
+            // Flags, on whichever form is valid.
+            let with_agent = row.scope != AgentScope::TopLevelOnly;
+            let agent = with_agent.then_some("fake");
+            let positional = if with_agent { row.with_agent } else { row.top_level };
+            let prof = profiles(positional);
+            let with_flag = |flag: &[&str]| -> Result<Invocation> {
+                let mut rest = flag.to_vec();
+                rest.extend_from_slice(prof);
+                run(with_agent, name, &rest)
+            };
+            let unknown = |option: &str| format!("unknown option \"{option}\" for `{name}`");
+            let result = with_flag(&["--repo", "x"]);
+            if row.repo {
+                assert_eq!(
+                    result.unwrap(),
+                    command(agent, word, prof.first().copied(), Some("x"), false, false),
+                    "{name} --repo"
+                );
+            } else {
+                assert_eq!(usage_message(result), unknown("--repo"));
+            }
+            let result = with_flag(&["--json"]);
+            if row.json {
+                assert_eq!(
+                    result.unwrap(),
+                    command(agent, word, prof.first().copied(), None, false, true),
+                    "{name} --json"
+                );
+            } else if matches!(word, CommandWord::Create | CommandWord::Delete) {
+                assert!(
+                    matches!(result, Err(Error::NotYetImplemented { ref command }) if command == "--json"),
+                    "{name} --json: {result:?}"
+                );
+            } else {
+                assert_eq!(usage_message(result), unknown("--json"));
+            }
+            let result = with_flag(&["--yes"]);
+            if row.yes {
+                assert_eq!(
+                    result.unwrap(),
+                    command(agent, word, prof.first().copied(), None, true, false),
+                    "{name} --yes"
+                );
+            } else {
+                assert_eq!(usage_message(result), unknown("--yes"));
+            }
+
+            // Positional arity, on each valid form.
+            for with_agent in [false, true] {
+                let valid = match row.scope {
+                    AgentScope::TopLevelOnly => !with_agent,
+                    AgentScope::AgentRequired => with_agent,
+                    AgentScope::Either => true,
+                };
+                if !valid {
+                    continue;
+                }
+                let positional = if with_agent { row.with_agent } else { row.top_level };
+                match positional {
+                    Positional::RequiredProfile => {
+                        assert!(
+                            usage_message(run(with_agent, name, &[]))
+                                .starts_with(&format!("`{name}` needs a profile")),
+                            "{name} bare"
+                        );
+                        assert_eq!(
+                            usage_message(run(with_agent, name, &["p", "q"])),
+                            format!("`{name}` takes one profile")
+                        );
+                    }
+                    Positional::None => {
+                        assert_eq!(
+                            usage_message(run(with_agent, name, &["p"])),
+                            format!("`{name}` takes no arguments")
+                        );
+                    }
+                    Positional::OptionalProfile => {
+                        assert_eq!(
+                            run(with_agent, name, &["p"]).unwrap(),
+                            command(Some("fake"), word, Some("p"), None, false, false)
+                        );
+                        assert_eq!(
+                            usage_message(run(with_agent, name, &["p", "q"])),
+                            format!("`{name}` takes one profile")
+                        );
+                    }
+                    Positional::Shell => {
+                        assert!(
+                            usage_message(run(with_agent, name, &[]))
+                                .starts_with(&format!("`{name}` needs a shell")),
+                            "{name} bare"
+                        );
+                        assert_eq!(
+                            usage_message(run(with_agent, name, &["bash", "zsh"])),
+                            format!("`{name}` takes one shell")
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn completions_binds_the_shell_only_in_lower_case() {
+        assert_eq!(top(&["completions", "zsh"]).unwrap(), Invocation::Completions(Shell::Zsh));
+        assert_eq!(
+            usage_message(top(&["completions", "ZSH"])),
+            "unknown shell `ZSH` (shells: `bash`, `elvish`, `fish`, `powershell`, `zsh`)"
+        );
+        let result = split_top_level(CommandWord::Completions, vec![non_utf8()]);
+        assert!(
+            usage_message(result).starts_with("unknown shell `"),
+            "a non-UTF-8 shell must be a usage error"
+        );
+    }
+
+    /// The README's usage block must carry every `COMMANDS_HELP` command line, so the two cannot drift.
+    #[test]
+    fn readme_usage_block_carries_every_command_help_line() {
+        // A Windows checkout may rewrite the README with CRLF line endings.
+        let readme = include_str!("../../../README.md").replace("\r\n", "\n");
+        let after_usage = readme.split_once("## Usage").expect("README has a Usage section").1;
+        let block = after_usage
+            .split_once("```text\n")
+            .expect("the Usage section has a text block")
+            .1
+            .split_once("```")
+            .expect("the text block is closed")
+            .0;
+        let lines: Vec<&str> =
+            COMMANDS_HELP.lines().filter(|line| line.starts_with("  agent-profile ")).collect();
+        assert!(
+            lines.len() >= CommandWord::ALL.len(),
+            "COMMANDS_HELP lists {} command lines for {} commands; the filter matched too little",
+            lines.len(),
+            CommandWord::ALL.len()
+        );
+        for line in lines {
+            let wanted = line.trim_start();
+            assert!(
+                block.lines().any(|candidate| candidate == wanted),
+                "README usage block lacks the line `{wanted}`"
             );
         }
     }
