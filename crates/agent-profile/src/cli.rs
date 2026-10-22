@@ -2199,7 +2199,8 @@ mod tests {
     /// The README's usage block must carry every `COMMANDS_HELP` command line, so the two cannot drift.
     #[test]
     fn readme_usage_block_carries_every_command_help_line() {
-        let readme = include_str!("../../../README.md");
+        // A Windows checkout may rewrite the README with CRLF line endings.
+        let readme = include_str!("../../../README.md").replace("\r\n", "\n");
         let after_usage = readme.split_once("## Usage").expect("README has a Usage section").1;
         let block = after_usage
             .split_once("```text\n")
