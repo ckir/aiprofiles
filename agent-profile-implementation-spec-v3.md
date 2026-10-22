@@ -593,6 +593,8 @@ current repository.
 
 Among applicable mappings, the longest canonical repository path match wins.
 
+Because section 13 and section 14.2 bind discovery to the single innermost repository or worktree root, and mappings are keyed by exact canonical root, at most one mapping is applicable to any repository. A mapping for an enclosing repository is not applicable to a nested repository, submodule or worktree; implementations report it but never apply it. The longest-match rule therefore selects that single mapping and needs no prefix search.
+
 ## 14.2 Worktrees
 
 For v0.1, repository identity is based on the canonical filesystem/worktree root,
@@ -1419,77 +1421,77 @@ V0.1 is implementation-complete only when:
 
 ### CLI
 
-- [ ] grammar is deterministic;
-- [ ] reserved command/profile collisions are rejected;
-- [ ] passthrough is exact;
-- [ ] wrapper options are separated from agent options;
-- [ ] `current` uses the canonical resolver;
-- [ ] exit behavior is correct;
-- [ ] dry-run works.
+- [x] grammar is deterministic;
+- [x] reserved command/profile collisions are rejected;
+- [x] passthrough is exact;
+- [x] wrapper options are separated from agent options;
+- [x] `current` uses the canonical resolver;
+- [x] exit behavior is correct;
+- [x] dry-run works.
 
 ### Profiles
 
-- [ ] profile names are portable and safe;
-- [ ] Windows reserved names are rejected;
-- [ ] lazy creation is idempotent;
-- [ ] concurrent initialization converges safely;
-- [ ] `create` is non-destructive and idempotent;
-- [ ] referenced profiles cannot be deleted;
-- [ ] deletion cannot escape the profile root;
-- [ ] failed deletion is never reported as success.
+- [x] profile names are portable and safe;
+- [x] Windows reserved names are rejected;
+- [x] lazy creation is idempotent;
+- [x] concurrent initialization converges safely;
+- [x] `create` is non-destructive and idempotent;
+- [x] referenced profiles cannot be deleted;
+- [x] deletion cannot escape the profile root;
+- [x] failed deletion is never reported as success.
 
 ### Repository
 
-- [ ] canonical roots are stored;
-- [ ] symlink paths resolve correctly;
-- [ ] nested repositories are handled;
-- [ ] submodules are independent repositories;
-- [ ] worktrees are handled correctly;
-- [ ] applicable mapping selection is deterministic;
-- [ ] orphan mappings are detectable;
-- [ ] no automatic pruning occurs.
+- [x] canonical roots are stored;
+- [x] symlink paths resolve correctly;
+- [x] nested repositories are handled;
+- [x] submodules are independent repositories;
+- [x] worktrees are handled correctly;
+- [x] applicable mapping selection is deterministic;
+- [x] orphan mappings are detectable;
+- [x] no automatic pruning occurs.
 
 ### Configuration
 
-- [ ] invalid configuration is never silently replaced;
-- [ ] writes use exclusive synchronization;
-- [ ] read-modify-write reloads current state under lock;
-- [ ] temporary files are on the same filesystem as the target;
-- [ ] replacement is atomic where guaranteed;
-- [ ] failed replacement preserves the previous valid file;
-- [ ] readers never intentionally observe partial TOML.
+- [x] invalid configuration is never silently replaced;
+- [x] writes use exclusive synchronization;
+- [x] read-modify-write reloads current state under lock;
+- [x] temporary files are on the same filesystem as the target;
+- [x] replacement is atomic where guaranteed;
+- [x] failed replacement preserves the previous valid file;
+- [x] readers never intentionally observe partial TOML.
 
 ### Adapters
 
-- [ ] all 12 adapters have evidence;
-- [ ] mechanisms are documented;
-- [ ] capabilities are separate from support level;
-- [ ] credential claims are scoped;
-- [ ] conflict rules are adapter-owned;
-- [ ] environment overrides are adapter-owned;
-- [ ] detection is non-interactive;
-- [ ] doctor exposes important caveats;
-- [ ] mechanism changes are diagnosable.
+- [x] all 12 adapters have evidence;
+- [x] mechanisms are documented;
+- [x] capabilities are separate from support level;
+- [x] credential claims are scoped;
+- [x] conflict rules are adapter-owned;
+- [x] environment overrides are adapter-owned;
+- [x] detection is non-interactive;
+- [x] doctor exposes important caveats;
+- [x] mechanism changes are diagnosable.
 
 ### Process
 
-- [ ] Unix uses process replacement where supported;
-- [ ] Windows launches directly;
-- [ ] stdin/stdout/stderr are inherited;
-- [ ] child exit status is preserved;
-- [ ] Windows control-event behavior is tested;
-- [ ] no shell mediation is used;
-- [ ] no unintended child orphaning occurs.
+- [x] Unix uses process replacement where supported;
+- [x] Windows launches directly;
+- [x] stdin/stdout/stderr are inherited;
+- [x] child exit status is preserved;
+- [x] Windows control-event behavior is tested;
+- [x] no shell mediation is used;
+- [x] no unintended child orphaning occurs.
 
 ### Security
 
-- [ ] no credential copying;
-- [ ] no token extraction;
-- [ ] no secret logging;
-- [ ] no credential manager;
-- [ ] no telemetry;
-- [ ] no hidden network activity;
-- [ ] no automatic repository-controlled profile selection.
+- [x] no credential copying;
+- [x] no token extraction;
+- [x] no secret logging;
+- [x] no credential manager;
+- [x] no telemetry;
+- [x] no hidden network activity;
+- [x] no automatic repository-controlled profile selection.
 
 ### CI
 
@@ -1502,6 +1504,8 @@ Windows
 ```
 
 with fake-agent contract tests and the complete cross-platform suite.
+
+Audit note (2026-10-23): each box was checked against the code and a named test. Boxes about Windows behavior (control events, direct launch, child orphaning, junction refusal on delete) are verified by reading and by the Windows CI leg only. The mechanism-change box is satisfied by the declared mechanism id in `doctor` output; per-profile mechanism snapshots are not part of the profile model (section 28).
 
 ---
 
