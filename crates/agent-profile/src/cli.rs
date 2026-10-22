@@ -2208,7 +2208,15 @@ mod tests {
             .split_once("```")
             .expect("the text block is closed")
             .0;
-        for line in COMMANDS_HELP.lines().filter(|line| line.starts_with("  agent-profile ")) {
+        let lines: Vec<&str> =
+            COMMANDS_HELP.lines().filter(|line| line.starts_with("  agent-profile ")).collect();
+        assert!(
+            lines.len() >= CommandWord::ALL.len(),
+            "COMMANDS_HELP lists {} command lines for {} commands; the filter matched too little",
+            lines.len(),
+            CommandWord::ALL.len()
+        );
+        for line in lines {
             let wanted = line.trim_start();
             assert!(
                 block.lines().any(|candidate| candidate == wanted),
