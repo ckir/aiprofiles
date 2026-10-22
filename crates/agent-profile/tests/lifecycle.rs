@@ -560,3 +560,21 @@ fn path_traversal_names_are_refused_by_create_and_delete_outside_the_profiles_ro
     }
     assert!(listing(root.path()) == before, "a traversal name changed the application root");
 }
+
+/// A profile directory is private (`0700`) whatever the umask, and `create` leaves an existing directory's
+/// mode alone (ROADMAP: "Profile directories are created with the process's default permissions").
+#[cfg(unix)]
+#[test]
+fn create_makes_the_profile_directory_private_and_never_loosens_or_tightens_an_existing_one() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+    let root = Root::empty();
+    created(&root, "fake", "work");
+    assert_eq!(mode(&root.profile_dir("work")), 0o700);
+
+    let other = root.profile_dir("other");
+    fs::create_dir_all(&other).unwrap();
+    fs::set_permissions(&other, fs::Permissions::from_mode(0o755)).unwrap();
+    created(&root, "fake", "other");
+    assert_eq!(mode(&other), 0o755);
+}

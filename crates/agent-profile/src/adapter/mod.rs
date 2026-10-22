@@ -291,7 +291,7 @@ pub fn ensure_paths(paths: &[ProfilePath]) -> Result<()> {
         let error = |source: io::Error| Error::ProfileDir { path: entry.path.clone(), source };
         match entry.kind {
             PathKind::Dir => {
-                fs::create_dir_all(&entry.path).map_err(error)?;
+                create_private_dir_all(&entry.path).map_err(error)?;
                 if !fs::metadata(&entry.path).map_err(error)?.is_dir() {
                     return Err(error(io::Error::other("the path exists but is not a directory")));
                 }
@@ -304,6 +304,16 @@ pub fn ensure_paths(paths: &[ProfilePath]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `create_dir_all`, but every directory it creates is `0700` on Unix, whatever the umask: a profile can hold
+/// credentials, so other local users should not be able to list it. A directory that already exists keeps its mode.
+fn create_private_dir_all(path: &Path) -> io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(path)
 }
 
 fn write_new_file(path: &Path, contents: &[u8]) -> Result<()> {
