@@ -46,9 +46,34 @@ wildcards = "allow"
 highlight = "all"
 allow = []
 deny = [
-    # V3 spec §36: agent-profile makes no hidden network requests and sends no telemetry.
-    # A TLS stack appearing in the graph means something pulled in more than we intended.
-    { name = "openssl-sys", reason = "agent-profile does no networking (V3 §36); prefer rustls if TLS is ever needed" },
+    # V3 spec §36/§37: agent-profile makes no hidden network requests and sends no telemetry. These are the
+    # socket, HTTP and TLS choke points: a dependency that pulls one in is adding networking we did not choose.
+    # A ban list is partial (an unlisted client passes, and `std::net` needs no crate): `clippy.toml` bans the
+    # `std::net` socket types for our own code. If a crate here is ever legitimately needed, that is a
+    # specification question first (§36), not a quiet edit of this list.
+    { name = "socket2", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "mio", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "tokio", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "http", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "httparse", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "h2", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "hyper", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "reqwest", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "ureq", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "minreq", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "attohttpc", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "isahc", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "surf", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "openssl-sys", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "openssl", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "rustls", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "rustls-pki-types", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "webpki", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "native-tls", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "schannel", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "security-framework", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "curl-sys", reason = "agent-profile does no networking (V3 §36)" },
+    { name = "curl", reason = "agent-profile does no networking (V3 §36)" },
 ]
 skip = []
 skip-tree = []

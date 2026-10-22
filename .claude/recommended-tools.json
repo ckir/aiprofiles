@@ -28,12 +28,12 @@
   },
   {
     "name": "cargo-deny",
-    "why": "Advisory, licence, ban and source auditing across the dependency graph. Configured by deny.toml, which pins the allow-listed licences, bans openssl-sys (V3 spec §36: no hidden network activity) and lists the per-platform target triples.",
+    "why": "Advisory, licence, ban and source auditing across the dependency graph. Configured by deny.toml, which pins the allow-listed licences, bans the socket, HTTP and TLS crates (V3 spec §36: no hidden network activity) and lists the per-platform target triples.",
     "install": "cargo binstall -y cargo-deny  (any platform)",
     "in_path": "cargo-deny",
-    "config": "`deny.toml` (licence allow-list, `openssl-sys` ban per V3 §36, 7 target triples)",
-    "just": "`deny`",
-    "gates": "CI Cargo deny"
+    "config": "`deny.toml` (licence allow-list, socket/HTTP/TLS crate bans per V3 §36, 7 target triples); `clippy.toml` bans the `std::net` socket types",
+    "just": "`deny` (full), `deny-offline` (bans, licences, sources; part of `check`)",
+    "gates": "`just check` (offline subset); CI Cargo deny"
   },
   {
     "name": "typos",
