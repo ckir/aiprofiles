@@ -16,7 +16,7 @@ This table is generated from `.claude/recommended-tools.json` by `scripts/gen-to
 | `cargo-nextest` | — | `test`, `test-verbose` (`cargo nextest run --workspace --no-tests=pass` + `cargo test --doc --workspace`) | `just check`; CI Test job on ubuntu, macos, windows |
 | `just` | `justfile` | — | everything — local gate, pre-push hook and CI all route through the recipes it defines |
 | `lefthook` | `lefthook.yml` (pre-push: fmt-check, clippy, typos in parallel; no pre-commit) | `hooks` | local pre-push |
-| `cargo-deny` | `deny.toml` (licence allow-list, socket/HTTP/TLS crate bans per V3 §36, 7 target triples); `clippy.toml` bans the `std::net` socket types | `deny` (full), `deny-offline` (bans, licences, sources; part of `check`) | CI Cargo deny |
+| `cargo-deny` | `deny.toml` (licence allow-list, socket/HTTP/TLS crate bans per V3 §36, 7 target triples); `clippy.toml` bans the `std::net` socket types | `deny` (full), `deny-offline` (bans, licences, sources; part of `check`) | `just check` (offline subset); CI Cargo deny |
 | `typos` | `_typos.toml` (excludes the V3 spec) | `typos` | `just check`, pre-push, CI Typos |
 | `bacon` | `bacon.toml` (default job `check-all`) | `watch` | local |
 | `cargo-mutants` | — | `mutants` (`--package agent-profile`) | on demand |
