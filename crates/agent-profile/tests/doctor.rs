@@ -589,3 +589,73 @@ fn deleted_working_directory_falls_back_to_dot() {
     assert_eq!(code(&output), expected, "{}", stdout(&output));
     assert_eq!(records(&doc, "repository").len(), 1, "{}", stdout(&output));
 }
+
+#[test]
+fn a_real_health_failure_exits_5_with_a_failing_summary_in_both_forms() {
+    let root = Root::empty();
+    let empty_path = tempfile::tempdir().unwrap();
+    let text =
+        command_with_path(&root, &["fake", "doctor", "work"], empty_path.path()).output().unwrap();
+    assert_eq!(code(&text), 5, "{}{}", stdout(&text), stderr(&text));
+    assert_eq!(stderr(&text), "");
+    let shown = stdout(&text);
+    assert!(shown.lines().any(|line| line.starts_with("FAIL ")), "{shown}");
+    assert!(shown.trim_end().ends_with("doctor: 1 failed, 0 warnings"), "{shown}");
+
+    let json = command_with_path(&root, &["fake", "doctor", "work", "--json"], empty_path.path())
+        .output()
+        .unwrap();
+    assert_eq!(code(&json), 5, "{}{}", stdout(&json), stderr(&json));
+    assert_eq!(stderr(&json), "");
+    let doc = json_of(&json);
+    assert_eq!(doc["result"], "fail");
+    assert_eq!(doc["counts"]["fail"], 1, "{doc}");
+    let failing: Vec<&str> = doc["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|check| check["status"] == "fail")
+        .map(|check| check["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(failing, ["executable"]);
+}
+
+#[test]
+fn claude_doctor_prints_the_caveats_for_its_non_supported_capabilities() {
+    let root = Root::empty();
+    root.write_config(&format!(
+        "[agents.claude]\nexecutable = {:?}\n",
+        env!("CARGO_BIN_EXE_fake-agent")
+    ));
+    let text = run(&root, &["claude", "doctor", "work"]);
+    assert_eq!(code(&text), 0, "{}{}", stdout(&text), stderr(&text));
+    let shown = stdout(&text);
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.starts_with("INFO  [claude] credentials isolation is conditional: ")),
+        "{shown}"
+    );
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.starts_with("INFO  [claude] state isolation is not guaranteed: ")),
+        "{shown}"
+    );
+
+    let json = run(&root, &["claude", "doctor", "work", "--json"]);
+    let doc = json_of(&json);
+    let capabilities = records(&doc, "capability");
+    let message = |subject: &str| -> &str {
+        capabilities
+            .iter()
+            .find(|check| check["subject"] == subject)
+            .unwrap_or_else(|| panic!("no {subject} capability record: {capabilities:?}"))["message"]
+            .as_str()
+            .unwrap()
+    };
+    assert!(message("credentials").starts_with("credentials isolation is conditional: "));
+    assert!(message("state").starts_with("state isolation is not guaranteed: "));
+    // `Supported` capabilities are not caveats.
+    assert!(capabilities.iter().all(|check| check["subject"] != "config"), "{capabilities:?}");
+}

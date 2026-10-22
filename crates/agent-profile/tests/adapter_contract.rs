@@ -427,6 +427,26 @@ fn is_iso_date(text: &str) -> bool {
         })
 }
 
+/// No adapter may claim `Supported` credential isolation yet: the claim needs off-CI evidence, which no adapter has.
+#[test]
+fn no_adapter_claims_supported_credential_isolation() {
+    for adapter in adapter::registry() {
+        let metadata = adapter.metadata();
+        let id = metadata.id;
+        let claim = metadata
+            .capabilities
+            .iter()
+            .find(|claim| claim.capability == Capability::CredentialIsolation)
+            .unwrap_or_else(|| panic!("{id}: no credential isolation claim"));
+        assert_ne!(
+            claim.state,
+            CapabilityState::Supported,
+            "{id}: a Supported credential claim needs an off-CI `{id}-credentials.md` transcript; \
+             update this test together with that evidence"
+        );
+    }
+}
+
 #[test]
 fn metadata_invariants() {
     let registry = adapter::registry();
