@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6](https://github.com/ckir/aiprofiles/compare/v0.0.5...v0.0.6) - 2026-10-22
+
+### Added
+
+- shell completions, README refresh, action pinning and clippy matrix (SP5d) ([#50](https://github.com/ckir/aiprofiles/pull/50))
+- *(cli)* add the doctor health check ([#49](https://github.com/ckir/aiprofiles/pull/49))
+- *(cli)* add --json output and the repositories report ([#48](https://github.com/ckir/aiprofiles/pull/48))
+- *(lifecycle)* add profile lifecycle commands (create, delete, profiles, list, agents) ([#46](https://github.com/ckir/aiprofiles/pull/46))
+
 ## [0.0.5](https://github.com/ckir/aiprofiles/compare/v0.0.4...v0.0.5) - 2026-10-18
 
 ### Added
