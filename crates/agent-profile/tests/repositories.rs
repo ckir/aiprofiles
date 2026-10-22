@@ -359,3 +359,57 @@ fn repositories_json_members_are_pinned_on_a_null_bearing_entry() {
     assert_eq!(entry.get("profile"), Some(&Value::Null));
     assert_eq!(entry["agents"], json!({}));
 }
+
+#[test]
+fn an_orphaned_mapping_is_reported_missing_and_never_rewritten_by_reads() {
+    let root = Root::empty();
+    let (_dir, base) = scratch();
+    let acme = base.join("acme");
+    let other = base.join("other");
+    git_dir(&acme);
+    git_dir(&other);
+    configure(&root, "");
+    let mut link = root.agent_profile(["fake", "link", "work"]);
+    link.current_dir(&acme);
+    let link = link.output().unwrap();
+    assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
+    fs::remove_dir_all(&acme).unwrap();
+
+    let config = root.path().join("config.toml");
+    let before = fs::read(&config).unwrap();
+    let header = format!("[repositories.{}]", key(acme.to_str().unwrap()));
+    assert!(String::from_utf8_lossy(&before).contains(&header));
+    // `current` and `resolve` find no profile for the other repository and exit 4; the point is the config bytes.
+    for (cwd, args) in [
+        (&base, &["repositories"][..]),
+        (&base, &["repositories", "--json"]),
+        (&base, &["status"]),
+        (&base, &["fake", "status"]),
+        (&base, &["fake", "resolve"]),
+        (&base, &["fake", "current"]),
+        (&other, &["repositories"]),
+        (&other, &["status", "--json"]),
+        (&other, &["fake", "resolve", "--json"]),
+        (&other, &["fake", "current"]),
+    ] {
+        let mut command = root.agent_profile(args);
+        command.current_dir(cwd);
+        let output = command.output().unwrap();
+        let shown = format!("{args:?}: {}{}", stdout(&output), stderr(&output));
+        assert!(matches!(output.status.code(), Some(0 | 4)), "{shown}");
+        assert!(fs::read(&config).unwrap() == before, "config.toml changed after {shown}");
+        if args[0] == "repositories" {
+            assert_eq!(output.status.code(), Some(0), "{shown}");
+        }
+    }
+
+    let output = run(&root, &["repositories"]);
+    assert!(
+        stdout(&output)
+            .contains(&format!("repository:   {}\nstate:        missing\n", acme.display())),
+        "{}",
+        stdout(&output)
+    );
+    let output = run(&root, &["repositories", "--json"]);
+    assert!(stdout(&output).contains("\"missing\""), "{}", stdout(&output));
+}

@@ -515,3 +515,48 @@ fn agents_reports_a_configured_shell_script_as_unsupported() {
         "{text}"
     );
 }
+
+/// Every path below `base` with file contents, sorted, for the untouched-outside-the-profiles-root checks.
+fn listing(base: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    let mut found = Vec::new();
+    let mut pending = vec![base.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(path.clone());
+                found.push((path, None));
+            } else {
+                found.push((path.clone(), fs::read(&path).ok()));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn path_traversal_names_are_refused_by_create_and_delete_outside_the_profiles_root() {
+    let root = Root::new();
+    created(&root, "fake", "keep");
+    // Siblings of `profiles/` inside the app root, laid out so each traversal name would hit real data:
+    // `../x` and `a/b` resolve below the root, and `..` resolves to the root itself.
+    fs::write(root.path().join("sentinel.txt"), "sentinel").unwrap();
+    fs::create_dir_all(root.path().join("x").join("fake")).unwrap();
+    fs::write(root.path().join("x").join("fake").join("keep"), "x").unwrap();
+    fs::create_dir_all(root.path().join("profiles").join("a")).unwrap();
+    let before = listing(root.path());
+    for name in ["../x", "a/b", ".."] {
+        for verb in [&["fake", "delete", name, "--yes"][..], &["fake", "create", name]] {
+            let out = root.agent_profile(verb).output().unwrap();
+            assert_eq!(out.status.code(), Some(4), "{verb:?}: {}{}", stdout(&out), stderr(&out));
+            assert!(
+                stderr(&out).contains(&format!("invalid profile name {name:?}")),
+                "{verb:?}: {}",
+                stderr(&out)
+            );
+            assert_eq!(stdout(&out), "", "{verb:?}");
+        }
+    }
+    assert!(listing(root.path()) == before, "a traversal name changed the application root");
+}
