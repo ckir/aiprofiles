@@ -1,4 +1,10 @@
 #!/bin/sh
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Fails when a COMMENT in live shell, Rust or workflow source cites another file by LINE NUMBER -- e.g.
 # `sandbox/run.sh:192` or `aider.rs:17-18` (line-cite-ok -- these two are this gate's own illustrations of
 # the defect, not claims about those files). A line number rots the moment EITHER file is edited, including

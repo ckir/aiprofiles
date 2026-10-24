@@ -1,4 +1,10 @@
 #!/bin/sh
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Generates the "## Tools" table in docs/dev-tooling.md from .claude/recommended-tools.json, so the
 # two lists (the doc a human reads, the JSON a hook reads) cannot drift apart the way they already had:
 # `just` had no doc row despite gating everything, and Sandboxie-Plus — the sandbox that enforces

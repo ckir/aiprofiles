@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Shared steps for probe scripts. Sourced by sandbox/probes/<agent>.sh inside the sandbox container, from a
 # copy of the checkout; results are written to container-internal directories that the measured party
 # cannot reach, and sandbox/run.sh lifts them into target/sandbox/ once the container has stopped.

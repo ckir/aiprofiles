@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Cursor Agent CLI: `CURSOR_CONFIG_DIR` per profile (SP4 design §8, table row; probe outcome 1).
 
 use std::path::PathBuf;

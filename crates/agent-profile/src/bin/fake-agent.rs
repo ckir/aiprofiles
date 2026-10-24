@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Test-only stand-in for a coding agent (SP0 design §3.3, SP1 design §8.1).
 //!
 //! Prints one JSON object `{"argv": [...], "cwd": "...", "env": {...}, "pid": N}` to stdout and exits with

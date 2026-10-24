@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! The shell completion model. The model exists only for `clap_complete::generate`: it never parses an
 //! argument line, and it mirrors the grammar table on `CommandWord` (scope, flags, positionals), so the
 //! generated scripts cannot drift from the hand dispatcher.

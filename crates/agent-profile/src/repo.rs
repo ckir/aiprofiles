@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Repository discovery (spec §13) and canonical repository identity (spec §14). SP3 design §5.
 //!
 //! Discovery never runs Git and never reads Git configuration: it reads the `.git` entry, the existence of

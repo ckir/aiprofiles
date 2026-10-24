@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Windows launcher: a direct child process with console control-event handling and a job object so an
 //! interrupted wrapper leaves no orphan (spec §23.2, §24; design §7.6).
 

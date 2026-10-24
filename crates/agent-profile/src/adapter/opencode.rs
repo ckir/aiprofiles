@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! OpenCode: `OPENCODE_CONFIG_DIR` per profile (SP2 design §8.2).
 
 use std::path::PathBuf;

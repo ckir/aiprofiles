@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Amp probe: `sandbox/run.sh probe amp [version]`.
 #
 # Package @ampcode/cli, NOT @sourcegraph/amp. Both resolve and carry the same version, which looks like a

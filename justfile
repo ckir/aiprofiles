@@ -33,6 +33,10 @@ fmt:
 typos:
     typos
 
+# Every source file carries header.txt (target/ and .clavity/ are generated or scratch output)
+license-check:
+    addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' .
+
 # Dependency advisories, licences, bans and sources
 deny:
     cargo deny check
@@ -82,14 +86,14 @@ tools-doc-check:
 doc-check:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 
-# The local gate: fmt + clippy + typos + shellcheck + line-citations + action-pins + test + the probe harness +
+# The local gate: fmt + clippy + typos + license-check + shellcheck + line-citations + action-pins + test + the probe harness +
 # tools-doc freshness + the docs build
 #
 # It mirrors the REQUIRED CHECKS in ci.yml, and the mirror is the point -- every recipe here exists
 # because CI runs the same command. One caveat it cannot fix: `shellcheck` is whatever version is on the
 # machine, and `ubuntu-latest`'s is older than a current local install. The older one reports SC2317 where
 # the newer reports SC2329, so a file can pass here and fail there; `sandbox/run.sh` carries both codes.
-check: fmt-check clippy typos shellcheck deny-offline line-citations action-pins test probe-tests tools-doc-check doc-check
+check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins test probe-tests tools-doc-check doc-check
 
 # Background watcher
 watch:

@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Cline CLI: `CLINE_DATA_DIR` env var (SP4 design §8.3, §9 outcome 5 — the env var is honoured,
 //! but the measured delta at the watched locations was empty; the agent wrote nothing).
 

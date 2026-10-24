@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Amp CLI: `--settings-file <profile settings.json>` (SP4 design §8.4; §9 outcome 5 — the flag is
 //! accepted, but the agent's own writes went to the default `.local/share/amp` and did not follow it).
 

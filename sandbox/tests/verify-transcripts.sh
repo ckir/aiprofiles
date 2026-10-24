@@ -1,4 +1,10 @@
 #!/bin/sh
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Tests for sandbox/verify-transcripts.sh, the control that makes a committed transcript evidence.
 #
 # Every check below corresponds to a forgery §5.3 names. They matter more than most tests in this

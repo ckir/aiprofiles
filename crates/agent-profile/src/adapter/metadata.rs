@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Declarative adapter metadata: support level, capabilities, evidence, environment declarations, conflicting
 //! options and profile presence (spec §3, §8, §21, §22, §28; SP2 design §4.2).
 

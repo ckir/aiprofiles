@@ -1,4 +1,10 @@
 #!/bin/sh
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Fails when a `uses:` in a workflow is not pinned to a full commit SHA.
 #
 # THE RULE: every `uses:` under .github/workflows/ is `<owner>/<repo>[/<path>]@<40 lower-case hex> # <ref>`.

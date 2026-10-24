@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 name: CI
 
 on:
@@ -38,6 +44,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
+
+  license-headers:
+    # Every source file carries header.txt, the same command `just license-check` runs. addlicense is a
+    # Go tool, so it is built from a pinned module version (Go is pre-installed on ubuntu-latest); the
+    # version matches the one used locally when the headers were applied.
+    name: License headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: go install github.com/google/addlicense@v1.2.0
+      - run: $(go env GOPATH)/bin/addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' .
 
   shellcheck:
     name: Shellcheck

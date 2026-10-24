@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Prints one `<id> <upstream_version>` line per real adapter, in registry order.
 //!
 //! This exists for §5.3 step 1, which requires the verification job to take the agent id and the version
