@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7](https://github.com/ckir/aiprofiles/compare/v0.0.6...v0.0.7) - 2026-10-24
+
+### Added
+
+- *(doctor)* name the mechanism id in the human support line ([#56](https://github.com/ckir/aiprofiles/pull/56))
+
+### Fixed
+
+- *(adapter)* create profile directories with mode 0700 on Unix ([#54](https://github.com/ckir/aiprofiles/pull/54))
+
+### Other
+
+- gate license headers with addlicense ([#59](https://github.com/ckir/aiprofiles/pull/59))
+
+### Tests
+
+- close the Definition-of-Done audit gaps ([#53](https://github.com/ckir/aiprofiles/pull/53))
+
 ## [0.0.6](https://github.com/ckir/aiprofiles/compare/v0.0.5...v0.0.6) - 2026-10-22
 
 ### Added
