@@ -92,23 +92,31 @@ impl ConflictOption {
         self.long.first().expect("a conflict option declares at least one long spelling")
     }
 
-    /// Whether `arg` selects this option. Works on encoded bytes, so non-UTF-8 arguments are scanned too;
-    /// every spelling is ASCII, which makes the byte comparison exact on every platform.
+    /// Whether `arg` selects this option.
     pub fn matches(&self, arg: &OsStr) -> bool {
+        self.matched_spelling(arg).is_some()
+    }
+
+    /// The spelling of this option that `arg` selects, without any value glued to it: `--conf` for
+    /// `--conf=secret`, `-c` for `-csecret`. This is what an error may print, because the rest of the
+    /// argument is the user's value and can be a secret. Works on encoded bytes, so non-UTF-8 arguments are
+    /// scanned too; every spelling is ASCII, which makes the byte comparison exact on every platform.
+    pub fn matched_spelling(&self, arg: &OsStr) -> Option<String> {
         let bytes = arg.as_encoded_bytes();
-        let long = self.long.iter().any(|spelling| {
+        let long = self.long.iter().find(|spelling| {
             let spelling = spelling.as_bytes();
             bytes == spelling
                 || (bytes.len() > spelling.len()
                     && bytes.starts_with(spelling)
                     && bytes[spelling.len()] == b'=')
         });
-        let short = self.short.is_some_and(|letter| {
-            let mut flag = [0u8; 4];
-            let flag = format!("-{}", letter.encode_utf8(&mut flag));
-            bytes.starts_with(flag.as_bytes())
-        });
-        long || short
+        if let Some(spelling) = long {
+            return Some((*spelling).to_owned());
+        }
+        let letter = self.short?;
+        let mut flag = [0u8; 4];
+        let flag = format!("-{}", letter.encode_utf8(&mut flag));
+        bytes.starts_with(flag.as_bytes()).then_some(flag)
     }
 }
 

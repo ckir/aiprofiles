@@ -23,7 +23,7 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       `key=value` or `Name: value` forms without a sensitive name part, or under an option abbreviation without
       the sensitive part, or in an option name whose sensitive part is split by an invalid UTF-8 byte (the rule
       matches the lossy text), and it hides harmless values such as `--map-tokens 1024`.
-- [ ] `ArgumentConflict` echoes the whole matched argument; redact it before any conflict option can carry a secret.
+- [x] `ArgumentConflict` printed the whole matched argument; it now prints only the matched option spelling (`--conf` for `--conf=x`, `-c` for `-cx`), never the value.
 - [ ] The Codex "new profile starts logged out" note keys on the home directory being absent, so a present but
       empty home gives no note.
 - [ ] An agent with no native executable cannot be launched on Windows until its vendor ships one.
