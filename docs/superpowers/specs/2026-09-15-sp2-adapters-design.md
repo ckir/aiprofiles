@@ -295,9 +295,15 @@ ASCII, which makes a byte-prefix comparison exact on all platforms. An opaque ar
 
 - The scan stops at the first `--` among the opaque arguments; later arguments are positional for the agent.
 - The first match fails with `Error::ArgumentConflict { agent: String, option: String, mechanism: &'static str }`
-  (`option` rendered lossily, `mechanism` from `metadata().mechanism_summary`), exit 2:
+  (`option` is the matched spelling from `ConflictOption::matched_spelling`, `mechanism` from
+  `metadata().mechanism_summary`), exit 2:
   `` `--conf` conflicts with how agent-profile selects the aider profile (argument --config <file>); remove it
   from the agent arguments ``.
+- `option` is **the spelling that matched, never the argument**: `--conf=s3cret` prints `--conf` and `-cs3cret`
+  prints `-c`. The text after `=` (or after the short letter) is the user's value and can be a secret, so no
+  error carries it. Earlier revisions of this section had `option` echo the whole argument, rendered
+  lossily; that was narrowed in the `ArgumentConflict` redaction fix, so a spelling here is always ASCII and
+  no lossy conversion is involved.
 
 **Known limits (TODO.md):** values are not parsed, so a value equal to a conflicting spelling (for example
 `--message --config`) is refused; clustered short options (`-vc f`) are not detected.
