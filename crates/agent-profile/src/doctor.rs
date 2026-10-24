@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! `doctor`: the check model and the host and repository checks (SP5c design §4, §5.1, §5.2, §6).
 //!
 //! Every check is read-only. A check that cannot run because one it depends on failed emits exactly one

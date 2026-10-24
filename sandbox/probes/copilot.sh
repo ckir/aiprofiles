@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # GitHub Copilot CLI probe: `sandbox/run.sh probe copilot [version]`.
 #
 # Package @github/copilot (registry-verified 2026-09-16; `bin` is `copilot`), default

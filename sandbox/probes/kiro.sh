@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 # Kiro CLI probe: `sandbox/run.sh probe kiro`.
 #
 # Kiro CLI is the rebrand of Amazon Q Developer CLI and the executable is `kiro-cli`, not `kiro` -- the id

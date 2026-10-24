@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! The debug-only test agent: `FAKE_AGENT_HOME` per profile (SP1 design D1, SP2 design §5.4).
 
 use std::path::PathBuf;

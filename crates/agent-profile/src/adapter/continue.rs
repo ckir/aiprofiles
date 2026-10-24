@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Continue CLI: `--config <profile config.yaml>` (SP4 design §8, table row; §9 outcome 5 — the flag is
 //! real and accepted, but the measured delta at the watched locations was empty).
 

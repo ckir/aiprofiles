@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Repository resolution end to end through the `agent-profile` binary (SP3 design §8.4; spec §34
 //! "Resolution"). Repositories are synthetic `.git` layouts in guarded temp directories, so no test needs `git`
 //! and none discovers this checkout.

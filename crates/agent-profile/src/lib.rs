@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! `agent-profile` — select and launch profiles for multiple coding agents.
 //!
 //! The authoritative design is `agent-profile-implementation-spec-v3.md` at the repository root.

@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! The evidence gates (SP4 design §5), as predicates over `AdapterMetadata`.
 //!
 //! These live in the library rather than in `tests/adapter_contract.rs` for one reason: a gate whose only

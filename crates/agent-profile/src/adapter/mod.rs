@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! Agent adapters: the adapter trait and registry (spec §2, §4, §38), capability and evidence metadata
 //! (spec §3, §28), profile presence (spec §8), lazy initialization (spec §9) and argument conflicts
 //! (spec §21). SP2 design §4-§6.

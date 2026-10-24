@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Costas Kirgoussios
+//
+// This software is licensed under the PolyForm Noncommercial License 1.0.0.
+// You may obtain a copy of the License at:
+// https://polyformproject.org/licenses/noncommercial/1.0.0/
+
 //! CLI grammar: launch syntax, wrapper options and reserved command words (spec §5; SP1 design §4) and the
 //! repository commands (SP3 design §7).
 
