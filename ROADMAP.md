@@ -36,14 +36,6 @@ user does not have. Re-measure if the vendor ships a configuration-directory var
 point it is an ordinary adapter candidate and a specification change, since V3's roster is closed at
 twelve.
 
-**`field()` in `sandbox/verify-transcripts.sh` reads the whole transcript, not the header its comment
-claims.** The comment says "the value of a `label: value` line, from the header only"; the implementation
-takes the first match anywhere in the file. What actually holds agent-authored body text out of a header
-field is the two-space indent the assembler applies — measured: an agent `--version` line spelled
-`version-extracted: 9.9.9` is excluded by that indent and by nothing else. The verifier's safety rests on
-an undocumented coupling to `transcript.sh`. Scope `field()` to the header, or state the coupling where
-both files can see it.
-
 **`dtolnay/rust-toolchain` is pinned to a branch tip, and whether Dependabot bumps it is unverified.** `release-plz.yml` sat at `6bed076` from 2026-09-15 while the `stable` branch moved to `b725eda`; SP5d moved every use to the tip with an explicit `toolchain: stable`. If it stays put again, bump it by hand with `gh api repos/dtolnay/rust-toolchain/git/ref/heads/stable`.
 
 **Mechanism changes are not detected.** `doctor` shows each adapter's declared mechanism id but nothing compares it to an earlier one (spec section 28: `doctor` "may" report a change). Do not store a per-profile snapshot: section 28 makes mechanism ids adapter metadata, not part of the profile model, and a wrapper file would sit inside the agent's own directory. If an adapter ever moves to a `-v2` mechanism, declare the retired mechanism's sentinel path in `AdapterMetadata` so `doctor` can spot old profiles read-only.
