@@ -44,12 +44,6 @@ field is the two-space indent the assembler applies — measured: an agent `--ve
 an undocumented coupling to `transcript.sh`. Scope `field()` to the header, or state the coupling where
 both files can see it.
 
-**The three shell suites leak a temporary directory per fixture.** Measured on the maintainer host:
-16,537 `tmp*` entries in `TEMP` on 2026-09-21 and 22,136 on 2026-09-22, growing by roughly one per
-fixture per run. `transcript.sh` and `verify-transcripts.sh` call `mktemp` and contain no `trap` and no
-`rm -rf` at all; `probe-harness.sh` cleans some and still leaks. A `trap`-based cleanup in each is the
-fix.
-
 **Both `probe-tests` suites exceed a two-minute foreground budget, and only one of them is known for
 it.** `sandbox/tests/verify-transcripts.sh` builds a git repository per fixture and commits into it, so
 its cost scales with the fixture count exactly as `probe-harness.sh` does — yet only `probe-harness.sh`
