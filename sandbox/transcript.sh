@@ -162,6 +162,11 @@ out="$outdir/$id-$version.md"
 #
 # The caller supplies the empty text, because what an empty file MEANS is the caller's knowledge: for a
 # delta it is the isolation finding, for a captured stream it is the agent having printed nothing.
+#
+# THE TWO-SPACE INDENT BELOW IS LOAD-BEARING. `field()` in verify-transcripts.sh reads `probe-exit:` and
+# `version-extracted:` as the first unindented `label:` line in the file, and those two are written AFTER
+# the agent-authored blocks this function emits. Indented, an agent line spelled `version-extracted: 9.9.9`
+# cannot match; unindented, it would be read before the harness's own line. Keep the two files in step.
 section() {
     printf '%s:\n' "$1"
     if [ -s "$2" ]; then

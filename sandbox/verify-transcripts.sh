@@ -61,7 +61,17 @@ if [ ! -s "$changed" ]; then
     exit 0
 fi
 
-# field <label> <file>: the value of a `label: value` line, from the header only.
+# field <label> <file>: the value of the FIRST unindented `label: value` line anywhere in the file.
+#
+# Not "the header only", which this comment used to claim: `custody`, `run-id` and `harness-commit` sit
+# above the `---`, but `probe-exit` and `version-extracted` are written AFTER the agent-authored `version:`,
+# `help:` and `strings:` blocks (sandbox/transcript.sh), so scoping to the header would lose them.
+#
+# What keeps agent text out of these fields is COUPLED to transcript.sh: its `section()` indents every
+# body line by two spaces, and the `^label:` anchor below matches only an unindented line. Measured: an
+# agent `--version` line spelled `version-extracted: 9.9.9` is excluded by that indent and by nothing
+# else, and `sandbox/tests/transcript.sh` ("agent-authored text cannot supply a header field") pins it.
+# Change the indent in one file and the other must change with it.
 field() {
     sed -n "s/^$1: //p" "$2" | head -n1
 }
