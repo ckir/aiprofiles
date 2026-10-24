@@ -166,11 +166,11 @@ pub fn lookup(id: &str) -> Option<&'static dyn Adapter> {
 /// *additional* options proven to control the same mechanism.
 pub fn check_conflicts(metadata: &AdapterMetadata, args: &[OsString]) -> Result<()> {
     for arg in args.iter().take_while(|arg| arg.as_os_str() != "--") {
-        let options = metadata.conflicts.iter().chain(metadata.mechanism.conflict_option());
-        if options.into_iter().any(|option| option.matches(arg)) {
+        let mut options = metadata.conflicts.iter().chain(metadata.mechanism.conflict_option());
+        if let Some(option) = options.find_map(|option| option.matched_spelling(arg)) {
             return Err(Error::ArgumentConflict {
                 agent: metadata.id.to_owned(),
-                option: arg.to_string_lossy().into_owned(),
+                option,
                 mechanism: metadata.mechanism.to_string(),
             });
         }
@@ -452,10 +452,23 @@ mod tests {
         let args = |items: &[&str]| items.iter().map(OsString::from).collect::<Vec<_>>();
         match check_conflicts(metadata, &args(&["x", "--conf=f"])).unwrap_err() {
             Error::ArgumentConflict { agent, option, mechanism } => {
-                assert_eq!((agent.as_str(), option.as_str()), ("aider", "--conf=f"));
+                assert_eq!((agent.as_str(), option.as_str()), ("aider", "--conf"));
                 assert_eq!(mechanism, "argument --config <file>");
             }
             other => panic!("{other:?}"),
+        }
+        // The error names the option, never the value glued to it: `--conf=<secret>` and `-c<secret>` print
+        // only the spelling that matched.
+        for (given, printed) in [
+            ("--config=s3cret", "--config"),
+            ("--con=s3cret", "--con"),
+            ("-cs3cret", "-c"),
+            ("-c", "-c"),
+        ] {
+            match check_conflicts(metadata, &args(&["x", given])).unwrap_err() {
+                Error::ArgumentConflict { option, .. } => assert_eq!(option, printed, "{given}"),
+                other => panic!("{other:?}"),
+            }
         }
         assert!(check_conflicts(metadata, &args(&["x", "--", "--config", "f"])).is_ok());
         assert!(check_conflicts(Codex.metadata(), &args(&["-p", "personal"])).is_ok());
