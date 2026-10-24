@@ -13,6 +13,18 @@
 
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
+
+# Every temporary file and directory this suite makes lives under one scratch directory, removed on exit
+# and on a signal. `mktemp` honours TMPDIR, so the fixtures, the probes they spawn and the scripts those
+# probes write all land under it without each call site needing its own cleanup (ROADMAP: the shell suites
+# used to leak a directory per fixture per run).
+suite_tmp=$(mktemp -d)
+TMPDIR=$suite_tmp
+export TMPDIR
+trap 'rm -rf "$suite_tmp"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 failures=0
 
 check() {
