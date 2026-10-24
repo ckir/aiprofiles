@@ -44,13 +44,6 @@ field is the two-space indent the assembler applies — measured: an agent `--ve
 an undocumented coupling to `transcript.sh`. Scope `field()` to the header, or state the coupling where
 both files can see it.
 
-**Both `probe-tests` suites exceed a two-minute foreground budget, and only one of them is known for
-it.** `sandbox/tests/verify-transcripts.sh` builds a git repository per fixture and commits into it, so
-its cost scales with the fixture count exactly as `probe-harness.sh` does — yet only `probe-harness.sh`
-is treated as the slow one, and a contributor who runs the other in the foreground loses the run to a
-timeout. The mechanism is verified by reading; the wall-clock figure is not measured. A comment on the
-`probe-tests` recipe naming both would close it.
-
 **`dtolnay/rust-toolchain` is pinned to a branch tip, and whether Dependabot bumps it is unverified.** `release-plz.yml` sat at `6bed076` from 2026-09-15 while the `stable` branch moved to `b725eda`; SP5d moved every use to the tip with an explicit `toolchain: stable`. If it stays put again, bump it by hand with `gh api repos/dtolnay/rust-toolchain/git/ref/heads/stable`.
 
 **Mechanism changes are not detected.** `doctor` shows each adapter's declared mechanism id but nothing compares it to an earlier one (spec section 28: `doctor` "may" report a change). Do not store a per-profile snapshot: section 28 makes mechanism ids adapter metadata, not part of the profile model, and a wrapper file would sit inside the agent's own directory. If an adapter ever moves to a `-v2` mechanism, declare the retired mechanism's sentinel path in `AdapterMetadata` so `doctor` can spot old profiles read-only.

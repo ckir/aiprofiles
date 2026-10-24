@@ -66,6 +66,11 @@ action-pins:
 
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
+#
+# SLOW: both `probe-harness.sh` and `verify-transcripts.sh`. The second builds a git repository per
+# fixture and commits into it, so its cost scales with the fixture count the way the first's does. Run
+# either in the foreground and a two-minute tool budget can cut the run off; background it instead. The
+# mechanism is read from the scripts; no wall-clock figure is stated here because none has been measured.
 probe-tests:
     sh sandbox/tests/probe-harness.sh
     sh sandbox/tests/transcript.sh
