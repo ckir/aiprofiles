@@ -33,6 +33,10 @@ fmt:
 typos:
     typos
 
+# Compile at the declared minimum Rust version (`rust-version` in Cargo.toml); needs `rustup toolchain install 1.98`
+msrv:
+    cargo +1.98 check --workspace --all-targets --locked
+
 # Every source file carries header.txt (target/ and .clavity/ are generated or scratch output)
 license-check:
     addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' .

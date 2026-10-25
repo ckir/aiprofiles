@@ -121,8 +121,8 @@ code — a metadata edit plus an `off-ci` transcript:
 
 - [ ] Enable GitHub private vulnerability reporting (see [SECURITY.md](SECURITY.md)). Branch
       protection is applied during SP0 (design §4.1).
-- [ ] The MSRV (1.98) is not checked in CI; verify by hand with
-      `cargo +1.98 check --workspace --all-targets`. Decide whether to add a CI job.
+- [x] The MSRV (1.98) is checked in CI by the `MSRV` job (`cargo check --workspace --all-targets --locked` on 1.98); `just msrv`
+      runs the same command locally. It is a check, not a test run: tests still run on `stable` only.
 - [ ] `cargo install --path crates/agent-profile` also installs the `fake-agent` and `console-driver` test
       binaries. Not reachable from any gate or release (release.yml builds `--bin agent-profile`); revisit if
       source installs are ever documented.

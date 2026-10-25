@@ -127,6 +127,21 @@ jobs:
       - run: sh sandbox/tests/resolve-agents.sh
       - run: sh sandbox/tests/verify-transcripts.sh
 
+  msrv:
+    # `rust-version` in Cargo.toml is a promise, and nothing but this job checks it: every other job runs
+    # `stable`, which compiles code the declared minimum cannot. Same command as `just msrv`. Raising
+    # `rust-version` means changing the toolchain below with it; cargo refuses a toolchain older than the
+    # declared version ("requires rustc 1.98"), so the two cannot drift silently.
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.98"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo check --workspace --all-targets --locked
+
   clippy-matrix:
     # A warning that exists only under `cfg(windows)` or `cfg(target_os = "macos")` compiled cleanly on the
     # Linux-only job this replaces and was never linted (ROADMAP "Clippy runs on Linux only", closed here).
