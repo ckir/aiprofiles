@@ -317,6 +317,36 @@ fn link_and_unlink_with_and_without_repo() {
 }
 
 #[test]
+fn a_repository_unlink_names_the_agent_mappings_it_leaves_behind() {
+    let root = Root::new();
+    let (_dir, base) = scratch();
+    let repository = base.join("acme");
+    git_dir(&repository);
+    let shown = repository.display();
+
+    for (args, expected) in [
+        (&["link", "work"][..], format!("linked {shown} -> work\n")),
+        (
+            &["fake", "link", "personal"],
+            format!(
+                "linked fake: {shown} -> personal\nnote:         profile personal has not been launched with fake yet\n"
+            ),
+        ),
+        (
+            &["unlink"],
+            format!(
+                "unlinked {shown} (was work)\nnote:         agent mappings remain: fake=personal; remove them with agent-profile <agent> unlink\n"
+            ),
+        ),
+        (&["fake", "current"], "personal\n".to_owned()),
+    ] {
+        let output = run(&root, &repository, args);
+        assert_eq!(output.status.code(), Some(0), "{args:?}: {}", stderr(&output));
+        assert_eq!(stdout(&output), expected, "{args:?}");
+    }
+}
+
+#[test]
 fn link_and_unlink_outside_a_repository_exit_4() {
     let root = Root::new();
     let (_dir, base) = scratch();
