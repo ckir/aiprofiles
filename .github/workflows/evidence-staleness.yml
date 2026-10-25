@@ -1,0 +1,32 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+name: Evidence staleness
+
+# Weekly: fails when a committed evidence transcript is for an older upstream version than the vendor now
+# ships (spec V3 section 2, "Evidence must be reverified ... before release"). It only compares versions; it
+# installs no agent and runs no probe. A red run means "dispatch the Sandbox workflow for these agents and
+# commit the new transcripts"; the failure notification is the whole alert, so no issue is opened and no
+# token beyond `contents: read` is held. See scripts/check-evidence-staleness.sh for how each latest version
+# is found and why amp is reported but never fails.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staleness:
+    name: Evidence staleness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # npm, curl and jq are pre-installed on ubuntu-latest, so there is nothing to pin and nothing to install.
+      - run: sh scripts/check-evidence-staleness.sh

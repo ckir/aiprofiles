@@ -97,6 +97,16 @@ jobs:
       - run: sh scripts/check-action-pins.sh
       - run: sh scripts/tests/check-action-pins.sh
 
+  evidence-staleness-tests:
+    # The offline tests of the weekly staleness check (evidence-staleness.yml), the same command
+    # `just evidence-staleness-tests` runs. They read no network: the script's EVIDENCE_LATEST_DIR hook
+    # supplies the "latest" versions.
+    name: Evidence staleness tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sh scripts/tests/check-evidence-staleness.sh
+
   probe-tests:
     # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution and the
     # privilege-split checks, the same four suites `just probe-tests` runs. No container and no agent
