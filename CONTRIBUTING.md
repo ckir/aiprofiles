@@ -250,7 +250,9 @@ Releases are automated with [release-plz](https://release-plz.dev) (`release-plz
 3. The merge tags `vX.Y.Z`, creates a GitHub release, and builds and uploads the binaries for Linux (x86_64,
    aarch64), macOS (x86_64, aarch64) and Windows (x86_64).
 
-Until V3 v0.1 is complete (SP5), versions stay `0.0.x` and every release is marked as a pre-release.
+V3 v0.1 is complete (SP5), so releases from `v0.1.0` on are ordinary GitHub releases, not pre-releases. The
+`0.0.x` -> `0.1.0` step was made by hand in `[workspace.package] version`, because release-plz only ever bumps
+a `0.0.x` version by one patch; the same hand edit is how a later `0.x` -> `1.0.0` or `0.1` -> `0.2` step is made.
 
 Recovery, all from the GitHub web UI:
 - A binary is missing from a release: **Actions → Release binaries → Run workflow** with the release tag.

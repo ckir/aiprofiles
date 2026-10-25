@@ -20,8 +20,12 @@ release_always = false
 semver_check = false
 git_tag_name = "v{{ version }}"
 git_release_name = "v{{ version }}"
-# Every release is a GitHub pre-release until V3 v0.1 is complete (SP5); versions stay 0.0.x until then.
-git_release_type = "pre"
+# V3 v0.1 is complete (SP5, spec §37 ticked), so releases are no longer marked as pre-releases. The
+# `0.0.x` -> `0.1.0` step is made by hand in `[workspace.package] version` in Cargo.toml, never by a
+# commit: release-plz bumps a `0.0.x` version by one patch whatever the commits say, and leaves a
+# version that has no tag yet as it is, writing only its changelog (release-plz `next_version` and
+# `Diff::should_update_version`).
+git_release_type = "prod"
 # Only `feat`/`fix`/`perf`/`refactor` commits that change files under crates/agent-profile open a release PR;
 # release-plz ignores commits that touch nothing in the package directory (Cargo.lock, CI, root docs).
 release_commits = "^(feat|fix|perf|refactor)(\\(.*\\))?!?:"
