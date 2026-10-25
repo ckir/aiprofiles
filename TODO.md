@@ -101,14 +101,13 @@ code — a metadata edit plus an `off-ci` transcript:
 - [ ] A transcript cannot be introduced or modified after its artifact expires, so a probe run left
       uncommitted past the retention window must be re-run. The window is a workflow setting that can be
       shortened without noticing what depends on it.
-- [ ] **The `Evidence` job only gates a merge if someone makes it a required status check.** That is a
-      branch-protection setting, not a file in this repository, so nothing here can assert it. Until it is
-      set, the byte-binding in the design's §5.3 is advice: a pull request can go green with the job red.
-- [ ] **`custody: off-ci` currently exempts a transcript from every mechanical check.** The clause that
-      confines it — Gate A requiring `custody: ci` for any transcript backing a config or state claim —
-      lands with the transcript clauses in the fold commit, not in SP4a. Between SP4a merging and that
-      commit, a green `Evidence` check on a pull request that adds an `off-ci` transcript conveys nothing,
-      and the only backstop is a human reading it.
+- [x] **The `Evidence` job only gates a merge if someone makes it a required status check.** Verified on 2026-10-25:
+      `Evidence` is in `main`'s required status checks. That is a branch-protection setting, not a file in this
+      repository, so nothing here can assert it and it can be removed without a diff; re-check with
+      `gh api repos/ckir/aiprofiles/branches/main/protection/required_status_checks --jq .contexts`.
+- [x] **`custody: off-ci` exempted a transcript from every mechanical check.** Gate A's clause now exists:
+      `gate_a_a_transcript_backing_isolation_declares_ci_custody` in `tests/adapter_contract.rs` requires
+      `custody: ci` on the primary transcript of any adapter claiming configuration or state isolation.
 - [ ] **The `Evidence` job runs pull-request-supplied code in a job that later holds an API token.** The
       manifest build is a separate step that declares no token, and the workflow pins `contents: read`, so
       the exposure is bounded — but `sandbox/verify-transcripts.sh` is itself supplied by the pull request
