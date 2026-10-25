@@ -8,10 +8,10 @@ A local, privacy-first Rust CLI for selecting and launching profiles for multipl
 Agent Profile never copies credentials, extracts tokens, sends telemetry or trusts
 repository-controlled profile selection.
 
-**Status: v0.1 command set complete.** Every v0.1 command is implemented — launch, repository resolution
+**Status: v0.1.0 released.** Every v0.1 command is implemented — launch, repository resolution
 (`current`, `resolve`, `status`, `link`, `unlink`, `repositories`), the profile lifecycle (`create`, `list`,
 `delete`, `profiles`, `agents`), `doctor`, `--json` on the report commands and `completions` — backed by twelve
-evidence-measured adapters; see [ROADMAP.md](ROADMAP.md) for what remains before a release. The authoritative design is
+evidence-measured adapters; see [ROADMAP.md](ROADMAP.md) for the tracked debt. The authoritative design is
 [`agent-profile-implementation-spec-v3.md`](agent-profile-implementation-spec-v3.md).
 
 ## Architecture
