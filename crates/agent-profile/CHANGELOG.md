@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0](https://github.com/ckir/aiprofiles/compare/v0.0.7...v0.1.0) - 2026-10-25
+
+### Added
+
+- *(unlink)* name the agent mappings a repository unlink leaves behind ([#67](https://github.com/ckir/aiprofiles/pull/67))
+
+### Fixed
+
+- *(adapter)* print only the matched option in ArgumentConflict ([#63](https://github.com/ckir/aiprofiles/pull/63))
+
+### Other
+
+- *(evidence)* refresh nine transcripts from Sandbox run 40146391660 ([#70](https://github.com/ckir/aiprofiles/pull/70))
+
 ## [0.0.7](https://github.com/ckir/aiprofiles/compare/v0.0.6...v0.0.7) - 2026-10-24
 
 ### Added
