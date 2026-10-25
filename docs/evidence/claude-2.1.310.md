@@ -1,7 +1,7 @@
 custody: ci
-run-id: 37542704292
-run-url: https://github.com/ckir/aiprofiles/actions/runs/37542704292
-harness-commit: 37a4c54476f3b00ada2d061500c4d7896835cb1b
+run-id: 40146391660
+run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
+harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
 ---
 install:
   npm install --global @anthropic-ai/claude-code
@@ -12,8 +12,8 @@ exit-codes:
   behaviour-env-CLAUDE_CONFIG_DIR 0
 probe-exit: 0
 version:
-  2.1.292 (Claude Code)
-version-extracted: 2.1.292
+  2.1.310 (Claude Code)
+version-extracted: 2.1.310
 help:
   Usage: claude [options] [command] [prompt]
   
@@ -87,14 +87,14 @@ help:
                                           Recommended only for sandboxes with no
                                           internet access.
     -d, --debug [filter]                  Enable debug mode with optional category
-                                          filtering (e.g., "api,hooks" or
-                                          "!1p,!file")
+                                          filtering (e.g., --debug=hooks,mcp or
+                                          --debug='!hooks,!mcp')
     --debug-file <path>                   Write debug logs to a specific file path
                                           (implicitly enables debug mode)
     --desktop                             Open in the Claude Desktop app instead
                                           of the terminal (with --continue or
                                           --resume <id> to pick the session)
-    --disable-slash-commands              Disable all skills
+    --disable-slash-commands              Disable all skills and commands
     --disallowedTools, --disallowed-tools <tools...>
         Comma or space-separated list of tool names to deny (e.g. "Bash(git *)
         Edit")
@@ -142,7 +142,8 @@ help:
                                           (realtime streaming input) (choices:
                                           "text", "stream-json")
     --json-schema <schema>                JSON Schema for structured output
-                                          validation. Example:
+                                          validation (only works with --print).
+                                          Example:
                                           {"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}
     --max-budget-usd <amount>             Maximum dollar amount to spend on API
                                           calls (only works with --print)
@@ -210,15 +211,14 @@ help:
                                           --output-format=stream-json)
     --restricted                          Restricted mode: removes the built-in
                                           tools that run commands or code (Bash,
-                                          PowerShell, REPL and the other
-                                          code-running tools) and WebFetch unless
-                                          --tools names them, and ignores user,
-                                          project and local settings files
-                                          (managed settings and --settings still
+                                          PowerShell and the other code-running
+                                          tools) and WebFetch unless --tools names
+                                          them, and ignores user, project and
+                                          local settings files (managed settings
     [truncated: more than 200 lines]
 strings:
   # /home/agent/.local/bin/claude -> /home/agent/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
-  # scanned 11 file(s), 503102003 byte(s) under /home/agent/.local/lib/node_modules/@anthropic-ai/claude-code
+  # scanned 11 file(s), 583466761 byte(s) under /home/agent/.local/lib/node_modules/@anthropic-ai/claude-code
   documented ANTHROPIC_API_KEY: present
   documented ANTHROPIC_AUTH_TOKEN: present
   documented ANTHROPIC_PROFILE: present
@@ -235,7 +235,6 @@ strings:
   ACCESS_TOKEN
   ACCESS_TOKEN_WITH_AUTH_SCHEME
   ACCOUNTKEY
-  ACCOUNT_CONSENT_KEYS
   ACTIONS_ID_TOKEN_REQUEST_TOKEN
   ACTIONS_ID_TOKEN_REQUEST_URL
   ACTIONS_RUNTIME_TOKEN
@@ -250,7 +249,6 @@ strings:
   AGENT_VIEW_RELAUNCH_ENV_KEY
   ALLOWED_OAUTH_BASE_URLS
   ALLUSERSPROFILE
-  AMPERSAND_TOKEN
   ANACONDA_API_TOKEN
   ANDROID_HOME
   ANSIBLE_CONFIG
@@ -268,6 +266,7 @@ strings:
   ANTHROPIC_SECRET_PLACEHOLDER_
   ANTHROPIC_WEBHOOK_SIGNING_KEY
   ANTHROPIC_WORK_SECRET
+  ANY_KEY__
   APIKEY
   API_KEY
   API_KEY_URL
@@ -292,6 +291,7 @@ strings:
   AUTHORIZATION_PENDING
   AUTHORIZED
   AUTHORS
+  AUTHOR_AGENT_TYPE
   AUTH_HEADER
   AUTH_HEADER_REJECTED
   AUTH_METHOD
@@ -342,17 +342,21 @@ strings:
   BUN_CONFIG_DNS_TIME_TO_LIVE_SECONDS
   BUN_CONFIG_FILE
   BUN_CONFIG_HTTP_IDLE_TIMEOUT
+  BUN_CONFIG_HTTP_RETRY_BACKOFF
   BUN_CONFIG_MAX_HTTP_REQUESTS
   BUN_CONFIG_MAX_HTTP_REQUESTSBUN_CONFIG_MAX_HTTP_REQUESTS
   BUN_CONFIG_REGISTRY
-  BUN_CONFIG_SKIP_INSTALL_PACKAGESERR_MYSQL_INVALID_ENCODED_LENGTH
+  BUN_CONFIG_SKIP_INSTALL_PACKAGES
   BUN_CONFIG_TOKEN
   BUN_CONFIG_VERBOSE_FETCH
+  BUN_CONFIG_WS_CLOSE_TIMEOUT
   BUN_CONFIG_WS_HANDSHAKE_TIMEOUT
-  BUN_CONFIG_YARN_LOCKFILEBUN_CONFIG_HTTP_RETRY_COUNTBUN_CONFIG_SKIP_SAVE_LOCKFILEBUN_CONFIG_SKIP_LOAD_LOCKFILEBUN_CONFIG_NO_VERIFYI
+  BUN_CONFIG_YARN_LOCKFILEBUN_CONFIG_HTTP_RETRY_COUNTBUN_CONFIG_SKIP_SAVE_LOCKFILEBUN_CONFIG_SKIP_LOAD_LOCKFILEBUN_CONFIG_NO_VERIFY
   BUN_FEATURE_FLAG_DISABLE_ADDRCONFIG
-  BUN_GC_TIMER_INTERVALBUN_CONFIG_HTTP_IDLE_TIMEOUTBUN_INOTIFY_COALESCE_INTERVALBUN_INSTALL_STREAMING_MIN_SIZEBUN_CONFIG_WS_HANDSHAKE_TIMEOUTBUN_CONFIG_DNS_TIME_TO_LIVE_SECONDSBUN_GC_RUNS_UNTIL_SKIP_RELEASE_ACCESSBUN_INSTALL_STREAMING_DRAIN_THRESHOLDCOLUMNS
-  BUN_INSTALL_GLOBAL_STOREBUN_INSTALL_PROGRESSBUN_CONFIG_REGISTRYNPM_CONFIG_REGISTRY
+  BUN_GC_TIMER_INTERVALBUN_CONFIG_WS_CLOSE_TIMEOUTBUN_CONFIG_HTTP_IDLE_TIMEOUTBUN_INOTIFY_COALESCE_INTERVALBUN_INSTALL_STREAMING_MIN_SIZEBUN_CONFIG_WS_HANDSHAKE_TIMEOUTBUN_CONFIG_DNS_TIME_TO_LIVE_SECONDSBUN_GC_RUNS_UNTIL_SKIP_RELEASE_ACCESSBUN_INSTALL_STREAMING_DRAIN_THRESHOLDBUN_DEBUG_TEST_CHECK_PROGRESS_DELAY_MSCOLUMNS
+  BUN_MANIFEST_CACHEBUN_INSTALL_GLOBAL_STOREBUN_INSTALL_PROGRESSBUN_CONFIG_REGISTRYNPM_CONFIG_REGISTRY
+  BUN_TLS_EXTRA_DISTRUSTED_KEYS
+  BUN_TLS_REFUSE_DISTRUSTED_KEYS
   BUN_WORKER_MESSAGING_KEY
   BUN_WORKER_PARENT_PORT_KEY
   BUN_WORKER_STDIO_KEY
@@ -360,6 +364,7 @@ strings:
   CACHED_ACCESS_TOKEN_EXPIRED
   CACHE_KEY
   CACHE_KEY_SEPARATOR
+  CALLER_ASKS_KEY
   CANNOT_HAVE_BOTH_PRIVKEY_AND_METHOD
   CANNOT_RECOVER_MULTI_PRIME_KEY
   CANT_CHECK_DH_KEY
@@ -394,6 +399,7 @@ strings:
   CLAUDE_CODE_ARTIFACTS_API_TOKEN
   CLAUDE_CODE_AUTH_FAIL_EXIT_MS
   CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS
+  CLAUDE_CODE_CCR_EARLY_SYNC_AFTER_SETTINGS_REFUSAL
   CLAUDE_CODE_CLIENT_KEY
   CLAUDE_CODE_CLIENT_KEY_PASSPHRASE
   CLAUDE_CODE_CONFIG_PROBE
@@ -411,12 +417,6 @@ strings:
   CLAUDE_CODE_HIDE_SETTINGS_HINT
   CLAUDE_CODE_HOME_SEED_HOLD_TIMEOUT_MS
   CLAUDE_CODE_HOME_SEED_VERDICT_TIMEOUT_MS
-  CLAUDE_CODE_HOST_AUTH_ENV_VAR
-  CLAUDE_CODE_HOST_AUTH_REFRESH_TIMEOUT_MS
-  CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS
-  CLAUDE_CODE_IDLE_TOKEN_THRESHOLD
-  CLAUDE_CODE_MANAGED_CONFIG_PREFETCH
-  CLAUDE_CODE_MANAGED_SETTINGS_PATH
     [truncated: more than 200 lines]
 baseline-env-CLAUDE_CONFIG_DIR:
   # /home/agent/probe-target
@@ -426,7 +426,7 @@ baseline-env-CLAUDE_CONFIG_DIR:
 delta-env-CLAUDE_CONFIG_DIR:
   + d /home/agent/probe-target/backups
   + f /home/agent/probe-target/.claude.json
-  + f /home/agent/probe-target/backups/.claude.json.backup.1791326873483
+  + f /home/agent/probe-target/backups/.claude.json.backup.1792887787337
 container-delta:
   C /etc
   C /home/agent
@@ -457,40 +457,43 @@ container-delta:
   A /home/agent/.npm/_cacache
   A /home/agent/.npm/_cacache/content-v2
   A /home/agent/.npm/_cacache/content-v2/sha512
-  A /home/agent/.npm/_cacache/content-v2/sha512/07
-  A /home/agent/.npm/_cacache/content-v2/sha512/07/8f
-  A /home/agent/.npm/_cacache/content-v2/sha512/07/8f/257b6b596c341d4beeab918c979e3ff5ae9aeea61dcd087a7159d8c1734dc290c970fa17e26db9cc2b5a53d01d29283cd485bca31a89bce26095ed556902
-  A /home/agent/.npm/_cacache/content-v2/sha512/0c
-  A /home/agent/.npm/_cacache/content-v2/sha512/0c/d4
-  A /home/agent/.npm/_cacache/content-v2/sha512/0c/d4/2b259a264005f6de39095e77d8b48c897527f90819dec57c0eda10010acee8899a5adc86cf588a3b2ba48f939b73448111cdbc297caded9a28dad42efe91
-  A /home/agent/.npm/_cacache/content-v2/sha512/1e
-  A /home/agent/.npm/_cacache/content-v2/sha512/1e/b7
-  A /home/agent/.npm/_cacache/content-v2/sha512/1e/b7/114ce0f68459ba5778ccb9ca781de81ece9937520b0fb82af78550562e74fee592085d4c7c5acc53bc7e9a2e52229b75853e7b50388899a249bef27231c5
-  A /home/agent/.npm/_cacache/content-v2/sha512/42
-  A /home/agent/.npm/_cacache/content-v2/sha512/42/6c
-  A /home/agent/.npm/_cacache/content-v2/sha512/42/6c/7c95a4c80f10cb79d3da6ccba69f0f4dcd643c1ded03b5256a34a1bb062483f29dbc4e1ff5306333a6f2abb133dc1d1b740ad0725cec242857d6622d80a1
-  A /home/agent/.npm/_cacache/content-v2/sha512/57
-  A /home/agent/.npm/_cacache/content-v2/sha512/57/c2
-  A /home/agent/.npm/_cacache/content-v2/sha512/57/c2/e20cb4cc5d5765b1a95adff78fdb2fcd786e2b2019e58788f3cdd20fc78bc203098d78c478206c73aa4e1034c93dc7d1d3d25f7100ed1f479dc887f7df1c
-  A /home/agent/.npm/_cacache/content-v2/sha512/95
-  A /home/agent/.npm/_cacache/content-v2/sha512/95/fb
-  A /home/agent/.npm/_cacache/content-v2/sha512/95/fb/25e5dcb304c239d1507929203c6c5b1bbe2a9e033a34caff1fe455be0b424cbd32f7ce57d32c4be792cb6151ce4cf5166c9bf4ab890b4f26fade29f037ab
-  A /home/agent/.npm/_cacache/content-v2/sha512/9a
-  A /home/agent/.npm/_cacache/content-v2/sha512/9a/63
-  A /home/agent/.npm/_cacache/content-v2/sha512/9a/63/c3f08e2968c93d4bebd03413e5c34e3326cc2734aeed4c9513118b89ebcef233a3769482168969cb4492f2c9f7fe7e49dcae503a9b36230d7f0ef8ef9d8a
-  A /home/agent/.npm/_cacache/content-v2/sha512/a6
-  A /home/agent/.npm/_cacache/content-v2/sha512/a6/d4
-  A /home/agent/.npm/_cacache/content-v2/sha512/a6/d4/fd51c3acc91d952cd81f1e017ced3a3c07bb42ad992d229602e1d106b7ef4c1b8d8d016b258c4181677b29747709d9a91e767b3311254db62ee15b166b26
-  A /home/agent/.npm/_cacache/content-v2/sha512/be
-  A /home/agent/.npm/_cacache/content-v2/sha512/be/bc
-  A /home/agent/.npm/_cacache/content-v2/sha512/be/bc/04b2dbbaef4c6b6b6924caad9514b0e1bbb88dcbca3441303a8f1fa55acd3c7a1f809d7a9715f951a573dd474f88f49636026774f3026735c6df8bc48945
-  A /home/agent/.npm/_cacache/content-v2/sha512/c0
-  A /home/agent/.npm/_cacache/content-v2/sha512/c0/e7
-  A /home/agent/.npm/_cacache/content-v2/sha512/c0/e7/dbc8b37495f8824201c9aad82bb50b6c004a8e1f668a9abe9dd61bd5c416c2dad43e942d5324bd723ce34be24c25d25e57efad0e931f5c3d8be8d84f6431
-  A /home/agent/.npm/_cacache/content-v2/sha512/ce
-  A /home/agent/.npm/_cacache/content-v2/sha512/ce/58
-  A /home/agent/.npm/_cacache/content-v2/sha512/ce/58/50f23655c7fc682192cadfe1aed0748e245bd652b6d57079916a237a2b4c4dd9d68e7f68b4e7dfd1d438c1f22deb3f508a84544b3e1c0aee9e86c08ce29f
+  A /home/agent/.npm/_cacache/content-v2/sha512/0a
+  A /home/agent/.npm/_cacache/content-v2/sha512/0a/ec
+  A /home/agent/.npm/_cacache/content-v2/sha512/0a/ec/e926b3016ea691dfed5288bac1b4f577c3f705bdca817e17bd90db24cd9d859ba2976bbbf497bb4cf8b9fa97940b6fbf56a14d0271a7179d8b6cca06dee8
+  A /home/agent/.npm/_cacache/content-v2/sha512/13
+  A /home/agent/.npm/_cacache/content-v2/sha512/13/24
+  A /home/agent/.npm/_cacache/content-v2/sha512/13/24/a90706a871d5359dcf6bec91fe18e96732c6d773beb87771d7ecd2fc7ebeeaa9dc73d8c89723d86a7ffaf3784fd7814db71c7165b48aa16fe16ae86d4257
+  A /home/agent/.npm/_cacache/content-v2/sha512/46
+  A /home/agent/.npm/_cacache/content-v2/sha512/46/ee
+  A /home/agent/.npm/_cacache/content-v2/sha512/46/ee/ac5aa7760d57e0cb2d2a5136bcbc9f00a5115c7ad0bf5c7e296b687fb9d8db3ddc78a8b236eab817f11f617646ca6653fcb922934fc91d2569a3f3ab05b8
+  A /home/agent/.npm/_cacache/content-v2/sha512/50
+  A /home/agent/.npm/_cacache/content-v2/sha512/50/9c
+  A /home/agent/.npm/_cacache/content-v2/sha512/50/9c/fc7dd43ad39da7ec495bf90c47b97ca642d502ff19c284e360defd02f11eb092f4b20695e7e1f10335f029aadc95200f3f81446390152f923cdfed376757
+  A /home/agent/.npm/_cacache/content-v2/sha512/6d
+  A /home/agent/.npm/_cacache/content-v2/sha512/6d/d6
+  A /home/agent/.npm/_cacache/content-v2/sha512/6d/d6/127d58a064e740f195e4c81d26f34ee04a1f7b9153b924798407adede471c6c1cdcec74744f6fd91808058fde3fef0d2c6ab270f9e3ebe2e59caf3ba276a
+  A /home/agent/.npm/_cacache/content-v2/sha512/88
+  A /home/agent/.npm/_cacache/content-v2/sha512/88/44
+  A /home/agent/.npm/_cacache/content-v2/sha512/88/44/5ce11ee6abc7aa5545d7c16d6b8963c4154846b6651a3638f855e8edddd796b83b1d74c9fecaee84a9f7c421f355e8d7b772e0d3469264d2e19787349e29
+  A /home/agent/.npm/_cacache/content-v2/sha512/b3
+  A /home/agent/.npm/_cacache/content-v2/sha512/b3/af
+  A /home/agent/.npm/_cacache/content-v2/sha512/b3/af/d3b3252f8aa4b144abf37cb426ad5b047de823dfedca215f0990b6ceff7576bfd4161974911fe9a18c0b050d3205edbadbd150bf0439587f5cedf9aea579
+  A /home/agent/.npm/_cacache/content-v2/sha512/b9
+  A /home/agent/.npm/_cacache/content-v2/sha512/b9/da
+  A /home/agent/.npm/_cacache/content-v2/sha512/b9/da/0632e561e64630db3633d03aada67e9cc5ab7e01b6ab457301662659919ce1f1be63aaef79359bc9fef8276387ad7f1bfb7aab6ea6444e0c2392b9b71af1
+  A /home/agent/.npm/_cacache/content-v2/sha512/c8
+  A /home/agent/.npm/_cacache/content-v2/sha512/c8/26
+  A /home/agent/.npm/_cacache/content-v2/sha512/c8/26/f08f07430b1d74c7bd18aeda95dbaac673d6ceb9bb6220b8c8d1b603e3b40b5ee652109437c7d2ff3b9ecbe354a7a3bff676426c95c1e04ad39a60296995
+  A /home/agent/.npm/_cacache/content-v2/sha512/d3
+  A /home/agent/.npm/_cacache/content-v2/sha512/d3/16
+  A /home/agent/.npm/_cacache/content-v2/sha512/d3/16/30e9cc1fa557e07edea87168ead1d01e7db96f3fada50369b41048d820b12f76af03dd67fbb495dedf7eea4d5e54c6ab6880f141bdab36ef5c9e2280e7b0
+  A /home/agent/.npm/_cacache/content-v2/sha512/e3
+  A /home/agent/.npm/_cacache/content-v2/sha512/e3/fe
+  A /home/agent/.npm/_cacache/content-v2/sha512/e3/fe/834c2e674d2799eb456456b163f5ec908c087e5e9938f5222cc074027dcb2fb34ad156bf0fae4a0350151f4132740981186c2b378c16e07c0f616caf33c1
   A /home/agent/.npm/_cacache/index-v5
+  A /home/agent/.npm/_cacache/index-v5/0b
+  A /home/agent/.npm/_cacache/index-v5/0b/e6
+  A /home/agent/.npm/_cacache/index-v5/0b/e6/6e670a69e8318550c0ca0d68adb3d1355501cf515b0f8c8a043838c72863
   A /home/agent/.npm/_cacache/index-v5/23
   A /home/agent/.npm/_cacache/index-v5/23/c2
   A /home/agent/.npm/_cacache/index-v5/23/c2/0358876565a484d45a113827b0878c26f9e8a2569e81cee788b21977aef8
@@ -506,18 +509,15 @@ container-delta:
   A /home/agent/.npm/_cacache/index-v5/41
   A /home/agent/.npm/_cacache/index-v5/41/c5
   A /home/agent/.npm/_cacache/index-v5/41/c5/4270bf1cd1aae004ed6fee83989ac428601f4c060987660e9a1aef9d53b6
-  A /home/agent/.npm/_cacache/index-v5/4c
-  A /home/agent/.npm/_cacache/index-v5/4c/00
-  A /home/agent/.npm/_cacache/index-v5/4c/00/1f1f7a91e32aaf607526c6d6f8d921533477ca45cfb1935b9aa86fd90c58
   A /home/agent/.npm/_cacache/index-v5/82
   A /home/agent/.npm/_cacache/index-v5/82/9a
   A /home/agent/.npm/_cacache/index-v5/82/9a/9dcc9bf7a0e36536bb95629820ae36b62e6711735332256da3a94795cd29
-  A /home/agent/.npm/_cacache/index-v5/bb
-  A /home/agent/.npm/_cacache/index-v5/bb/03
-  A /home/agent/.npm/_cacache/index-v5/bb/03/6dca5c405b9351bc441003bc074a3ad39db203e253da77ad8e22167152dc
   A /home/agent/.npm/_cacache/index-v5/d3
   A /home/agent/.npm/_cacache/index-v5/d3/a4
   A /home/agent/.npm/_cacache/index-v5/d3/a4/217d21c59484f4edc85af5f0549d026c15388bad78d9ad85ac9a729297bc
+  A /home/agent/.npm/_cacache/index-v5/d4
+  A /home/agent/.npm/_cacache/index-v5/d4/ad
+  A /home/agent/.npm/_cacache/index-v5/d4/ad/daed51e24cee39770cd38913d03e9581c3afec22cc8fc624aafb0dfa08ac
   A /home/agent/.npm/_cacache/index-v5/da
   A /home/agent/.npm/_cacache/index-v5/da/df
   A /home/agent/.npm/_cacache/index-v5/da/df/8711f609ada78ac76e1101bc69f44309aa1e518485327ac90d5ed829ab89
@@ -526,12 +526,12 @@ container-delta:
   A /home/agent/.npm/_cacache/index-v5/e2/64/7a1d3a9a8e90ecace65e69e3b1423f117fc2325bf365c21a7d2e90f053f9
   A /home/agent/.npm/_cacache/tmp
   A /home/agent/.npm/_logs
-  A /home/agent/.npm/_logs/2026-10-06T22_47_45_367Z-debug-0.log
+  A /home/agent/.npm/_logs/2026-10-25T00_23_03_391Z-debug-0.log
   A /home/agent/.npm/_update-notifier-last-checked
   A /home/agent/probe-target
   A /home/agent/probe-target/.claude.json
   A /home/agent/probe-target/backups
-  A /home/agent/probe-target/backups/.claude.json.backup.1791326873483
+  A /home/agent/probe-target/backups/.claude.json.backup.1792887787337
   C /home/probe
   A /home/probe/.probe-out
   A /home/probe/.probe-out/after-env-CLAUDE_CONFIG_DIR.txt

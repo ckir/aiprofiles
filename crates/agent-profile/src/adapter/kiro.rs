@@ -25,8 +25,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "kiro-home-v1",
-        verified_at: "2026-10-17",
-        upstream_version: "2.32.0",
+        verified_at: "2026-10-25",
+        upstream_version: "2.34.0",
         source_url: "https://kiro.dev/cli/",
         notes: "the settings subsystem obeyed the variable — `+ f \
                 /home/agent/probe-target/settings/cli.json` at the target against an \
