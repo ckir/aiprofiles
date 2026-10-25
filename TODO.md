@@ -61,8 +61,8 @@ Design: [docs/superpowers/specs/2026-09-15-sp3-resolution-design.md](docs/superp
       checkout resolves to the enclosing repository (design §10). Decide with `doctor` (SP5) whether to warn.
 - [ ] `unlink --repo <p>` can remove a different repository's live mapping when `<p>`'s meaning changed since `link`
       stored the key (design §10). Consider refusing when a later candidate key also matches an entry.
-- [ ] A top-level `unlink` that removes the repository profile while agent mappings remain prints only `unlinked …`;
-      the "agent mappings remain" note appears on the next run. Consider showing it on the run that creates the state.
+- [x] A top-level `unlink` that removes the repository profile while agent mappings remain now prints the "agent mappings
+      remain" note on that same run, not only on the next one.
 
 ## SP4 known limits
 

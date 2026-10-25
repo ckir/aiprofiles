@@ -294,7 +294,15 @@ pub fn unlink_lines(
     let prefix = agent.map(|agent| format!("{agent}: ")).unwrap_or_default();
     let shown = match outcome {
         UnlinkOutcome::Unlinked { root, old } => {
-            return vec![format!("unlinked {prefix}{} (was {old})", root.display())];
+            let mut lines = vec![format!("unlinked {prefix}{} (was {old})", root.display())];
+            // The repository profile is gone but agent mappings under the same key are not: say so on the
+            // run that creates that state, not only on the next one.
+            if agent.is_none()
+                && let Some(mapping) = config.mapping(root)
+            {
+                lines.extend(agent_mappings_remain(mapping));
+            }
+            return lines;
         }
         UnlinkOutcome::NothingToRemove { shown } => shown,
     };
@@ -309,16 +317,23 @@ pub fn unlink_lines(
     if agent.is_none()
         && let Some(mapping) = keys.iter().find_map(|key| config.mapping(key))
         && mapping.profile.is_none()
-        && !mapping.agents.is_empty()
     {
-        let pairs: Vec<String> =
-            mapping.agents.iter().map(|(id, profile)| format!("{id}={profile}")).collect();
-        lines.push(note(&format!(
-            "agent mappings remain: {}; remove them with agent-profile <agent> unlink",
-            pairs.join(", ")
-        )));
+        lines.extend(agent_mappings_remain(mapping));
     }
     lines
+}
+
+/// The note that agent mappings survive a repository-level `unlink`, or nothing when there are none.
+fn agent_mappings_remain(mapping: &crate::config::Mapping) -> Option<String> {
+    if mapping.agents.is_empty() {
+        return None;
+    }
+    let pairs: Vec<String> =
+        mapping.agents.iter().map(|(id, profile)| format!("{id}={profile}")).collect();
+    Some(note(&format!(
+        "agent mappings remain: {}; remove them with agent-profile <agent> unlink",
+        pairs.join(", ")
+    )))
 }
 
 /// `create` (SP5a design §3).
@@ -1154,20 +1169,23 @@ mod tests {
         let src = host("/src", r"C:\src");
         let acme = src.join("acme");
         let claude = AgentId::parse("claude").unwrap();
+        let beta = src.join("beta");
         let text = format!(
-            "[repositories.{}]\nprofile = \"outer\"\n[repositories.{}]\nagents = {{ codex = \"b\", claude = \"personal\" }}\n",
+            "[repositories.{}]\nprofile = \"outer\"\n[repositories.{}]\nagents = {{ codex = \"b\", claude = \"personal\" }}\n[repositories.{}]\nprofile = \"work\"\n",
             key(&src),
-            key(&acme)
+            key(&acme),
+            key(&beta)
         );
         let config = config(&text);
-        let removed = UnlinkOutcome::Unlinked { root: acme.clone(), old: name("work") };
+        // `beta` has a repository profile and no agent mappings, so nothing is left behind to report.
+        let removed = UnlinkOutcome::Unlinked { root: beta.clone(), old: name("work") };
         assert_eq!(
-            unlink_lines(&removed, None, &config, std::slice::from_ref(&acme)),
-            [format!("unlinked {} (was work)", acme.display())]
+            unlink_lines(&removed, None, &config, std::slice::from_ref(&beta)),
+            [format!("unlinked {} (was work)", beta.display())]
         );
         assert_eq!(
-            unlink_lines(&removed, Some(&claude), &config, std::slice::from_ref(&acme)),
-            [format!("unlinked claude: {} (was work)", acme.display())]
+            unlink_lines(&removed, Some(&claude), &config, std::slice::from_ref(&beta)),
+            [format!("unlinked claude: {} (was work)", beta.display())]
         );
         let nothing = UnlinkOutcome::NothingToRemove { shown: acme.clone() };
         let ancestor = format!(
@@ -1188,6 +1206,34 @@ mod tests {
         assert_eq!(
             unlink_lines(&nothing, Some(&claude), &config, std::slice::from_ref(&acme)),
             [format!("no mapping to remove for claude: {}", acme.display()), ancestor]
+        );
+    }
+
+    #[test]
+    fn a_repository_unlink_names_the_agent_mappings_it_leaves_behind() {
+        let src = host("/src", r"C:\src");
+        let acme = src.join("acme");
+        let claude = AgentId::parse("claude").unwrap();
+        // The configuration is the one read BEFORE the command: a repository profile and agent mappings.
+        let before = config(&format!(
+            "[repositories.{}]\nprofile = \"work\"\nagents = {{ codex = \"b\", claude = \"personal\" }}\n",
+            key(&acme)
+        ));
+        let removed = UnlinkOutcome::Unlinked { root: acme.clone(), old: name("work") };
+        assert_eq!(
+            unlink_lines(&removed, None, &before, std::slice::from_ref(&acme)),
+            [
+                format!("unlinked {} (was work)", acme.display()),
+                "note:         agent mappings remain: claude=personal, codex=b; remove them with \
+                 agent-profile <agent> unlink"
+                    .to_owned(),
+            ]
+        );
+        // An agent unlink removes one agent's mapping and says nothing about the others.
+        let removed_agent = UnlinkOutcome::Unlinked { root: acme.clone(), old: name("personal") };
+        assert_eq!(
+            unlink_lines(&removed_agent, Some(&claude), &before, std::slice::from_ref(&acme)),
+            [format!("unlinked claude: {} (was personal)", acme.display())]
         );
     }
 
