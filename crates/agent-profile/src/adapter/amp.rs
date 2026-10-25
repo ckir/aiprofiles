@@ -40,10 +40,10 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "amp-settings-file-v1",
-        verified_at: "2026-10-17",
-        upstream_version: "0.0.1792224035-gabd4f6",
+        verified_at: "2026-10-25",
+        upstream_version: "0.0.1792872041-gb83e0b",
         source_url: "https://ampcode.com/docs/cli/settings",
-        notes: "measured in a sandbox at 0.0.1792224035-gabd4f6: a launch with --settings-file exits 0, \
+        notes: "measured in a sandbox at 0.0.1792872041-gb83e0b: a launch with --settings-file exits 0, \
                 but the agent's own writes did not follow it — `accounts.json` and `device-id.json` were \
                 written under the default `.local/share/amp` while the flag pointed at the probe's target \
                 (§9 outcome 5), and the default `.config/amp` was `(absent)` at baseline and stayed so; \

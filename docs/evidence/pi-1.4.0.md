@@ -1,7 +1,7 @@
 custody: ci
-run-id: 39024332187
-run-url: https://github.com/ckir/aiprofiles/actions/runs/39024332187
-harness-commit: 16737cb79a0cde5bb698fae7784e69b9eeb6b551
+run-id: 40146391660
+run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
+harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
 ---
 install:
   npm install --global --ignore-scripts @earendil-works/pi-coding-agent
@@ -12,8 +12,8 @@ exit-codes:
   behaviour-env-PI_CODING_AGENT_DIR 1
 probe-exit: 0
 version:
-  1.3.0
-version-extracted: 1.3.0
+  1.4.0
+version-extracted: 1.4.0
 help:
   pi - AI coding assistant with read, bash, edit, write tools
   
@@ -212,13 +212,14 @@ help:
   
 strings:
   # /home/agent/.local/bin/pi -> /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
-  # scanned 15026 file(s), 111516642 byte(s) under /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent
+  # scanned 15008 file(s), 111832551 byte(s) under /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent
   documented ANTHROPIC_API_KEY: present
   documented OPENAI_API_KEY: present
   documented PI_CODING_AGENT_DIR: present
   #
   # variable-shaped tokens that name a credential or a location, documented or not
   ACCESS_TOKEN_TYPE
+  ACME_API_KEY
   ADDRCONFIG
   AGENT_CURSOR_HOME_COL
   AGENT_CURSOR_HOME_ROW
@@ -410,7 +411,6 @@ strings:
   D_TOKEN_STRING_MODE
   ELIXIR_KEYWORDS
   ENDPOINT_CONFIG_OPTIONS
-  ENDPOINT_MODE_CONFIG_OPTIONS
     [truncated: more than 200 lines]
 baseline-env-PI_CODING_AGENT_DIR:
   # /home/agent/probe-target
@@ -458,81 +458,82 @@ container-delta:
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bun/sandbox-env-setup.js.map
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/anthropic-messages-UIH6DSZT.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/anthropic-messages-5FHV3XZG.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/anthropic.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/azure-openai-responses-KZZFKCXW.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/azure-openai-responses-KLTRI2FU.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/bedrock-converse-stream.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-22CYIUS4.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-2JW42LFQ.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-2LOB3CBH.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-3ZATHNCK.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-4L3WN2XY.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-5GTPJSRI.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-66G7ITPS.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-6CYCI3EJ.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-6MWTY2OB.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-3V45WARH.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-4GGCU36O.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-5AGIVGSV.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-6QGV3IWD.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-7CBJINYJ.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-7DDKXS2Q.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-7ZC4UXSL.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-AI62ELJX.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-AKJ3ZOR3.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-DOST5PQW.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-DRQDKNXA.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-F5ZABL6Z.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-GDR5JFDJ.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-H3QXYIF7.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-HACVPRBJ.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-ITZNWD4K.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-A45IWOC6.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-BSS6T6KQ.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-CF5GWZHW.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-EGE5YVUM.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-H76KZMOI.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-INGZIYBC.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-IUWY2KTF.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-JXWJOIH4.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-L2ZPNLYD.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-LPXNMA2W.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-LVVZS2NO.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-MM3LKT73.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-N43LRJ4N.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-NFLURVK3.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-PGXDEOVV.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-PJACZCIR.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-PMRZO46Y.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-PRRNXB7S.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-PYGXRV27.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-QSDU2SDK.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-RDZVAGPR.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-RH6M5TBT.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-S3GGRYIO.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-RISAW7OQ.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-RWO6Q3KK.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-T726RZZU.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-TEPMHNKQ.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-UCKJ6OH5.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-TMTOQ7H7.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-TRERZKRC.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-UKVNB6C4.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-UNXOKDPB.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-USJZMAIR.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-UTB4DTYQ.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-WJUNYZC5.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-XIX7LUWI.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-ZBURYEWF.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/cli-SWM4FQ6V.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/cloudflare-workers-ai-system-one-UTBL2KOF.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/chunk-Z6I32PHA.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/cli-MIMUTM5L.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/cloudflare-workers-ai-system-one-7J6REGDV.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/codemode-worker.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/easter-egg-3d-OX6RUCIS.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/execute-HXNYK3DM.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/easter-egg-3d-RMLF7AC4.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/execute-MT7QEDSI.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/github-copilot.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/google-generative-ai-KJOKBJM3.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/google-vertex-VCLZ36OB.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/https-proxy-agent-2VXB7436.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/google-generative-ai-VPNFZDHO.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/google-vertex-ZFM23MQ4.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/https-proxy-agent-LVOO5TPL.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/image-resize-worker.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/jiti-loader-C3NU2SDH.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/jiti-static-loader-E6ANQD5T.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/jiti-loader-GL4HJFAD.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/jiti-static-loader-2RCDI6B4.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/kimi-coding.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/lib-TEDK3E5I.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/llama-cpp-classify-FYN623RH.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/lib-4AVRLBHM.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/llama-cpp-classify-U4EH6TAM.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/meta.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/mistral-conversations-AMQJ43DD.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/multipart-parser-SQ6GDJL7.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/node-N5BSDOA5.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/node-TWVVAGPO.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/mistral-conversations-WCAJTBXO.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/multipart-parser-FMGQ7342.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/node-AUOGOBCN.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/node-KCMANYC2.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-chatgpt.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-codex-responses-ZYGHVE5B.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-codex-responses-JQR3IK2C.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-codex.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-completions-BGCEXFAB.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-decisions-WVPMQ4JD.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-responses-KCCCXI3B.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openrouter-images-DUPG5DZO.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-completions-27RKPL37.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-decisions-MJYPUCLX.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openai-responses-I2TBW7OL.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openrouter-images-WBAVKHHY.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/openrouter.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/pi-messages-V27DSLVC.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/pi-messages-S7RKCD5K.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/radius.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/runtime-366HE7CW.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/src-UK77SYZE.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/typesafe-system-one-ZSK3RN4B.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/virtual-modules-A7JIGWCY.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/runtime-GJOZRI5I.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/src-QKGKDFSU.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/typesafe-system-one-4C7ULOVP.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/virtual-modules-BQKXTZUC.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/chunks/xai.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli-runtime.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
@@ -636,6 +637,10 @@ container-delta:
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/cache-warmer.d.ts.map
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/cache-warmer.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/cache-warmer.js.map
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/client-identity.d.ts
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/client-identity.d.ts.map
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/client-identity.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/client-identity.js.map
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/branch-summarization.d.ts
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/branch-summarization.d.ts.map
@@ -695,6 +700,7 @@ container-delta:
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html/tool-renderer.js.map
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html/vendor
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html/vendor/highlight.min.js
+  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html/vendor/marked-cjk-friendly.min.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html/vendor/marked.min.js
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/index.d.ts
@@ -720,10 +726,4 @@ container-delta:
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts.map
   A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.js.map
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/virtual-modules.d.ts
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/virtual-modules.d.ts.map
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/virtual-modules.js
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/virtual-modules.js.map
-  A /home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/wrapper.d.ts
     [truncated: more than 300 lines]

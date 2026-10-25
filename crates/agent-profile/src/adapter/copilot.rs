@@ -25,8 +25,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Experimental,
     evidence: AdapterEvidence {
         mechanism_id: "copilot-home-v1",
-        verified_at: "2026-10-17",
-        upstream_version: "1.0.98",
+        verified_at: "2026-10-25",
+        upstream_version: "1.0.103",
         source_url: "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference",
         notes: "the token is in the artefacts (`documented COPILOT_HOME: present`; help documents \
                 the `~/.copilot` default via `--log-dir`) but the behaviour delta was empty: \
