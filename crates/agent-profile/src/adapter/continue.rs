@@ -79,6 +79,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     // alongside this list, so naming it here again refused nothing extra. No abbreviated spelling was
     // measured (Q6 unanswered), so there is no list behind it either.
     conflicts: &[],
+    credential_env: &["CONTINUE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
 };
 
 /// The Continue adapter.

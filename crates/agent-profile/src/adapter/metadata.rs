@@ -245,6 +245,15 @@ pub struct AdapterMetadata {
     /// Every variable `plan()` may set, with its sensitivity.
     pub env: &'static [EnvOverride],
     pub conflicts: &'static [ConflictOption],
+    /// Exact names of the environment variables the vendor documents as supplying credentials that the
+    /// agent then prefers over a profile's own. `doctor` reports each one that is set in the current
+    /// environment (its name only: the value is never read, `Environment::is_set` returns a `bool`).
+    ///
+    /// Every name must appear in this adapter's own evidence notes or capability bases, so the list cannot
+    /// carry a variable nobody sourced (`every_credential_variable_is_named_in_the_adapters_own_evidence`).
+    /// Exact names only, never a prefix: a family such as `AWS_*` would flag every AWS user's shell. Empty
+    /// means none is recorded, not that none exists.
+    pub credential_env: &'static [&'static str],
 }
 
 #[cfg(test)]

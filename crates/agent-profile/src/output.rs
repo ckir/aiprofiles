@@ -731,6 +731,7 @@ mod tests {
         ],
         env: &[],
         conflicts: &[],
+        credential_env: &[],
     };
 
     /// The report line beginning `<label>:`. Assertions that used a hard-coded index all broke when the

@@ -64,6 +64,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &["CURSOR_API_KEY"],
 };
 
 /// The Cursor Agent CLI adapter.

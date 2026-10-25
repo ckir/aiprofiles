@@ -685,3 +685,42 @@ fn doctor_text_names_the_mechanism_id_that_json_carries() {
     let doc = json_of(&run(&root, &["claude", "doctor", "work", "--json"]));
     assert_eq!(records(&doc, "support")[0]["data"]["mechanism"]["id"], "claude-config-dir-v1");
 }
+
+/// A set credential variable is named, never read: its value must appear nowhere in either output form, and
+/// naming it must not change the exit code.
+#[test]
+fn ambient_credential_is_named_and_its_value_never_printed() {
+    const CANARY: &str = "sk-CANARY-7f3a91c2d8e4";
+    let root = Root::new();
+    let names = ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"];
+    let command = |extra: Option<&str>, json: bool| {
+        let args: &[&str] =
+            if json { &["codex", "doctor", "--json"] } else { &["codex", "doctor"] };
+        let mut command = root.agent_profile(args);
+        for name in names {
+            command.env_remove(name);
+        }
+        if let Some(name) = extra {
+            command.env(name, CANARY);
+        }
+        command.output().unwrap()
+    };
+
+    let baseline = command(None, true);
+    assert!(records(&json_of(&baseline), "ambient_credential").is_empty());
+
+    let with_key = command(Some("OPENAI_API_KEY"), true);
+    let doc = json_of(&with_key);
+    let found = records(&doc, "ambient_credential");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0]["agent"], "codex");
+    assert_eq!(found[0]["subject"], "OPENAI_API_KEY");
+    assert_eq!(found[0]["status"], "info");
+    assert_eq!(code(&with_key), code(&baseline), "naming the variable changed the exit code");
+
+    for output in [command(Some("OPENAI_API_KEY"), true), command(Some("OPENAI_API_KEY"), false)] {
+        let all = format!("{}{}", stdout(&output), stderr(&output));
+        assert!(all.contains("OPENAI_API_KEY"), "{all}");
+        assert!(!all.contains(CANARY), "the value reached the output: {all}");
+    }
+}

@@ -50,6 +50,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[ConflictOption { long: &["--fake-profile"], short: None }],
+    credential_env: &[],
 };
 
 /// The test agent, launched through the `fake-agent` fixture.

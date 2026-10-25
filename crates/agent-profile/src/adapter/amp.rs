@@ -81,6 +81,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     // that alongside this list, so naming it here again refused nothing extra. No abbreviated spelling
     // was measured (Q6 unanswered), so there is no list behind it either.
     conflicts: &[],
+    credential_env: &["AMP_API_KEY"],
 };
 
 /// The Amp adapter.

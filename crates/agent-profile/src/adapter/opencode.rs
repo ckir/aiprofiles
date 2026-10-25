@@ -65,6 +65,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
 };
 
 /// The OpenCode adapter.
