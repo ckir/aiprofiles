@@ -75,6 +75,7 @@ pub enum CheckId {
     ProfilePath,
     LaunchEnvironment,
     ConflictingOption,
+    AmbientCredential,
     Capability,
 }
 
@@ -100,6 +101,7 @@ impl CheckId {
             CheckId::ProfilePath => "profile_path",
             CheckId::LaunchEnvironment => "launch_environment",
             CheckId::ConflictingOption => "conflicting_option",
+            CheckId::AmbientCredential => "ambient_credential",
             CheckId::Capability => "capability",
         }
     }
@@ -195,7 +197,7 @@ pub fn run(target: &Target, env: &Environment<'_>) -> Report {
             report.profile = resolved.clone();
             let blocked = if host.root.is_none() { CheckId::AppRoot } else { CheckId::Resolution };
             profile_checks(adapter, resolved.as_ref(), env, &host, blocked, &mut report.checks);
-            option_checks(metadata, &mut report.checks);
+            option_checks(metadata, env, &mut report.checks);
         }
     }
     report
@@ -1195,8 +1197,8 @@ fn launch_environment(
     )
 }
 
-/// Pushes `conflicting_option` and `capability` records.
-fn option_checks(metadata: &AdapterMetadata, checks: &mut Vec<Check>) {
+/// Pushes `conflicting_option`, `ambient_credential` and `capability` records.
+fn option_checks(metadata: &AdapterMetadata, env: &Environment<'_>, checks: &mut Vec<Check>) {
     let id = metadata.id;
     for option in metadata.conflicts.iter().chain(metadata.mechanism.conflict_option()) {
         checks.push(agent_check(
@@ -1206,6 +1208,19 @@ fn option_checks(metadata: &AdapterMetadata, checks: &mut Vec<Check>) {
             Status::Info,
             format!("a launch refuses {} because the profile already sets it", option.spelling()),
             Value::Null,
+        ));
+    }
+    // Name only: `is_set` answers a bool, so this record cannot carry a value, a length or a hash.
+    for name in metadata.credential_env.iter().filter(|name| (env.is_set)(name)) {
+        checks.push(agent_check(
+            id,
+            CheckId::AmbientCredential,
+            Some((*name).to_owned()),
+            Status::Info,
+            format!(
+                "{name} is set in this environment; {id} may use it instead of the profile's own credentials"
+            ),
+            json!({ "name": name }),
         ));
     }
     for capability in Capability::ALL {
@@ -2034,6 +2049,43 @@ mod tests {
         let executables: Vec<&Check> = find(&bare, CheckId::Executable);
         assert_eq!(executables.len(), adapter::known_agents().len());
         assert!(executables.iter().all(|check| check.status == Status::Skip));
+    }
+
+    #[test]
+    fn ambient_credential_names_each_set_variable_and_only_those() {
+        let f = fixture();
+        let codex = Target::Agent { agent: AgentId::parse("codex").unwrap(), profile: None };
+        let subjects = |is_set: &dyn Fn(&str) -> bool| -> Vec<String> {
+            find(&run_with(&f, &codex, None, is_set), CheckId::AmbientCredential)
+                .iter()
+                .map(|check| check.subject.clone().expect("a subject"))
+                .collect()
+        };
+        // Declared order, not environment order, and only the variables that are set.
+        assert_eq!(
+            subjects(&|name| name == "CODEX_ACCESS_TOKEN" || name == "OPENAI_API_KEY"),
+            ["OPENAI_API_KEY", "CODEX_ACCESS_TOKEN"]
+        );
+        assert!(subjects(&|_| false).is_empty());
+        // A variable another agent documents is not codex's to report.
+        assert!(subjects(&|name| name == "CURSOR_API_KEY").is_empty());
+
+        let report = run_with(&f, &codex, None, &|name| name == "CODEX_API_KEY");
+        let record = only(&report, CheckId::AmbientCredential);
+        assert_eq!(record.status, Status::Info);
+        assert_eq!(record.data, json!({ "name": "CODEX_API_KEY" }));
+        assert_eq!(
+            record.message,
+            "CODEX_API_KEY is set in this environment; codex may use it instead of the profile's own credentials"
+        );
+        // Naming it never changes the verdict: the same run with nothing set fails or passes identically.
+        let quiet = run_with(&f, &codex, None, &|_| false);
+        assert_eq!(report.failed(), quiet.failed());
+        assert_eq!(report.count(Status::Warn), quiet.count(Status::Warn));
+
+        // An adapter with no recorded variables reports nothing however much is set.
+        let report = run_with(&f, &agent_target(Some("work")), None, &|_| true);
+        assert!(find(&report, CheckId::AmbientCredential).is_empty());
     }
 
     #[test]

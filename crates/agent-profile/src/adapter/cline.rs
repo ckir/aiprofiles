@@ -67,6 +67,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &["CLINE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"],
 };
 
 // The Cline adapter.

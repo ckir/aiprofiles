@@ -30,7 +30,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
         source_url: "https://code.claude.com/docs/en/authentication",
         notes: "CLAUDE_CONFIG_DIR relocates .credentials.json and keys the macOS Keychain entry per directory; \
                 ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_OAUTH_REFRESH_TOKEN, \
-                ANTHROPIC_PROFILE and CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY override it (binary strings measured)",
+                ANTHROPIC_PROFILE, CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX and CLAUDE_CODE_USE_FOUNDRY override it (binary strings measured)",
     },
     capabilities: &[
         CapabilityClaim {
@@ -53,6 +53,16 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+        "ANTHROPIC_PROFILE",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ],
 };
 
 /// The Claude Code adapter.

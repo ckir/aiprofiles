@@ -64,6 +64,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
 };
 
 /// The GitHub Copilot CLI adapter.

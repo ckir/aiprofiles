@@ -8,8 +8,9 @@ Near-term work. Sub-project scope lives in [ROADMAP.md](ROADMAP.md).
       shims are refused, never parsed; the error names the `[agents.<id>] executable` setting.
 - [ ] Aider conflict scan is shallow (spec §21): option values are not parsed, so a value equal to a conflicting
       spelling (`--message --config`) is refused, and clustered short options (`-vc f`) are not detected.
-- [ ] Credential variables that bypass Claude Code and Codex isolation (SP2 design D8) are passed through
-      unchanged; decide in `doctor` (SP5) whether to warn.
+- [x] Credential variables that bypass isolation: `doctor` now names each documented bypass variable that is set
+      (`credential_env`, exact names, name only, informational, no exit-code change). A vendor's new variable is not
+      flagged until it is added to that adapter's list; suppressing the note for an intentional ambient key is not built.
 - [ ] Setting `[agents.codex] executable` to the npm-vendored `codex.exe` bypasses the npm launcher, which may put
       bundled tools such as `rg` on `PATH`; measure in a sandbox before recommending it.
 - [ ] Creating the Aider config file needs a no-replace rename (Linux falls back to hard links; macOS needs

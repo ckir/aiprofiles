@@ -55,7 +55,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
                     what `PI_CODING_AGENT_DIR` moves (§6's wider exception: the probe established \
                     where credentials are stored), so they travel with the config directory and no \
                     separate credential store exists to point anywhere else; env keys \
-                    (`ANTHROPIC_API_KEY`, …) bypass the file entirely (help)",
+                    (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) bypass the file entirely (help)",
         },
         CapabilityClaim {
             capability: Capability::StateIsolation,
@@ -68,6 +68,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
 };
 
 /// The Pi adapter.

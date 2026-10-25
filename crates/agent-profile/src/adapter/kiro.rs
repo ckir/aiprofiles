@@ -65,6 +65,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     ],
     env: &[EnvOverride { name: VAR, sensitive: false }],
     conflicts: &[],
+    credential_env: &["KIRO_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_PROFILE"],
 };
 
 /// The Kiro CLI adapter.

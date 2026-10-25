@@ -763,6 +763,7 @@ fn sound_metadata() -> AdapterMetadata {
         ],
         env: &[],
         conflicts: &[],
+        credential_env: &[],
     }
 }
 
@@ -1305,5 +1306,43 @@ fn gate_a_rejects_measured_without_notes() {
     assert_eq!(
         gate::gate_a_shape(&metadata),
         Err(GateFailure::MeasuredWithoutNotes { id: "fixture" })
+    );
+}
+
+/// `credential_env` is a list of exact variable names that `doctor` reports when set. It may not carry a
+/// name nobody sourced, a pattern, or a repeat: a name must appear in the adapter's own evidence notes or
+/// capability bases, which are the places the measurement and the documentation are recorded.
+#[test]
+fn every_credential_variable_is_named_in_the_adapters_own_evidence() {
+    let mut listed = 0;
+    for adapter in adapter::registry() {
+        let metadata = adapter.metadata();
+        let mut text = metadata.evidence.notes.to_owned();
+        for claim in metadata.capabilities {
+            text.push('\n');
+            text.push_str(claim.basis);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for name in metadata.credential_env {
+            assert!(
+                !name.is_empty()
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'),
+                "{}: `{name}` is not an exact variable name (no patterns, no lowercase)",
+                metadata.id
+            );
+            assert!(seen.insert(*name), "{}: `{name}` is listed twice", metadata.id);
+            assert!(
+                text.contains(name),
+                "{}: `{name}` is not named in this adapter's evidence notes or capability bases",
+                metadata.id
+            );
+            listed += 1;
+        }
+    }
+    assert!(
+        listed > 20,
+        "the registry lists only {listed} credential variables; the walk found nothing"
     );
 }

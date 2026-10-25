@@ -67,6 +67,7 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     // duplicate present, deleting `.chain(metadata.mechanism.conflict_option())` left the whole suite
     // green. Measured both ways. `conflicts` is for options an adapter refuses BESIDES its mechanism's.
     conflicts: &[],
+    credential_env: &[],
 };
 
 /// The Aider adapter.

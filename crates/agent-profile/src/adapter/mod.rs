@@ -581,6 +581,7 @@ mod tests {
         capabilities: &[],
         env: &[EnvOverride { name: "PROFILE_SESSION_HANDLE", sensitive: true }],
         conflicts: &[],
+        credential_env: &[],
     };
 
     impl Adapter for Secretive {
