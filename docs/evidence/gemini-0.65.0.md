@@ -1,7 +1,7 @@
 custody: ci
-run-id: 39024332187
-run-url: https://github.com/ckir/aiprofiles/actions/runs/39024332187
-harness-commit: 16737cb79a0cde5bb698fae7784e69b9eeb6b551
+run-id: 40146391660
+run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
+harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
 ---
 install:
   npm install --global @google/gemini-cli
@@ -12,8 +12,8 @@ exit-codes:
   behaviour-env-GEMINI_CLI_HOME 0
 probe-exit: 0
 version:
-  0.64.0
-version-extracted: 0.64.0
+  0.65.0
+version-extracted: 0.65.0
 help:
   Usage: gemini [options] [command]
   
@@ -62,7 +62,7 @@ help:
     -h, --help                      Show help  [boolean]
 strings:
   # /home/agent/.local/bin/gemini -> /home/agent/.local/lib/node_modules/@google/gemini-cli/bundle/gemini.js
-  # scanned 825 file(s), 102429227 byte(s) under /home/agent/.local/lib/node_modules/@google/gemini-cli
+  # scanned 825 file(s), 102571893 byte(s) under /home/agent/.local/lib/node_modules/@google/gemini-cli
   documented GEMINI_API_KEY: present
   documented GOOGLE_API_KEY: present
   documented GOOGLE_APPLICATION_CREDENTIALS: present
@@ -94,6 +94,7 @@ strings:
   ADDRESS_HOME_ZIP
   AGENT_CONFIG_FIELDS
   AGENT_LABEL_KEY
+  ALLOWED_TELEMETRY_ENV_KEYS
   ANY_KEY
   API_KEY
   API_KEY_AUTH
@@ -260,17 +261,16 @@ strings:
   GIT_CONFIG_VALUE_1
   GIT_CONFIG_VALUE_2
   GIT_CONFIG_VALUE_3
-  GIT_CONFIG_VALUE_4
     [truncated: more than 200 lines]
 baseline-env-GEMINI_CLI_HOME:
   # /home/agent/probe-target
   d /home/agent/probe-target
   # /home/agent/.gemini
   d /home/agent/.gemini
-  f /home/agent/.gemini/projects.json.27624b4d-189f-4186-8c16-99f0c59b2efa.tmp
-  f /home/agent/.gemini/projects.json.3f32a71c-d3dc-4b2b-9421-170ebbb24181.tmp
-  f /home/agent/.gemini/projects.json.4332be40-b9ad-4349-afe6-3c8a99ed6e62.tmp
-  f /home/agent/.gemini/projects.json.6defd6c8-314e-4c1a-a15b-0e0fe02180d1.tmp
+  f /home/agent/.gemini/projects.json.0fb4a987-94e8-489c-a903-49016553c1e3.tmp
+  f /home/agent/.gemini/projects.json.17e85aaa-86d8-44b6-8109-e16707bf94ae.tmp
+  f /home/agent/.gemini/projects.json.825d2a6d-e04b-410d-bbeb-7f1d7cd83f71.tmp
+  f /home/agent/.gemini/projects.json.b09d4d1b-1dce-428e-9660-d79966fffe82.tmp
 delta-env-GEMINI_CLI_HOME:
   + d /home/agent/probe-target/.gemini
   + d /home/agent/probe-target/.gemini/history

@@ -1,7 +1,7 @@
 custody: ci
-run-id: 37542704292
-run-url: https://github.com/ckir/aiprofiles/actions/runs/37542704292
-harness-commit: 37a4c54476f3b00ada2d061500c4d7896835cb1b
+run-id: 40146391660
+run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
+harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
 ---
 install:
   npm install --global @openai/codex
@@ -12,8 +12,8 @@ exit-codes:
   behaviour-env-CODEX_HOME 0
 probe-exit: 0
 version:
-  codex-cli 0.160.1
-version-extracted: 0.160.1
+  codex-cli 0.164.0
+version-extracted: 0.164.0
 help:
   Codex CLI
   
@@ -45,6 +45,7 @@ help:
     archive           Archive a saved session by id or session name
     delete            Permanently delete a saved session by id or session name
     migrate-rollouts  Inspect or migrate legacy local sessions to paginated thread history
+    migrate-nfs-db    [experimental] Migrate configured SQLite databases to DELETE mode in place
     unarchive         Unarchive a saved session by id or session name
     fork              Fork a previous interactive session (picker by default; use --last to fork the
                       most recent)
@@ -153,26 +154,28 @@ help:
             Print version
 strings:
   # /home/agent/.local/bin/codex -> /home/agent/.local/lib/node_modules/@openai/codex/bin/codex.js
-  # scanned 49 file(s), 446771872 byte(s) under /home/agent/.local/lib/node_modules/@openai/codex
+  # scanned 48 file(s), 444362832 byte(s) under /home/agent/.local/lib/node_modules/@openai/codex
   documented OPENAI_API_KEY: present
   documented OPENAI_BASE_URL: present
   documented CODEX_API_KEY: present
   #
   # variable-shaped tokens that name a credential or a location, documented or not
-  AANAMEANYCAACDSCDNSKEYCNAMECSYNCDNSKEYDSHINFOHTTPSKEYMXNAPTRNSNSEC3NSEC3PARAMOPENPGPKEYOPTPTRRRSIGSIGSOASRVTXTU
-  ABSOLUTE_PATH_HOME
+  AANAMEANYCAACDSCDNSKEYCNAMECSYNCDNSKEYDSHINFOHTTPSKEYMXNAPTRNSNSEC3NSEC3PARAMOPENPGPKEYOPTPTRRRSIGSIGSOASRVSSHFPTXTU
+  AANAMEANYCAACDSCDNSKEYCNAMECSYNCDNSKEYDSHINFOKEYMXNSNSEC3NSEC3PARAMOPENPGPKEYOPTPTRRRSIGSIGSOASRVTXTINCHHSU
+  AANAMECAACNAMEHTTPSMXNAPTRNSOPENPGPKEYOPTPTRSRVSSHFPU
+  AANAMECAACSYNCHINFOHTTPSMXNAPTRNSOPENPGPKEYOPTPTRSOASRVSSHFPTXT
+  ACTIONS_ID_TOKEN_REQUEST_URL
+  ACTIONS_ID_TOKEN_REQUEST_URLHTTPS
   ACTIVE_WORKSPACENO_ACTIVE_WORKSPED_FOR_WORKSPACENOT_CONFIGURED_F_
+  AES_KEY
   AGENTS_MDCONFIGSKILLSPLUGINSMCP_SERVER_CONFIGSUBAGENTSHOOKSMEMORY
-  AGENTS_MDCONFIGSKILLSPLUGINSMCP_SERVER_CONFIGSUBAGENTSHOOKSMEMORYE
-  AGENTS_MDCONFIGSKILLSPLUGINSMCP_SERVER_CONFIGSUBAGENTSHOOKSMEMORY_
   ALGORITHMPASSWORD
   ALLOWED_INTERFACE_KEYS
   ALSA_CONFIG_DIR
   ALSA_CONFIG_PATH
-  ANAMECDSCDNSKEYCNAMEDNSKEYDSHINFOHTTPSKEYNAPTRNSNSEC3NSEC3PARAMOPENPGPKEYPTRRRSIGSIGSOATXTN
-  ANAMECNAMEACSYNCHINFOHTTPSMXNAPTROPENPGPKEYSOASRVSSHFPTXT
-  ANAMECNAMECSYNCHINFOHTTPSNAPTRNSOPENPGPKEYPTRSOASSHFP
-  ANYCDSCDNSKEYDNSKEYDSKEYNSEC3NSEC3PARAMRRSIGSIGC
+  ANAMECAACDSCDNSKEYCNAMECSYNCDNSKEYDSHINFOHTTPSKEYNAPTRNSNSEC3NSEC3PARAMPTRRRSIGSIGSOASRVTXTT
+  ANYCDSCDNSKEYDNSKEYDSKEYNSEC3NSEC3PARAMRRSIGSIGINCHHS
+  ANYCDSCDNSKEYDNSKEYDSKEYNSEC3NSEC3PARAMRRSIGSIGS
   API_KEY
   API_KEYH
   API_KEYH1
@@ -183,7 +186,7 @@ strings:
   ATA_HOMEH
   AUTH
   AUTH1
-  AUTHDATA
+  AUTHDATAA
   AUTHORITY
   AUTHORITY1
   AUTHORITY_INFO_ACCESS
@@ -193,24 +196,27 @@ strings:
   AUTH_TOKEN_UPDATES_STDINR
   AUTH_UPDATED
   AWS_ACCESS_KEY_IDAWS_SECRET_ACCESS_KEYAWS_SESSION_TOKENAWS_ACCOUNT_IDE
-  AWS_AUTH_SCHEME_PREFERENCE
+  AWS_AUTH_SCHEME_PREFERENCEAWS_ACCOUNT_ID_ENDPOINT_MODE
   AWS_BEARER_TOKEN_BEDROCK
-  AWS_BEARER_TOKEN_BEDROCKAWS_ACCESS_KEY_IDAWS_SECRET_ACCESS_KEYAWS_DEFAULT_REGIONA
+  AWS_BEARER_TOKEN_BEDROCKAWS_ACCESS_KEY_IDAWS_SECRET_ACCESS_KEY
   AWS_BEARER_TOKEN_BEDROCKAWS_ACCESS_KEY_IDAWS_SECRET_ACCESS_KEYN
   AWS_CONFIG_FILEAWS_SHARED_CREDENTIALS_FILE
+  AWS_CONFIG_FILEAWS_SHARED_CREDENTIALS_FILENOT_AVAILABLEAVAILABLEINSTALLED_BY_DEFAULT
   AWS_CONTAINER_AUTHORIZATION_TOKEN_FILEAWS_CONTAINER_AUTHORIZATION_TOKENECS
   AWS_CONTAINER_CREDENTIALS_RELATIVE_URIAWS_CONTAINER_CREDENTIALS_FULL_URI
   AWS_IGNORE_CONFIGURED_ENDPOINT_URLS
   AWS_PROFILE
   AWS_PROFILEAWS
-  AWS_WEB_IDENTITY_TOKEN_FILEAWS_ROLE_ARNAWS_ROLE_SESSION_NAME
+  AWS_PROFILEPRAGMA
+  AWS_WEB_IDENTITY_TOKEN_FILE
+  B38_14THREAD_RNG_KEY27___
   BADVERSBADSIGBADKEYBADTIMEBADMODEBADNAMEBADALGBADCOOKIE
-  BADVERSBADSIGBADKEYBADTIMEBADMODEBADNAMEBADALGBADCOOKIEI
+  BADVERSBADSIGBADKEYBADTIMEBADMODEBADNAMEBADALGBADCOOKIEHTTPS
+  BADVERSBADSIGBADKEYBADTIMEBADMODEBADNAMEBADALGBADCOOKIEOPENPGPKEY
   BARE_PUBKEY
   BCONFIGURATION
   BEARER_TOKEN_ENV_VARO
   BRIPGREP_CONFIG_PATH
-  CDSCDNSKEYDNSKEYDSKEYNSEC3NSEC3PARAMRRSIGSIG
   CHE_HOMEH
   CLIENT_EARLY_TRAFFIC_SECRET
   CLIENT_EARLY_TRAFFIC_SECRETCLIENT_HANDSHAKE_TRAFFIC_SECRETSERVER_HANDSHAKE_TRAFFIC_SECRETCLIENT_TRAFFIC_SECRET_0SERVER_TRAFFIC_SECRET_0EXPORTER_SECRET
@@ -221,38 +227,46 @@ strings:
   CODEX_ACCESS_TOKEN
   CODEX_ACCESS_TOKENOPENAI_FEDERATION_RULE_IDOPENAI_IDENTITY_TOKEN_FILE
   CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URLCODEX_AGENT_IDENTITY_JWKS_BASE_URL
-  CODEX_AGENT_IDENTITY_JWKS_BASE_URLCODEX_AUTHAPI_BASE_URL
+  CODEX_API_KEY
   CODEX_API_KEYCODEX_ACCESS_TOKEN
-  CODEX_API_KEYOPENAI_API_KEY
   CODEX_AUTH
+  CODEX_AUTHA
   CODEX_AUTHAPI_BASE_URL
+  CODEX_AUTHAPI_BASE_URLG
+  CODEX_AUTHAPI_BASE_URLN
+  CODEX_AUTHAPI_BASE_URLT
+  CODEX_AUTHAPI_BASE_URLY
   CODEX_CONNECTORS_TOKEN
-  CODEX_EXEC_SERVER_NOISE_AUTH_TOKENNODE_REPL_AUTH_TOKENOPENAI_FEDERATION_RULE_IDOPENAI_IDENTITY_TOKEN_FILE
+  CODEX_EXEC_SERVER_EXIT_ON_STDIN_CLOSECODEX_NETWORK_PROXY_SNAPSHOT_BROKERED_VALUE_CODEX_NETWORK_PROXY_SNAPSHOT_BROKERED_UNSET___CODEX_SHELL_SNAPSHOT_CONFIGURED_
+  CODEX_EXEC_SERVER_NOISE_AUTH_TOKENOPENAI_FEDERATION_RULE_IDOPENAI_IDENTITY_TOKEN_FILEOPENAI_API_KEYCODEX_API_KEYCODEX_ACCESS_TOKENCODEX_CONNECTORS_TOKENAWS_ACCESS_KEY_IDAWS_SECRET_ACCESS_KEYAWS_SESSION_TOKENAZURE_CLIENT_SECRETAZURE_FEDERATED_TOKEN_FILEGOOGLE_APPLICATION_CREDENTIALS
   CODEX_EXEC_SERVER_NOISE_REGISTRY_URLCODEX_EXEC_SERVER_NOISE_ENVIRONMENT_IDCODEX_EXEC_SERVER_NOISE_AUTH_TOKENCODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID
   CODEX_GITHUB_PERSONAL_ACCESS_TOKEN
+  CODEX_GUARDIAN_DECISIONS_API_KEYOPENAI_WORKLOAD_IDENTITY_CONTEXT
   CODEX_HOME
   CODEX_HOMEC
-  CODEX_HOMECODEX_INSTALL_DEFER_SELECTIONCODEX_RELEASE
+  CODEX_HOMECODEX_CA_CERTIFICATESSL_CERT_FILEREQUESTS_CA_BUNDLECURL_CA_BUNDLENODE_EXTRA_CA_CERTSGIT_SSL_CAINFOCARGO_HTTP_CAINFOBUNDLE_SSL_CA_CERT
   CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS
   CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE
   CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVECODEX_NETWORK_PROXY_BROKERED_CREDENTIALS
-  CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVECODEX_NETWORK_PROXY_BROKERED_CREDENTIALSOPENAI_BASE_URL
-  CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVECODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_POSIX_ENV
-  CODEX_PERMISSION_PROFILECODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGSCODEX_PLUGIN_METRICS_OUTPUTN
-  CODEX_REFRESH_TOKEN_URL_OVERRIDE
+  CODEX_PERMISSION_PROFILECODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGSN
+  CODEX_PERMISSION_PROFILECODEX_PLUGIN_METRICS_OUTPUTN
+  CODEX_REFRESH_TOKEN_URL_OVERRIDECODEX_APP_SERVER_LOGIN_CLIENT_ID
   CODEX_REVOKE_TOKEN_URL_OVERRIDE
-  CODEX_SNAPSHOT_OVERRIDECODEX_NETWORK_PROXY_ACTIVECODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVECODEX_NETWORK_ALLOW_LOCAL_BINDINGCODEX_NETWORK_PROXY_ATTRIBUTIONELECTRON_GET_USE_PROXYNODE_USE_ENV_PROXYHTTP_PROXYHTTPS_PROXY
+  CODEX_SHELL_SNAPSHOT_CONFIGURED_
+  CODEX_SNAPSHOT_OVERRIDECODEX_NETWORK_PROXY_ACTIVECODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVECODEX_NETWORK_PROXY_BROKERED_CREDENTIALSCODEX_NETWORK_ALLOW_LOCAL_BINDINGCODEX_NETWORK_PROXY_ATTRIBUTIONELECTRON_GET_USE_PROXYNODE_USE_ENV_PROXYHTTP_PROXYHTTPS_PROXY
   CODEX_SQLITE_HOME
-  CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT
-  COMPOSERARRANGERLYRICISTDIRECTORPRODUCERMIXED_BYKEYWORDSSYNOPSISSUBTITLELANGUAGESESSION
+  CODEX_THREAD_IDCODEX_TOOL_CALL_IDCODEX_VERSIONCODEX_PERMISSION_PROFILECODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGSCODEX_PLUGIN_METRICS_OUTPUTCODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_BASH_ENVCODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_POSIX_ENVCODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_ZDOTDIR__
+  CODEX_TOOL_CALL_IDCODEX_EXEC_SERVER_NOISE_AUTH_TOKENNODE_REPL_AUTH_TOKENOPENAI_FEDERATION_RULE_IDOPENAI_IDENTITY_TOKEN_FILE
   CONFIG
   CONFIGURATION
   CONFIG_PROFILEL
   CONFIG_PROFILE_V2L
   CONFIG_SECCOMP
   CONFIG_SECCOMP_FILTER
+  CREDENTIALS_FILEAWS_SHARED_CREDEE
   DEFAULT_FOREIGN_KEYS
   DH_PUBKEY
+  DIRINCLUDE_MANAGED_CONFIGI
   DOCKER_HTTP_PROXNFIG_HTTPS_PROXYNPM_CONFIG_HTTPSONFIG_HTTP_PROXYNPM_CONFIG_HTTP_BUNDLE_HTTPS_PROXY
   DSA_PUBKEY
   EARLY_EXPORTER_SECRET
@@ -262,28 +276,25 @@ strings:
   EC_KEY_O
   EC_PRIVATEKEY
   EC_PUBKEY
-  EC_PUBLIC_KEY_P256_PKCS8_V1_TEMPLATE17
-  EC_PUBLIC_KEY_P384_PKCS8_V1_TEMPLATE17
+  EC_PUBLIC_KEY_P256_PKCS8_V1_TEMPLATE
+  EC_PUBLIC_KEY_P384_PKCS8_V1_TEMPLATE
   ED25519_PUBKEY
   ED448_PUBKEY
-  EMPTYAANAMEANYCAACDSCDNSKEYCNAMECSYNCDNSKEYDSHINFOHTTPSKEYMXNAPTRNSNSEC3NSEC3PARAMOPENPGPKEYOPTPTRRRSIGSIGSOASRVSSHFPTXTU
-  ENTERPRISE_TOKENGH_ENTERPRISE_TOGITHUB_ENTERPRIS
+  ENTERPRISE_TOKENGH_ENTERPRISE_TOGITHUB_ENTERPRISREQUESTS_CA_BUNDLE
   ENUM_KEYS_CACHE_TYPE
   EPERMENOENTESRCHEINTREIOENXIOE2BIGENOEXECEBADFECHILDEAGAINENOMEMEACCESEFAULTENOTBLKEBUSYEEXISTEXDEVENODEVENOTDIREISDIREINVALENFILEEMFILEENOTTYETXTBSYEFBIGENOSPCESPIPEEROFSEMLINKEPIPEERANGEEDEADLKENAMETOOLONGENOLCKENOSYSENOTEMPTYELOOPENOMSGEIDRMECHRNGEL3HLTEL3RSTELNRNGEUNATCHENOCSIEL2HLTEBADEEBADREXFULLENOANOEBADRQCEBADSLTEBFONTENOSTRENODATAETIMEENOSRENONETENOPKGEREMOTEENOLINKESRMNTECOMMEPROTOEMULTIHOPEDOTDOTEBADMSGEOVERFLOWEBADFDEREMCHGELIBACCELIBBADELIBSCNELIBMAXEILSEQEUSERSEDESTADDRREQEPROTOTY  [line truncated]
   EVP_MAX_KEY_LENGTH
   EVP_PKEY
   EVP_PKEY2PKCS8
   EVP_PKEY_
-  EVP_PKEY_CTX
   EVP_PKEY_CTX_
   EVP_PKEY_NONE
   EVP_RSA_PKEY_CTX_
   EVP_SKEY_
-  EW_TOKENH
+  EXECUTOR_CREDENTIAL_STDINR
   EXTENDED_KEY_USAGE
   FIG_HOMEH
-  FIG_HOMEH3K
-  FIG_HOMEI3N
+  FIG_HOMEH3P
   FIG_HOMEL3B
   FINAL_SIZE_ERRORKEY_UPDATE_ERROR
   GH_TOKEN
@@ -293,19 +304,19 @@ strings:
   GITHUB_TOKENGH_ENTERPRISE_TOKENGITHUB_ENTERPRISE_TOKEN
   GIT_AUTHOR_DATE
   GIT_AUTHOR_EMAIL
-  GIT_AUTHOR_NAME
+  GIT_AUTHOR_NAMEC
   GIT_CEILING_DIRECTORIESGIT_CONFIGGIT_CONFIG_PARAMETERSGIT_OBJECT_DIRECTORYGIT_DIRGIT_WORK_TREEGIT_IMPLICIT_WORK_TREEGIT_GRAFT_FILEGIT_INDEX_FILEGIT_NO_REPLACE_OBJECTSGIT_REPLACE_REF_BASEGIT_PREFIXGIT_COMMON_DIR
-  GIT_CONFIGGIT_DISCOVERY_ACROSS_FILESYSTEMGIT_OBJECT_DIRECTORYGIT_COMMON_DIRGIT_DIR
+  GIT_CONFIGGIT_DISCOVERY_ACROSS_FILESYSTEMGIT_OBJECT_DIRECTORYGIT_COMMON_DIRGIT_CONFIG_SYSTEMGIT_CONFIG_NOSYSTEMGIT_CONFIG_PARAMETERSGIT_CONFIG_GLOBAL
   GIT_CONFIG_COUNT
+  GIT_CONFIG_COUNTGIT_SHALLOW_FILE
   GIT_CONFIG_KEY_
   GIT_CONFIG_NOSYSTEMGIT_CONFIG_SYSTEMGIT_CONFIG_GLOBAL
+  GIT_CONFIG_NOSYSTEMGIT_HTTP_LOW_SPEED_LIMIT
   GIT_CONFIG_SYSTEMGIT_CONFIG_GLOBAL
   GIT_CONFIG_VALUE_
   GIT_HTTP_PROXY_AUTHMETHOD
   GIT_OPTIONAL_LOCKS0GIT_CEILING_DIRECTORIESGIT_COMMON_DIRGIT_CONFIGGIT_CONFIG_PARAMETERSGIT_DIRGIT_DISCOVERY_ACROSS_FILESYSTEMGIT_GRAFT_FILEGIT_IMPLICIT_WORK_TREEGIT_INDEX_FILEGIT_NAMESPACEGIT_OBJECT_DIRECTORYGIT_PREFIXGIT_REPLACE_REF_BASEGIT_WORK_TREE
-  GIT_PAGERCODEX_PERMISSION_PROFILECODEX_VERSIONCODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS
   GIX_CREDENTIALS_HELPER_STDERR
-  GMTHOME
   GSETTINGS_BACKEND
   GSETTINGS_SCHEMA_DIR
   GST_BUFFER_POOL_ACQUIRE_FLAG_KEY_UNIT
@@ -342,16 +353,6 @@ strings:
   G_CREDENTIALS_TYPE_INVALID
   G_CREDENTIALS_TYPE_LINUX_UCRED
   G_CREDENTIALS_TYPE_NETBSD_UNPCBID
-  G_CREDENTIALS_TYPE_OPENBSD_SOCKPEERCRED
-  G_CREDENTIALS_TYPE_SOLARIS_UCRED
-  G_CREDENTIALS_TYPE_WIN32_PID
-  G_DBUS_AUTH_MECHANISM_STATE_HAVE_DATA_TO_SEND
-  G_DBUS_AUTH_MECHANISM_STATE_REJECTED
-  G_DBUS_AUTH_MECHANISM_STATE_WAITING_FOR_DATA
-  G_DBUS_CALL_FLAGS_ALLOW_INTERACTIVE_AUTHORIZATION
-  G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_ALLOW_ANONYMOUS
-  G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT
-  G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_REQUIRE_SAME_USER
     [truncated: more than 200 lines]
 baseline-env-CODEX_HOME:
   # /home/agent/probe-target
@@ -359,35 +360,32 @@ baseline-env-CODEX_HOME:
   # /home/agent/.codex
   d /home/agent/.codex
   d /home/agent/.codex/tmp
-  d /home/agent/.codex/tmp/arg0
-  d /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri
-  f /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/.lock
-  l /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/apply_patch
-  l /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/applypatch
-  l /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/codex-execve-wrapper
-  l /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/codex-linux-sandbox
+  d /home/agent/.codex/tmp/arg0-linux
+  d /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6
+  f /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/.lock
+  l /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/apply_patch
+  l /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/applypatch
+  l /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/codex-linux-sandbox
 delta-env-CODEX_HOME:
   + d /home/agent/probe-target/tmp
-  + d /home/agent/probe-target/tmp/arg0
-  + d /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ
-  + f /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/.lock
-  + l /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/apply_patch
-  + l /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/applypatch
-  + l /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/codex-execve-wrapper
-  + l /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/codex-linux-sandbox
+  + d /home/agent/probe-target/tmp/arg0-linux
+  + d /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48
+  + f /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/.lock
+  + l /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/apply_patch
+  + l /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/applypatch
+  + l /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/codex-linux-sandbox
 container-delta:
   C /etc
   C /home/agent
   C /home
   A /home/agent/.codex
   A /home/agent/.codex/tmp
-  A /home/agent/.codex/tmp/arg0
-  A /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri
-  A /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/.lock
-  A /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/apply_patch
-  A /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/applypatch
-  A /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/codex-execve-wrapper
-  A /home/agent/.codex/tmp/arg0/codex-arg0Td1Zri/codex-linux-sandbox
+  A /home/agent/.codex/tmp/arg0-linux
+  A /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6
+  A /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/.lock
+  A /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/apply_patch
+  A /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/applypatch
+  A /home/agent/.codex/tmp/arg0-linux/codex-arg0ZWprm6/codex-linux-sandbox
   A /home/agent/.local
   A /home/agent/.local/bin
   A /home/agent/.local/bin/codex
@@ -456,46 +454,42 @@ container-delta:
   A /home/agent/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/voice/manifest.json
   A /home/agent/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/voice/runtime.json
   A /home/agent/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/voice/sources.json
-  A /home/agent/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/zsh
-  A /home/agent/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/zsh/bin
-  A /home/agent/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/zsh/bin/zsh
   A /home/agent/.local/lib/node_modules/@openai/codex/package.json
   A /home/agent/.npm
   A /home/agent/.npm/_cacache
   A /home/agent/.npm/_cacache/content-v2
   A /home/agent/.npm/_cacache/content-v2/sha512
-  A /home/agent/.npm/_cacache/content-v2/sha512/4a
-  A /home/agent/.npm/_cacache/content-v2/sha512/4a/50
-  A /home/agent/.npm/_cacache/content-v2/sha512/4a/50/b958e7edb3fcf996d9658bcb2c197c3703b3725012b82e9b486b67a0663030207cd1741c1ee32c9c29756c176ff52f72eea8967349c125f9ad7d07be00ae
-  A /home/agent/.npm/_cacache/content-v2/sha512/7f
-  A /home/agent/.npm/_cacache/content-v2/sha512/7f/5c
-  A /home/agent/.npm/_cacache/content-v2/sha512/7f/5c/ab261c208a6290235918425c5d3c9705c24359c59adbcfb1dff3d1007272ea910ed38844b3af61604999f5dc66b946e1e395551fbabcf0ab5d3093dcf0da
-  A /home/agent/.npm/_cacache/content-v2/sha512/b0
-  A /home/agent/.npm/_cacache/content-v2/sha512/b0/80
-  A /home/agent/.npm/_cacache/content-v2/sha512/b0/80/e1a95f9bb1928a55a545558e6207ea40cf23b3d97466dc7d4a5c2b122701a3e69f7caa7ad3d05c1ea351df7bb5a7c93a7c99f04d75b57351e3be98762e80
+  A /home/agent/.npm/_cacache/content-v2/sha512/4d
+  A /home/agent/.npm/_cacache/content-v2/sha512/4d/68
+  A /home/agent/.npm/_cacache/content-v2/sha512/4d/68/fb506c8f45edcf8ff03775d340c6cd6d7b76bf5bfc4077e2742c7aeb1539ac49f6a118c38b17fbe7f3c0f7402220013dc1d6b9b5cbf677358134af1e9c65
+  A /home/agent/.npm/_cacache/content-v2/sha512/5c
+  A /home/agent/.npm/_cacache/content-v2/sha512/5c/b0
+  A /home/agent/.npm/_cacache/content-v2/sha512/5c/b0/28696b06393da487397e3f81580cf4e4cc0afd5b45455c569592a945764334b286b5807ff84b4c120f9ec49371c7c248ab0041b3dbf3307a1b1e87e97932
+  A /home/agent/.npm/_cacache/content-v2/sha512/8c
+  A /home/agent/.npm/_cacache/content-v2/sha512/8c/c0
+  A /home/agent/.npm/_cacache/content-v2/sha512/8c/c0/a5ccaaf4c49048729c340cdb60ecbe8cd472574919896dbff43367c482037bd6fbbc240ceba1a54e26e3e41852033c4146c577822fbb86a34d2211bc66df
   A /home/agent/.npm/_cacache/index-v5
-  A /home/agent/.npm/_cacache/index-v5/4b
-  A /home/agent/.npm/_cacache/index-v5/4b/5c
-  A /home/agent/.npm/_cacache/index-v5/4b/5c/66e4c12d5ed396c1eac83c39ee07ebf0eef59ddb2ebebe228748a5092c4a
-  A /home/agent/.npm/_cacache/index-v5/e9
-  A /home/agent/.npm/_cacache/index-v5/e9/2a
-  A /home/agent/.npm/_cacache/index-v5/e9/2a/47f35e4dd05f94e04b5dd3873544013819243d1a07a75be30c91a900b329
+  A /home/agent/.npm/_cacache/index-v5/6f
+  A /home/agent/.npm/_cacache/index-v5/6f/8c
+  A /home/agent/.npm/_cacache/index-v5/6f/8c/22aeb506a80f342e77cf5049a126acc87347d5106b23bf75846a00f04b58
+  A /home/agent/.npm/_cacache/index-v5/f0
+  A /home/agent/.npm/_cacache/index-v5/f0/d0
+  A /home/agent/.npm/_cacache/index-v5/f0/d0/b61ef2a0ab645d783f5c92ab62f0edcfde4d28696e33127a2e128d127e66
   A /home/agent/.npm/_cacache/index-v5/f5
   A /home/agent/.npm/_cacache/index-v5/f5/dc
   A /home/agent/.npm/_cacache/index-v5/f5/dc/c4e113933dc9336af5ff67031ccabd30b60538026ed131d00e2087f9fd8a
   A /home/agent/.npm/_cacache/tmp
   A /home/agent/.npm/_logs
-  A /home/agent/.npm/_logs/2026-10-06T22_47_48_347Z-debug-0.log
+  A /home/agent/.npm/_logs/2026-10-25T00_22_56_717Z-debug-0.log
   A /home/agent/.npm/_update-notifier-last-checked
   A /home/agent/probe-target
   A /home/agent/probe-target/tmp
-  A /home/agent/probe-target/tmp/arg0
-  A /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ
-  A /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/.lock
-  A /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/apply_patch
-  A /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/applypatch
-  A /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/codex-execve-wrapper
-  A /home/agent/probe-target/tmp/arg0/codex-arg0ah4NZQ/codex-linux-sandbox
+  A /home/agent/probe-target/tmp/arg0-linux
+  A /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48
+  A /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/.lock
+  A /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/apply_patch
+  A /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/applypatch
+  A /home/agent/probe-target/tmp/arg0-linux/codex-arg08har48/codex-linux-sandbox
   C /home/probe
   A /home/probe/.probe-out
   A /home/probe/.probe-out/after-env-CODEX_HOME.txt
@@ -676,4 +670,9 @@ container-delta:
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/4e3a9b9a
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/4f18cd52
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/4f26fa49
+  A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/502c76a8
+  A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/504a17c6
+  A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/5092240e
+  A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/50be787f
+  A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/515ea996
     [truncated: more than 300 lines]

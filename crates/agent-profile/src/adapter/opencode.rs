@@ -25,8 +25,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "opencode-config-dir-v1",
-        verified_at: "2026-10-17",
-        upstream_version: "v2.0.32",
+        verified_at: "2026-10-25",
+        upstream_version: "v2.1.4",
         source_url: "https://opencode.ai/docs/cli/",
         notes: "the config-side service.json followed OPENCODE_CONFIG_DIR into the target while \
                 session/state data (opencode.db with -shm/-wal, shell/, opencode.log) stayed at \
