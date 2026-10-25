@@ -257,7 +257,7 @@ a `0.0.x` version by one patch; the same hand edit is how a later `0.x` -> `1.0.
 Recovery, all from the GitHub web UI:
 - A binary is missing from a release: **Actions → Release binaries → Run workflow** with the release tag.
 - The tag exists but the release does not (release creation failed after tagging; re-running the Release-plz
-  run is a silent no-op then): create the pre-release for that tag under **Releases → Draft a new release**,
+  run is a silent no-op then): create the release for that tag (a normal release, not a pre-release) under **Releases → Draft a new release**,
   publish it, then run **Release binaries** with the tag.
 
 The release PR is opened with the `RELEASE_PLZ_TOKEN` repository secret: a fine-grained personal access token

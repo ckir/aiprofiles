@@ -44,4 +44,5 @@ twelve.
 
 **clap_complete's bash script breaks for a binary name containing `-`.** Measured at 4.6.11 and on clap's `main` on 2026-10-21: the traversal names states from `bin_name.replace('-', "__")`, the `case` labels from `replace('-', "__subcmd__")`, so no label matches and bash completes only the first word. `cli/completions.rs` rewrites `agent__subcmd__profile` to `agent__profile` in the generated bash; `bash_script_has_no_mismatched_state_label` is the oracle. Remove the workaround once upstream fixes it. Not reported upstream (an outward action the owner has not OK'd).
 
-v0.1 is done when every item of spec §37 (Final Definition of Done) is checked.
+v0.1 was done when every item of spec §37 (Final Definition of Done) was checked, and shipped as `v0.1.0` on
+2026-10-25.
