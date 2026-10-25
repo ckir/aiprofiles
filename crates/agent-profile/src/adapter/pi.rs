@@ -26,8 +26,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "pi-coding-agent-dir-v1",
-        verified_at: "2026-10-17",
-        upstream_version: "1.3.0",
+        verified_at: "2026-10-25",
+        upstream_version: "1.4.0",
         source_url: "measured",
         notes: "the baseline held auth.json and models-store.json at the default .pi/agent and the \
                 same files moved under PI_CODING_AGENT_DIR with nothing left behind — the variable \

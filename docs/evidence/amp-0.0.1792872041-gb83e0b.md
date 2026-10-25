@@ -1,7 +1,7 @@
 custody: ci
-run-id: 39024332187
-run-url: https://github.com/ckir/aiprofiles/actions/runs/39024332187
-harness-commit: 16737cb79a0cde5bb698fae7784e69b9eeb6b551
+run-id: 40146391660
+run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
+harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
 ---
 install:
   npm install --global @ampcode/cli
@@ -15,8 +15,8 @@ exit-codes:
   candidate-3 0
 probe-exit: 0
 version:
-  0.0.1792224035-gabd4f6 (released 2026-10-17T08:00:35.000Z, 2h ago)
-version-extracted: 0.0.1792224035-gabd4f6
+  0.0.1792872041-gb83e0b (released 2026-10-24T20:00:41.000Z, 4h ago)
+version-extracted: 0.0.1792872041-gb83e0b
 help:
   Amp CLI
   
@@ -24,204 +24,204 @@ help:
   
   Commands:
   
-    version                       Print the version number and exit
-    logout                        Remove a saved Amp account
-    account                       Manage saved Amp accounts
-      list                        List saved accounts
-      switch                      Choose the account for future CLI commands
-    login                         Log in to Amp
-    orb                           Commands for Amp-managed orbs
-      provider                    Run self-hosted orbs from inside your network by pulling lifecycle jobs from Amp over
-                                  HTTPS
-      bootstrap                   Connect this orb to its thread actor
-      system-metrics              Print historical orb system metrics for a thread URL or ID
-      portal                      Register a portal for an existing process and print its URL; use "amp orb service start"
-                                  for long-lived servers
-        access                    Set portal access
-      service                     [alias: services] Manage long-lived services (dev servers, watchers) as supervised
-                                  processes that survive Amp CLI updates and restart on failure
-        ensure                    Ensure every service declared in .amp/services.yaml is running and exposed at its portal
-                                  URLs
-        start                     Start an undeclared ad-hoc supervised service, e.g.: amp orb service start preview
-                                  --command 'pnpm dev' --portal
-        restart                   Restart a declared service from .amp/services.yaml or reload an existing ad-hoc service
-        stop                      Stop a service
-        status                    Show supervisor status for a service
-        logs                      Show recent logs for a service
-        list                      List orb services
-      simulator                   Work with the iOS Simulator on a Mac orb
-        serve                     Serve one booted iOS Simulator as an interactive web page
-      desktop                     Work with the orb Desktop shown in the Desktop tab of the thread
-        ensure                    Start the Desktop and its Google Chrome if needed and print the Chrome DevTools endpoint
-                                  for agent-browser --cdp
-      restart-processes           Refresh environment variables and restart all processes in an orb thread
-      id-token                    Mint a short-lived OIDC token with a caller-chosen audience and print it to stdout
-      redact-output               Copy stdin to stdout with secrets redacted: known token formats, the thread's secret
-                                  values, and the values of the environment variables named in AMP_SECRET_ENV_NAMES
-                                  (comma-separated)
-    portal                        Commands for accessing Amp portal URLs
-      login-url                   Mint a single-use login URL (valid ~60s) that signs a non-browser client into an Amp
-                                  portal URL; fetching it once sets the portal session cookie and redirects to the portal
-                                  page
-    net                           Amp Net: send an orb’s outbound traffic through an exit node on your own machine (for
-                                  example a residential connection)
-      exit-node                   Run this machine as an exit node for your orbs: it appears in your runner list and any
-                                  orb thread you own can route through it with `amp net route`
-      route                       In an orb: send this orb’s traffic through one of your exit nodes (by ID or hostname).
-                                  With no argument, list available exit nodes.
-      status                      In an orb: show whether Amp Net is configured and which exit node is connected
-      ping                        In an orb: measure the round trip from this orb to the connected exit node
-      run                         In an orb: run one command with its network traffic sent through the exit node, without
-                                  changing orb-wide configuration
-    runner                        Inspect and change the amp --no-tui runners on this machine
-      list                        List the running runners on this machine and the directories they serve
-      dirs                        Change the directories a running runner serves, without restarting it
-        add                       Start serving one or more directories; they are served again after the runner restarts
-        remove                    Stop serving one or more directories added with `amp runner dirs add`
-        list                      List the directories a running runner serves
-      desktop                     Inspect or allow desktop sharing for --no-tui --desktop runners
-        status                    Show desktop sharing readiness (macOS permissions, Linux programs)
-        allow                     Request Screen Recording or Accessibility permission
-    clone                         Clone an Amp-hosted Project, Personal Plugins or Skills repository, or Workspace Plugins
-                                  or Skills repository
-    git-setup                     Configure the Amp Git credential helper
-    files                         Download and unpublish Amp files
-      get                         Download a private Amp attachment
-      delete                      Unpublish a public artifact you published, so its URL stops working
-    top                           Show live active threads
-    last                          [alias: l] Continue the last thread
-    report-bug                    [alias: report, diagnostics] Report a bug with diagnostics from the amp --no-tui runner
-                                  in this directory
-    threads                       [alias: t, thread] Manage threads
-      new                         [alias: n] Create a new thread
-      continue                    [alias: c] Continue an existing thread
-      list                        [alias: l, ls] List all threads
-      usage                       Show usage information for a thread
-      context                     [alias: analyze-context] Analyze the current context for a thread
-      visibility                  [alias: v] Show or set default visibility for this repository
-      search                      [alias: find] Search threads
-      color                       Set a thread color
-      label                       Add labels to a thread
-      share                       [alias: s] Share a thread
-        multiplayer               Turn multiplayer on or off
-          on                      Turn multiplayer on for the default duration (1 week)
-          off                     Turn multiplayer off
-          ttl                     Turn multiplayer on for a specific duration
-      import                      Import conversations from other coding agents as read-only Amp threads
-        detect                    Show which coding agents have conversations on this machine
-        codex                     Import Codex conversations from this machine
-        claude                    [alias: claude-code] Import Claude Code sessions from this machine
-        opencode                  Import OpenCode sessions from this machine
-      rename                      [alias: r] Rename a thread
-      archive                     Archive a thread
-      delete                      Delete a thread
-      markdown                    [alias: md] Render thread as markdown
-      export                      Export a thread as JSON
-      raw                         [alias: raw-thread] Export raw actor thread data as JSON
-    tools                         [alias: tool] Tool management commands
-      list                        [alias: ls] List all active tools (including MCP tools)
-      show                        Show details about an active tool
-    plugins                       [alias: plugin] Manage project, system, personal, and workspace plugins
-      add                         Install a plugin from a URL
-      remove                      [alias: rm] Remove an installed plugin
-      update                      Update installed plugins or one imported shared plugin
-      list                        [alias: ls] Load and list plugins in this command, not in a running Amp session
-      import                      Import a shared personal plugin into a plugin repository checkout
-      repositories                [alias: repos] List available Personal Plugins and Workspace Plugins repositories
-      show-agent-options          Show models and built-in tool names available to plugin agents
-      exec                        Execute a plugin with a given event
-      show-docs                   Output the plugin API documentation understood by this version of Amp
-    skill                         [alias: skills] Manage skills from shared references, Git repositories, or local paths
-      add                         Install skills from a source
-      list                        [alias: ls] List all available skills
-      remove                      [alias: rm] Remove an installed skill
-      info                        Show information about a skill
-      repositories                [alias: repos] List available Personal Skills and Workspace Skills repositories
-    permissions                   [alias: permission] Manage permissions
-      list                        [alias: ls] List permissions
-      test                        Test permissions
-      edit                        Edit permissions
-      add                         Add permission rule
-    mcp                           Manage MCP servers
-      add                         Add an MCP server configuration
-      list                        List available MCP servers
-      remove                      Remove an MCP server configuration
-      remote                      Manage MCP servers saved to ampcode.com
-        list                      List stored remote MCP servers
-        add                       Add a stored remote MCP server
-        update                    Update a stored remote MCP server
-        remove                    Remove a stored remote MCP server
-        check                     Check a stored remote MCP server
-        tools                     List tools for a stored remote MCP server
-        login                     Log in to a stored remote MCP server
-        logout                    Log out of a stored remote MCP server
-      oauth                       Manage OAuth credentials for MCP servers in local CLI settings
-        login                     Register OAuth client credentials for an MCP server
-        logout                    Remove OAuth credentials for an MCP server
-        status                    Show OAuth status for an MCP server
-      doctor                      Check MCP server status
-      approve                     Approve a workspace MCP server
-    config                        Manage Amp configuration
-      edit                        Open the Amp settings file in $EDITOR
-      keymap                      List command keymap entries
-      model-providers             Manage model provider keys and subscriptions
-        list                      List model provider keys and subscriptions in priority order
-        activate                  Activate a model provider key (subscriptions other than ChatGPT replace the active
-                                  connection of the same type)
-        deactivate                Deactivate a model provider key
-        set-priority              Change where a connection sits in the model routing precedence order
-        show                      Show complete non-secret model provider connection data as JSON
-        delete                    Delete a model provider key or subscription
-        test                      Test a model provider key or subscription
-        check-access              Check which model provider serves a model by running a small inference
-        add-router                Add an AI model router and select the models routed through it
-        edit-router               Edit an AI model router
-        setup-guide               Explain how to obtain the credential an AI model router needs
-        edit-key                  Edit a model provider API key name or model mapping
-        add-chatgpt-subscription  Link your ChatGPT subscription to Amp as a model provider by signing in with ChatGPT in
-                                  your browser
-      vocabulary                  Manage personal dictation vocabulary
-        show                      Show personal dictation vocabulary (default)
-        add                       Add terms without replacing existing vocabulary
-        set                       Replace personal dictation vocabulary; omit terms to clear it
-      external-agents             Manage external agents (Claude Code)
-        list                      List external agents with their mode keys (default)
-        show                      Show one agent’s options
-        update                    Change an agent’s post-install script or Claude Code options
-        reset                     Drop every option of an agent so it follows Amp’s defaults again
-    domains                       Manage custom domains for sites
-      list                        List custom domains, statuses, and required DNS records
-      add                         Add a custom domain
-      check                       Request an immediate DNS and provisioning status check
-      remove                      [alias: rm] Remove a custom domain
-    projects                      Manage Amp projects
-      create                      Create an Amp-hosted project or map an existing Git repository
-      update                      Update project settings by ID, [@]namespace/name, or repository
-      list                        List projects accessible to you
-      status                      Show the project matched by this directory's git remotes
-      get                         Get a project by ID, [@]namespace/name, or repository
-      snapshots                   Manage a project’s shared orb snapshots
-        list                      List shared orb snapshots by project and orb size
-        delete                    [alias: rm] Delete all shared orb snapshots, or one orb size with --resource
-      gallery-media               Manage a project’s Amp Store gallery media
-        get                       Print a project’s Amp Store gallery media as JSON
-        set                       Set a project’s Amp Store gallery media from a JSON array of
-                                  {"type":"image"|"video","url":"<Amp artifact URL>","width":N,"height":N} items
-      delete                      [alias: rm] Delete a project by ID, [@]namespace/name, or repository
-    apps                          Manage workspace apps
-      deploy                      Deploy a directory to a workspace app
-      create                      Create a workspace app
-      edit                        Edit a workspace app
-      list                        List apps in a workspace
-      deployments                 List deployment history for an app
-      delete                      Delete a workspace app
-    oauth-clients                 Manage workspace External API OAuth clients
-      list                        List OAuth clients and client IDs
-      create                      Create a Sign in with Amp OAuth client
+    version                              Print the version number and exit
+    logout                               Remove a saved Amp account
+    account                              Manage saved Amp accounts
+      list                               List saved accounts
+      switch                             Choose the account for future CLI commands
+    login                                Log in to Amp
+    orb                                  Commands for Amp-managed orbs
+      provider                           Run self-hosted orbs from inside your network by pulling lifecycle jobs from Amp
+                                         over HTTPS
+      bootstrap                          Connect this orb to its thread actor
+      system-metrics                     Print historical orb system metrics for a thread URL or ID
+      portal                             Register a portal for an existing process and print its URL; use "amp orb service
+                                         start" for long-lived servers
+        access                           Set portal access
+      service                            [alias: services] Manage long-lived services (dev servers, watchers) as
+                                         supervised processes that survive Amp CLI updates and restart on failure
+        ensure                           Ensure every service declared in .amp/services.yaml is running and exposed at its
+                                         portal URLs
+        start                            Start an undeclared ad-hoc supervised service, e.g.: amp orb service start
+                                         preview --command 'pnpm dev' --portal
+        restart                          Restart a declared service from .amp/services.yaml or reload an existing ad-hoc
+                                         service
+        stop                             Stop a service
+        status                           Show supervisor status for a service
+        logs                             Show recent logs for a service
+        list                             List orb services
+      simulator                          Work with the iOS Simulator on macOS
+        serve                            Serve one booted iOS Simulator as an interactive web page
+      desktop                            Work with the orb Desktop shown in the Desktop tab of the thread
+        ensure                           Start the Desktop and its Google Chrome if needed and print the Chrome DevTools
+                                         endpoint for agent-browser --cdp
+      restart-processes                  Refresh environment variables and restart all processes in an orb thread
+      id-token                           Mint a short-lived OIDC token with a caller-chosen audience and print it to
+                                         stdout
+      redact-output                      Copy stdin to stdout with secrets redacted: known token formats, the thread's
+                                         secret values, and the values of the environment variables named in
+                                         AMP_SECRET_ENV_NAMES (comma-separated)
+    portal                               Commands for accessing Amp portal URLs
+      login-url                          Mint a single-use login URL (valid ~60s) that signs a non-browser client into an
+                                         Amp portal URL; fetching it once sets the portal session cookie and redirects to
+                                         the portal page
+    net                                  Amp Net: send an orb’s outbound traffic through an exit node on your own machine
+                                         (for example a residential connection)
+      exit-node                          Run this machine as an exit node for your orbs: it appears in your runner list
+                                         and any orb thread you own can route through it with `amp net route`
+      route                              In an orb: send this orb’s traffic through one of your exit nodes (by ID or
+                                         hostname). With no argument, list available exit nodes.
+      status                             In an orb: show whether Amp Net is configured and which exit node is connected
+      ping                               In an orb: measure the round trip from this orb to the connected exit node
+      run                                In an orb: run one command with its network traffic sent through the exit node,
+                                         without changing orb-wide configuration
+    runner                               Inspect and change the amp --no-tui runners on this machine
+      list                               List the running runners on this machine and the directories they serve
+      dirs                               Change the directories a running runner serves, without restarting it
+        add                              Start serving one or more directories; they are served again after the runner
+                                         restarts
+        remove                           Stop serving one or more directories added with `amp runner dirs add`
+        list                             List the directories a running runner serves
+      desktop                            Inspect or allow desktop sharing for --no-tui --desktop runners
+        status                           Show desktop sharing readiness (macOS permissions, Linux programs)
+        allow                            Request Screen Recording or Accessibility permission
+    clone                                Clone an Amp-hosted Project, Personal Plugins or Skills repository, or Workspace
+                                         Plugins or Skills repository
+    git-setup                            Configure the Amp Git credential helper
+    files                                Download and unpublish Amp files
+      get                                Download a private Amp attachment
+      delete                             Unpublish a public artifact you published, so its URL stops working
+    top                                  Show live active threads
+    last                                 [alias: l] Continue the last thread
+    report-bug                           [alias: report, diagnostics] Report a bug with diagnostics from the amp --no-tui
+                                         runner in this directory
+    threads                              [alias: t, thread] Manage threads
+      new                                [alias: n] Create a new thread
+      continue                           [alias: c] Continue an existing thread
+      list                               [alias: l, ls] List all threads
+      usage                              Show usage information for a thread
+      context                            [alias: analyze-context] Analyze the current context for a thread
+      visibility                         [alias: v] Show or set default visibility for this repository
+      search                             [alias: find] Search threads
+      color                              Set a thread color
+      label                              Add labels to a thread
+      share                              [alias: s] Share a thread
+        multiplayer                      Turn multiplayer on or off
+          on                             Turn multiplayer on for the default duration (1 week)
+          off                            Turn multiplayer off
+          ttl                            Turn multiplayer on for a specific duration
+      import                             Import conversations from other coding agents as read-only Amp threads
+        detect                           Show which coding agents have conversations on this machine
+        codex                            Import Codex conversations from this machine
+        claude                           [alias: claude-code] Import Claude Code sessions from this machine
+        opencode                         Import OpenCode sessions from this machine
+      rename                             [alias: r] Rename a thread
+      archive                            Archive a thread
+      delete                             Delete a thread
+      markdown                           [alias: md] Render thread as markdown
+      export                             Export a thread as JSON
+      raw                                [alias: raw-thread] Export raw actor thread data as JSON
+    tools                                [alias: tool] Tool management commands
+      list                               [alias: ls] List all active tools (including MCP tools)
+      show                               Show details about an active tool
+    plugins                              [alias: plugin] Manage project, system, personal, and workspace plugins
+      add                                Install a plugin from a URL
+      remove                             [alias: rm] Remove an installed plugin
+      update                             Update installed plugins or one imported shared plugin
+      list                               [alias: ls] Load and list plugins in this command, not in a running Amp session
+      import                             Import a shared personal plugin into a plugin repository checkout
+      repositories                       [alias: repos] List available Personal Plugins and Workspace Plugins repositories
+      show-agent-options                 Show models and built-in tool names available to plugin agents
+      exec                               Execute a plugin with a given event
+      show-docs                          Output the plugin API documentation understood by this version of Amp
+    skill                                [alias: skills] Manage skills from shared references, Git repositories, or local
+                                         paths
+      add                                Install skills from a source
+      list                               [alias: ls] List all available skills
+      remove                             [alias: rm] Remove an installed skill
+      info                               Show information about a skill
+      repositories                       [alias: repos] List available Personal Skills and Workspace Skills repositories
+    permissions                          [alias: permission] Manage permissions
+      list                               [alias: ls] List permissions
+      test                               Test permissions
+      edit                               Edit permissions
+      add                                Add permission rule
+    mcp                                  Manage MCP servers
+      add                                Add an MCP server configuration
+      list                               List available MCP servers
+      remove                             Remove an MCP server configuration
+      remote                             Manage MCP servers saved to ampcode.com
+        list                             List stored remote MCP servers
+        add                              Add a stored remote MCP server
+        update                           Update a stored remote MCP server
+        remove                           Remove a stored remote MCP server
+        check                            Check a stored remote MCP server
+        tools                            List tools for a stored remote MCP server
+        login                            Log in to a stored remote MCP server
+        logout                           Log out of a stored remote MCP server
+      oauth                              Manage OAuth credentials for MCP servers in local CLI settings
+        login                            Register OAuth client credentials for an MCP server
+        logout                           Remove OAuth credentials for an MCP server
+        status                           Show OAuth status for an MCP server
+      doctor                             Check MCP server status
+      approve                            Approve a workspace MCP server
+    config                               Manage Amp configuration
+      edit                               Open the Amp settings file in $EDITOR
+      keymap                             List command keymap entries
+      model-providers                    Manage model provider keys and subscriptions
+        list                             List model provider keys and subscriptions in priority order
+        activate                         Activate a model provider key (subscriptions other than ChatGPT replace the
+                                         active connection of the same type)
+        deactivate                       Deactivate a model provider key
+        set-priority                     Change where a connection sits in the model routing precedence order
+        show                             Show complete non-secret model provider connection data as JSON
+        delete                           Delete a model provider key or subscription
+        test                             Test a model provider key or subscription
+        check-access                     Check which model provider serves a model by running a small inference
+        add-router                       Add an AI model router and select the models routed through it
+        edit-router                      Edit an AI model router
+        setup-guide                      Explain how to obtain the credential an AI model router needs
+        edit-key                         Edit a model provider API key name or model mapping
+        add-chatgpt-subscription         Link your ChatGPT subscription to Amp as a model provider by signing in with
+                                         ChatGPT in your browser
+        add-github-copilot-subscription  Connect your personal GitHub Copilot subscription in the browser
+      vocabulary                         Manage personal dictation vocabulary
+        show                             Show personal dictation vocabulary (default)
+        add                              Add terms without replacing existing vocabulary
+        set                              Replace personal dictation vocabulary; omit terms to clear it
+    domains                              Manage custom domains for sites
+      list                               List custom domains, statuses, and required DNS records
+      add                                Add a custom domain
+      check                              Request an immediate DNS and provisioning status check
+      remove                             [alias: rm] Remove a custom domain
+    projects                             Manage Amp projects
+      create                             Create an Amp-hosted project or map an existing Git repository
+      update                             Update project settings by ID, [@]namespace/name, or repository
+      list                               List projects accessible to you
+      status                             Show the project matched by this directory's git remotes
+      get                                Get a project by ID, [@]namespace/name, or repository
+      snapshots                          Manage a project’s shared orb snapshots
+        list                             List shared orb snapshots by project and orb size
+        delete                           [alias: rm] Delete all shared orb snapshots, or one orb size with --resource
+      gallery-media                      Manage a project’s Amp Store gallery media
+        get                              Print a project’s Amp Store gallery media as JSON
+        set                              Set a project’s Amp Store gallery media from a JSON array of
+                                         {"type":"image"|"video","url":"<Amp artifact URL>","width":N,"height":N} items
+      delete                             [alias: rm] Delete a project by ID, [@]namespace/name, or repository
+    oauth-clients                        Manage workspace External API OAuth clients
+      list                               List OAuth clients and client IDs
+      create                             Create a Sign in with Amp OAuth client
+      edit                               Edit a Sign in with Amp OAuth client
+    secrets                              Manage environment variables and secrets for orbs and perma-orbs
+      list                               List secret and environment variable names
+      history                            Show the change history of secrets and environment variables, including deletions
+                                         (values are never shown)
+      get                                Get an environment variable value (secret values are never returned)
+      set                                Add or update a secret or environment variable
     [truncated: more than 200 lines]
 strings:
   # /home/agent/.local/bin/amp -> /home/agent/.local/lib/node_modules/@ampcode/cli/bin/amp
-  # scanned 10 file(s), 269905096 byte(s) under /home/agent/.local/lib/node_modules/@ampcode/cli
+  # scanned 10 file(s), 322179688 byte(s) under /home/agent/.local/lib/node_modules/@ampcode/cli
   documented AMP_API_KEY: present
   documented AMP_URL: present
   documented AMP_SETTINGS_FILE: present
@@ -236,6 +236,7 @@ strings:
   AGENT_PROXY_AUTH_TOKEN
   AI_GATEWAY_API_KEY
   AMP_API_KEY
+  AMP_DEPLOYMENT_DATA_DIRECTORY
   AMP_DISABLE_AMP_COAUTHOR_TRAILER
   AMP_DISABLE_SECRET_REDACTION
   AMP_GITHUB_BOOTSTRAP_TOKEN
@@ -245,13 +246,11 @@ strings:
   AMP_INITIAL_AGENT_MODE_KEY
   AMP_KEYRING_ENTRY_CLASS__
   AMP_MAC_SIDECAR_GATEWAY_TOKEN
-  AMP_NET_BROWSER_PROFILE_DIR
   AMP_ORB_PROVIDER_TOKEN
   AMP_PORTAL_HAIRPIN_KEY
   AMP_SECRET_ENV_NAMES
   AMP_SETTINGS_FILE
   AMP_SIGNING_KEYCHAIN
-  AMP_THREAD_IDENTITY_AUTH
   AMP_WORKLOAD_IDENTITY_REQUEST_TOKEN
   AMP_WORKLOAD_IDENTITY_TOKEN
   ANDROID_HOME
@@ -266,6 +265,7 @@ strings:
   ANTHROPIC_IDENTITY_TOKEN_FILE
   ANTHROPIC_PROFILE
   ANTHROPIC_WEBHOOK_SIGNING_KEY
+  ANY_KEY__
   API_KEY_URL
   APPLE_SIGNING_P12_PASSWORD
   ASC_KEY_ID
@@ -302,21 +302,24 @@ strings:
   BAD_KEY_LENGTH
   BAD_PASSWORD_READ
   BAD_SRTP_PROTECTION_PROFILE_LIST
+  BASETEN_API_KEY
   BLOCK_AS_IMPLICIT_KEY
   BUN_CONFIG_DISABLE_
   BUN_CONFIG_DISABLE_COPY_FILE_RANGE
   BUN_CONFIG_DNS_TIME_TO_LIVE_SECONDS
   BUN_CONFIG_HTTP_IDLE_TIMEOUT
+  BUN_CONFIG_HTTP_RETRY_BACKOFF
   BUN_CONFIG_MAX_HTTP_REQUESTS
   BUN_CONFIG_MAX_HTTP_REQUESTSBUN_CONFIG_MAX_HTTP_REQUESTS
-  BUN_CONFIG_SKIP_INSTALL_PACKAGESC
+  BUN_CONFIG_SKIP_INSTALL_PACKAGES
   BUN_CONFIG_TOKEN
   BUN_CONFIG_VERBOSE_FETCH
+  BUN_CONFIG_WS_CLOSE_TIMEOUT
   BUN_CONFIG_WS_HANDSHAKE_TIMEOUT
-  BUN_CONFIG_YARN_LOCKFILEBUN_CONFIG_HTTP_RETRY_COUNTBUN_CONFIG_SKIP_SAVE_LOCKFILEBUN_CONFIG_SKIP_LOAD_LOCKFILEBUN_CONFIG_NO_VERIFYM
+  BUN_CONFIG_YARN_LOCKFILEBUN_CONFIG_HTTP_RETRY_COUNTBUN_CONFIG_SKIP_SAVE_LOCKFILEBUN_CONFIG_SKIP_LOAD_LOCKFILEBUN_CONFIG_NO_VERIFY
   BUN_FEATURE_FLAG_DISABLE_ADDRCONFIG
-  BUN_GC_TIMER_INTERVALBUN_CONFIG_HTTP_IDLE_TIMEOUTBUN_INOTIFY_COALESCE_INTERVALBUN_INSTALL_STREAMING_MIN_SIZEBUN_CONFIG_WS_HANDSHAKE_TIMEOUTBUN_CONFIG_DNS_TIME_TO_LIVE_SECONDSBUN_GC_RUNS_UNTIL_SKIP_RELEASE_ACCESSBUN_INSTALL_STREAMING_DRAIN_THRESHOLDCOLUMNS
-  BUN_INSTALL_GLOBAL_STOREBUN_INSTALL_PROGRESSBUN_CONFIG_REGISTRYNPM_CONFIG_REGISTRY
+  BUN_GC_TIMER_INTERVALBUN_CONFIG_WS_CLOSE_TIMEOUTBUN_CONFIG_HTTP_IDLE_TIMEOUTBUN_INOTIFY_COALESCE_INTERVALBUN_INSTALL_STREAMING_MIN_SIZEBUN_CONFIG_WS_HANDSHAKE_TIMEOUTBUN_CONFIG_DNS_TIME_TO_LIVE_SECONDSBUN_GC_RUNS_UNTIL_SKIP_RELEASE_ACCESSBUN_INSTALL_STREAMING_DRAIN_THRESHOLDBUN_DEBUG_TEST_CHECK_PROGRESS_DELAY_MSCOLUMNS
+  BUN_MANIFEST_CACHEBUN_INSTALL_GLOBAL_STOREBUN_INSTALL_PROGRESSBUN_CONFIG_REGISTRYNPM_CONFIG_REGISTRY
   BUN_WORKER_MESSAGING_KEY
   BUN_WORKER_PARENT_PORT_KEY
   BUN_WORKER_STDIO_KEY
@@ -409,17 +412,14 @@ strings:
   CREATE_OAUTH_CLIENT_APPS
   CURSOR_USER_DATA_DIR
   CUSTOM_URL_API_KEY
+  DASHSCOPE_API_KEY
   DATA_TOO_LARGE_FOR_KEY_SIZE
   DATA_TOO_SMALL_FOR_KEY_SIZE
+  DEEPSEEK_API_KEY
   DEFAULT_SETTINGS_ENABLE_CONNECT_PROTOCOL
   DEFAULT_SETTINGS_ENABLE_PUSH
   DEFAULT_SETTINGS_HEADER_TABLE_SIZE
   DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE
-  DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS
-  DEFAULT_SETTINGS_MAX_FRAME_SIZE
-  DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE
-  DIFFERENT_KEY_TYPES
-  DIGEST_AND_KEY_TYPE_NOT_SUPPORTED
     [truncated: more than 200 lines]
 baseline-flagfile---settings-file:
   # /home/agent/probe-target
@@ -473,37 +473,37 @@ container-delta:
   A /home/agent/.npm/_cacache
   A /home/agent/.npm/_cacache/content-v2
   A /home/agent/.npm/_cacache/content-v2/sha512
-  A /home/agent/.npm/_cacache/content-v2/sha512/08
-  A /home/agent/.npm/_cacache/content-v2/sha512/08/49
-  A /home/agent/.npm/_cacache/content-v2/sha512/08/49/78a7c6173e19ff77c250cb0f03ce1647e4352e57733100e4e3dacbf8bd4dbb7c8f6f2bfc7cb409f9d300d6f0a70f645dfeb995c75b95bc69500658010d7f
-  A /home/agent/.npm/_cacache/content-v2/sha512/1b
-  A /home/agent/.npm/_cacache/content-v2/sha512/1b/c7
-  A /home/agent/.npm/_cacache/content-v2/sha512/1b/c7/cd567e0d542c78b1a9e67f6fb91914d3c7a609b66615ed8d15ffc94f13cba184b40ea435464a281e166b93d008147d2cbb547afa19ff6b6e1356f9dc2efb
-  A /home/agent/.npm/_cacache/content-v2/sha512/29
-  A /home/agent/.npm/_cacache/content-v2/sha512/29/16
-  A /home/agent/.npm/_cacache/content-v2/sha512/29/16/ef68301eb64c11a736ca1436b8dbbcbf0032dd2d884ec6b5ce6952828e45dcc4a438dddff5d0258507c93c3a4e9fbcdb02d4b586f8c0568645c272fabd95
-  A /home/agent/.npm/_cacache/content-v2/sha512/5f
-  A /home/agent/.npm/_cacache/content-v2/sha512/5f/f8
-  A /home/agent/.npm/_cacache/content-v2/sha512/5f/f8/cff13fcdddc1554ed990abb40c9be56af93a5f0b11f3b2b71630515df307e5b47d48f87d8d6d48318d20e6f30d30cd3659da5bfa2d6db60147fd8e6d05db
-  A /home/agent/.npm/_cacache/content-v2/sha512/64
-  A /home/agent/.npm/_cacache/content-v2/sha512/64/8c
-  A /home/agent/.npm/_cacache/content-v2/sha512/64/8c/63cfcbf8b08332c23e39beae6d5300686a2530b8fe8f201c3b37eea58f5b578f09b3785b762afd77ddefed760009a3af8660634a8858f56490b9beed1a8c
-  A /home/agent/.npm/_cacache/content-v2/sha512/7a
-  A /home/agent/.npm/_cacache/content-v2/sha512/7a/08
-  A /home/agent/.npm/_cacache/content-v2/sha512/7a/08/ccc67f4ab89b90db0a972f071f75e55bd5002908910c71ba496f7085dc2bca3a600bdf295c3fa0376288e73f3f8f7bcaade9b7cf6dfb394d9eaa21735513
-  A /home/agent/.npm/_cacache/content-v2/sha512/95
-  A /home/agent/.npm/_cacache/content-v2/sha512/95/37
-  A /home/agent/.npm/_cacache/content-v2/sha512/95/37/e3a0d41fb063457a5b85fdde2c9d8ed80340fca321586316dce5109707d1cab99653972fc6db37a88328cfce731500314681dfd95faf98690912e1086f49
-  A /home/agent/.npm/_cacache/content-v2/sha512/be
-  A /home/agent/.npm/_cacache/content-v2/sha512/be/03
-  A /home/agent/.npm/_cacache/content-v2/sha512/be/03/a6f9909c6a501f51b261f2933cc2df014b936ce90fb26a0bf76011052a58f69271955a9ad9b63ff8efb9f7c37cd281d90929dc5f425d22f87fc09543bd65
+  A /home/agent/.npm/_cacache/content-v2/sha512/0d
+  A /home/agent/.npm/_cacache/content-v2/sha512/0d/d3
+  A /home/agent/.npm/_cacache/content-v2/sha512/0d/d3/c0e781b60e7b1e3195b99fa886b0f9db7c0e9d5142d7fb41ce0b331aefca95ae859679f543a0b401ca69fe3ae008cee19deb8e25d4363d7b106d63bfb58a
+  A /home/agent/.npm/_cacache/content-v2/sha512/1a
+  A /home/agent/.npm/_cacache/content-v2/sha512/1a/2f
+  A /home/agent/.npm/_cacache/content-v2/sha512/1a/2f/e98194c225bf4ddcdc3b9ab5cc213bfde4b514de80e5b05f941e3e95b216e391541ed5d9cf0a2e51897943bea1104dc7e6bdadd9efb093e942bcec3e15a3
+  A /home/agent/.npm/_cacache/content-v2/sha512/53
+  A /home/agent/.npm/_cacache/content-v2/sha512/53/13
+  A /home/agent/.npm/_cacache/content-v2/sha512/53/13/ab1bcfe59c37d1fe112208749537e5a586d755c890e0397169073b0752d5ba0d93403b7b7d950daa1afe0ebf3134e834d03ae3d0860cccfa150cf47da763
+  A /home/agent/.npm/_cacache/content-v2/sha512/62
+  A /home/agent/.npm/_cacache/content-v2/sha512/62/69
+  A /home/agent/.npm/_cacache/content-v2/sha512/62/69/933e0a6d7bbbf990a486772dacdd18c275dd66f86fdd011caa0031e1e824a7816da6a01185605abf1a685a4bf9328098b072e94617eea596d255b1c1fc4f
+  A /home/agent/.npm/_cacache/content-v2/sha512/92
+  A /home/agent/.npm/_cacache/content-v2/sha512/92/59
+  A /home/agent/.npm/_cacache/content-v2/sha512/92/59/402c145c108fb23576944c447854b6b11af46751d2b65a5d6c87cc377072f0244d6515be2a57253b92e6a58c68fc721aa53420ca0ebf8d6c3602424e5214
+  A /home/agent/.npm/_cacache/content-v2/sha512/ad
+  A /home/agent/.npm/_cacache/content-v2/sha512/ad/52
+  A /home/agent/.npm/_cacache/content-v2/sha512/ad/52/f1aecfd76d68cf74f29af708d7c29565d7888073e384901620fd0ba9f8d12ee8fc47485b99f1851895767e38c668216ab787a386884e44bd74eeb8fe6e9c
+  A /home/agent/.npm/_cacache/content-v2/sha512/bc
+  A /home/agent/.npm/_cacache/content-v2/sha512/bc/bb
+  A /home/agent/.npm/_cacache/content-v2/sha512/bc/bb/73ca3282edea5c53c72427a6a2fb61a3346051893a41591efe3ef98aae52d286cb2399370ff8b7d84565fc941589695c3e9b3150cd1d0ae35fdb82023eab
+  A /home/agent/.npm/_cacache/content-v2/sha512/c9
+  A /home/agent/.npm/_cacache/content-v2/sha512/c9/24
+  A /home/agent/.npm/_cacache/content-v2/sha512/c9/24/ed63286daab5847a6d0d6d5ee0fc7682cf7d934bad0870f1deccf07bc1337ed0f41315a5ce1c9f0bcebc73fe39da65ec6d3ec4fd3544a17d20148b22ac1a
   A /home/agent/.npm/_cacache/index-v5
   A /home/agent/.npm/_cacache/index-v5/02
   A /home/agent/.npm/_cacache/index-v5/02/c5
   A /home/agent/.npm/_cacache/index-v5/02/c5/faf7106c9d6d6c8cfd8b0738f17d2542ca24dcaeaac5dd58e3d06b24e3ff
-  A /home/agent/.npm/_cacache/index-v5/5a
-  A /home/agent/.npm/_cacache/index-v5/5a/e7
-  A /home/agent/.npm/_cacache/index-v5/5a/e7/00b0cda1dd8da916eb248cd496dc6b205ba2f36ca79ca2d9238e43ae18ed
+  A /home/agent/.npm/_cacache/index-v5/58
+  A /home/agent/.npm/_cacache/index-v5/58/54
+  A /home/agent/.npm/_cacache/index-v5/58/54/93b57b7c79bc66e9fad7e090c2fb89bea26c300fcee09b388ceeaed7c85c
   A /home/agent/.npm/_cacache/index-v5/5b
   A /home/agent/.npm/_cacache/index-v5/5b/eb
   A /home/agent/.npm/_cacache/index-v5/5b/eb/72be895465ac289bdf331f992c36a93f794f4d8c44d6414d14dab5ddfc9c
@@ -516,15 +516,15 @@ container-delta:
   A /home/agent/.npm/_cacache/index-v5/9f
   A /home/agent/.npm/_cacache/index-v5/9f/27
   A /home/agent/.npm/_cacache/index-v5/9f/27/1e8d43a2512db858e6b27eaa62ffc5f2300bd1237375b268fcabc67fc170
+  A /home/agent/.npm/_cacache/index-v5/a4
+  A /home/agent/.npm/_cacache/index-v5/a4/81
+  A /home/agent/.npm/_cacache/index-v5/a4/81/7abf083b4d21ce2767622c6a519ab4c4fd0a36bc8e705abf9a9e2b8ca9e6
   A /home/agent/.npm/_cacache/index-v5/a9
   A /home/agent/.npm/_cacache/index-v5/a9/fb
   A /home/agent/.npm/_cacache/index-v5/a9/fb/35f53a704aeb87f34674a61ae401938206d576db49770f67854ee84e9cb8
-  A /home/agent/.npm/_cacache/index-v5/c1
-  A /home/agent/.npm/_cacache/index-v5/c1/a8
-  A /home/agent/.npm/_cacache/index-v5/c1/a8/58b4b98ba98853765a38d14d55071f0eca0918f126f015103681efde688e
   A /home/agent/.npm/_cacache/tmp
   A /home/agent/.npm/_logs
-  A /home/agent/.npm/_logs/2026-10-17T10_18_29_647Z-debug-0.log
+  A /home/agent/.npm/_logs/2026-10-25T00_22_59_503Z-debug-0.log
   A /home/agent/.npm/_update-notifier-last-checked
   A /home/agent/probe-target
   A /home/agent/probe-target/settings.json
