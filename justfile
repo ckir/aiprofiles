@@ -81,6 +81,14 @@ probe-tests:
     sh sandbox/tests/resolve-agents.sh
     sh sandbox/tests/verify-transcripts.sh
 
+# Compare each evidence transcript's version with the latest upstream one (network; the weekly workflow runs it)
+evidence-staleness:
+    sh scripts/check-evidence-staleness.sh
+
+# The offline tests of that check
+evidence-staleness-tests:
+    sh scripts/tests/check-evidence-staleness.sh
+
 # Regenerate the `## Tools` table in docs/dev-tooling.md from .claude/recommended-tools.json
 tools-doc:
     sh scripts/gen-tool-table.sh
@@ -102,7 +110,7 @@ doc-check:
 # because CI runs the same command. One caveat it cannot fix: `shellcheck` is whatever version is on the
 # machine, and `ubuntu-latest`'s is older than a current local install. The older one reports SC2317 where
 # the newer reports SC2329, so a file can pass here and fail there; `sandbox/run.sh` carries both codes.
-check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins test probe-tests tools-doc-check doc-check
+check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins evidence-staleness-tests test probe-tests tools-doc-check doc-check
 
 # Background watcher
 watch:
