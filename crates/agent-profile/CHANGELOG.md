@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/ckir/aiprofiles/compare/v0.1.0...v0.1.1) - 2026-10-25
+
+### Added
+
+- *(doctor)* name credential variables that bypass a profile's isolation ([#73](https://github.com/ckir/aiprofiles/pull/73))
+
 ## [0.1.0](https://github.com/ckir/aiprofiles/compare/v0.0.7...v0.1.0) - 2026-10-25
 
 ### Added
