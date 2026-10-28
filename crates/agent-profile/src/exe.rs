@@ -10,6 +10,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::adapter::AdapterMetadata;
 use crate::error::{Error, NotInstalledReason, Result};
 
 /// Where a discovered executable came from.
@@ -24,6 +25,46 @@ pub enum Origin {
 pub struct Found {
     pub path: PathBuf,
     pub origin: Origin,
+}
+
+/// Where `agents` resolved an agent's executable to (SP5a design §3). Each variant is a listed fact,
+/// not an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutableStatus {
+    /// `exe::discover` resolved it: the path, and whether it came from the configuration or `PATH`.
+    Found(Found),
+    /// Nothing configured, and no absolute `PATH` entry holds it.
+    NotOnPath,
+    /// The configured path is not a file.
+    ConfiguredMissing(PathBuf),
+    /// The resolved file would launch through a shell (a `.cmd`/`.bat`/`.ps1` script or shim).
+    Unsupported(PathBuf),
+}
+
+impl ExecutableStatus {
+    /// Resolves an agent's executable to a listed fact. Not-installed and unsupported outcomes become
+    /// variants; any other discovery error propagates.
+    pub fn discover(
+        metadata: &AdapterMetadata,
+        explicit: Option<&Path>,
+        path_var: Option<&OsStr>,
+        config_file: &Path,
+    ) -> Result<ExecutableStatus> {
+        match discover(metadata.id, metadata.executable, explicit, path_var, config_file) {
+            Ok(found) => Ok(ExecutableStatus::Found(found)),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::NotOnPath { .. }, ..
+            }) => Ok(ExecutableStatus::NotOnPath),
+            Err(Error::AgentNotInstalled {
+                reason: NotInstalledReason::ExplicitMissing(path),
+                ..
+            }) => Ok(ExecutableStatus::ConfiguredMissing(path)),
+            Err(Error::UnsupportedExecutable { path, .. }) => {
+                Ok(ExecutableStatus::Unsupported(path))
+            }
+            Err(error) => Err(error),
+        }
+    }
 }
 
 /// Extensions std would run through a shell or that need an interpreter: refused on every platform

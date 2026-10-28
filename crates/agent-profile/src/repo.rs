@@ -62,6 +62,11 @@ pub fn strip_verbatim(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Whether `key` is an ancestor directory above `path` (and not `path` itself).
+pub fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
+    path.starts_with(key) && key != path
+}
+
 /// Whether discovery may touch `target`, a `gitdir` or `commondir` target joined to its base (design §5.3).
 /// An allow-list: on Windows only a local drive, or the network share `repository_dir` itself lives on.
 pub fn target_allowed(target: &Path, repository_dir: &Path) -> bool {

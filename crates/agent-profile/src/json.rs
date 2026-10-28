@@ -16,11 +16,10 @@ use serde::Serialize;
 use crate::adapter::{AdapterMetadata, Capability, CapabilityState, SupportLevel};
 use crate::config::Config;
 use crate::doctor::{Report, Status};
-use crate::exe::Origin;
+use crate::exe::{ExecutableStatus, Origin};
 use crate::lifecycle::{Listing, Presence};
 use crate::name::AgentId;
-use crate::output::{ExecutableStatus, is_proper_ancestor};
-use crate::repo::Discovery;
+use crate::repo::{Discovery, is_proper_ancestor};
 use crate::repositories::Entry;
 use crate::resolve::{Resolution, ResolutionSource};
 
@@ -623,8 +622,7 @@ mod tests {
     #[test]
     fn agents_document_renders_each_executable_state_and_the_full_matrix() {
         use crate::adapter::{self, Capability};
-        use crate::exe::{Found, Origin};
-        use crate::output::ExecutableStatus;
+        use crate::exe::{ExecutableStatus, Found, Origin};
         use std::path::PathBuf;
 
         let metadata = adapter::lookup("fake").unwrap().metadata();

@@ -16,8 +16,7 @@ use crate::adapter::{
 };
 use crate::config::{Config, LinkOutcome, UnlinkOutcome};
 use crate::doctor::{Check, Report, Status};
-use crate::error::{Error, NotInstalledReason, Result};
-use crate::exe::{self, Found, Origin};
+use crate::exe::Origin;
 use crate::lifecycle::{CreateOutcome, DeleteOutcome, Listing};
 use crate::name::{AgentId, ProfileName};
 use crate::repo::Discovery;
@@ -264,9 +263,7 @@ pub(crate) fn shell_word(path: &Path) -> String {
     if shown.contains(char::is_whitespace) { format!("\"{shown}\"") } else { shown }
 }
 
-pub(crate) fn is_proper_ancestor(key: &Path, path: &Path) -> bool {
-    path.starts_with(key) && key != path
-}
+pub(crate) use crate::repo::is_proper_ancestor;
 
 /// `link` (SP3 design §7.5).
 pub fn link_line(
@@ -402,45 +399,7 @@ pub fn list_lines(listing: &Listing, agent: &str) -> Vec<String> {
         .collect()
 }
 
-/// Where `agents` resolved an agent's executable to (SP5a design §3). Each variant is a listed fact,
-/// not an error.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExecutableStatus {
-    /// `exe::discover` resolved it: the path, and whether it came from the configuration or `PATH`.
-    Found(Found),
-    /// Nothing configured, and no absolute `PATH` entry holds it.
-    NotOnPath,
-    /// The configured path is not a file.
-    ConfiguredMissing(PathBuf),
-    /// The resolved file would launch through a shell (a `.cmd`/`.bat`/`.ps1` script or shim).
-    Unsupported(PathBuf),
-}
-
-impl ExecutableStatus {
-    /// Resolves an agent's executable to a listed fact. Not-installed and unsupported outcomes become
-    /// variants; any other discovery error propagates.
-    pub fn discover(
-        metadata: &AdapterMetadata,
-        explicit: Option<&Path>,
-        path_var: Option<&OsStr>,
-        config_file: &Path,
-    ) -> Result<ExecutableStatus> {
-        match exe::discover(metadata.id, metadata.executable, explicit, path_var, config_file) {
-            Ok(found) => Ok(ExecutableStatus::Found(found)),
-            Err(Error::AgentNotInstalled {
-                reason: NotInstalledReason::NotOnPath { .. }, ..
-            }) => Ok(ExecutableStatus::NotOnPath),
-            Err(Error::AgentNotInstalled {
-                reason: NotInstalledReason::ExplicitMissing(path),
-                ..
-            }) => Ok(ExecutableStatus::ConfiguredMissing(path)),
-            Err(Error::UnsupportedExecutable { path, .. }) => {
-                Ok(ExecutableStatus::Unsupported(path))
-            }
-            Err(error) => Err(error),
-        }
-    }
-}
+pub use crate::exe::ExecutableStatus;
 
 /// `repositories` (SP5b design §4): a block per stored mapping, a blank line between blocks. The key is
 /// printed as stored.

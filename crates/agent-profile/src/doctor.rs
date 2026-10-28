@@ -21,12 +21,12 @@ use crate::adapter::{
 };
 use crate::config::{AppRoot, Config};
 use crate::error::Error;
-use crate::exe::{self, Origin};
+use crate::exe::{self, ExecutableStatus, Origin};
 use crate::json;
 use crate::lifecycle::{self, Presence};
 use crate::name::Platform;
 use crate::name::{AgentId, ProfileName};
-use crate::output::{self, ExecutableStatus};
+use crate::output;
 use crate::repo::{self, Discovery};
 use crate::repositories::{self, State};
 use crate::resolve;

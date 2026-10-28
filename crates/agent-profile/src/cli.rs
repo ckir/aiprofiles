@@ -18,6 +18,7 @@ use crate::adapter::{self, PlanContext, ProfilePresence};
 use crate::config::{self, AppRoot, Config};
 use crate::doctor;
 use crate::error::{Error, Result};
+use crate::exe;
 use crate::json;
 use crate::launch::{self, LaunchOutcome};
 use crate::lifecycle;
@@ -1052,7 +1053,7 @@ fn run_agents(root: &AppRoot, config: &Config, json: bool) -> Result<i32> {
     let mut entries = Vec::new();
     for adapter in adapter::registry() {
         let metadata = adapter.metadata();
-        let status = output::ExecutableStatus::discover(
+        let status = exe::ExecutableStatus::discover(
             metadata,
             config.agent_executable(metadata.id),
             path_var.as_deref(),
