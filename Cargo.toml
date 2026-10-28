@@ -35,7 +35,6 @@ toml = "1.1"
 toml_edit = "0.25"
 thiserror = "2"
 tempfile = "3"
-proptest = "1.11"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
