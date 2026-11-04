@@ -137,8 +137,13 @@ jobs:
       - name: Publish the release
         run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
       - name: Rebuild the site
+        # The release was just un-drafted. When it is the newest published release, hand its tag to docs.yml
+        # so the header does not depend on the "latest" alias having settled; a rebuild of an older tag
+        # leaves the alias, and so the header, alone.
         run: |
-          gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" || {
+          newest=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' | sort -V | tail -n 1)
+          if [ "$newest" = "$TAG" ]; then set -- -f "tag=$TAG"; else set --; fi
+          gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" "$@" || {
             echo "::error::site rebuild not dispatched; run: gh workflow run docs.yml"
             exit 1
           }

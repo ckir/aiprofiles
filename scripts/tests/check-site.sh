@@ -59,15 +59,16 @@ SNIP
 windows_snippet() {
     cat <<'SNIP'
 & {
-  $ErrorActionPreference = 'Stop'
-  $ProgressPreference = 'SilentlyContinue'
-  Invoke-WebRequest https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip -OutFile agent-profile.zip
-  Invoke-WebRequest https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip.sha256 -OutFile agent-profile.zip.sha256
-  $hash = (Get-FileHash agent-profile.zip -Algorithm SHA256).Hash
-  $expected = ((Get-Content agent-profile.zip.sha256 -Raw) -split '\s+')[0]
-  if (-not ($hash -and $expected -and $hash -ieq $expected)) { throw 'checksum mismatch' }
-  Expand-Archive -Force agent-profile.zip -DestinationPath .
-  .\agent-profile.exe agents
+  $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
+  $u = 'https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip'
+  Invoke-WebRequest -UseBasicParsing $u -OutFile agent-profile-x86_64-pc-windows-msvc.zip
+  Invoke-WebRequest -UseBasicParsing "$u.sha256" -OutFile agent-profile-x86_64-pc-windows-msvc.zip.sha256
+  $expected = ((Get-Content .\agent-profile-x86_64-pc-windows-msvc.zip.sha256 -Raw) -split '\s+')[0]
+  $hash = (Get-FileHash .\agent-profile-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
+  if ($hash -and $expected -and ($hash -ieq $expected)) {
+    Expand-Archive .\agent-profile-x86_64-pc-windows-msvc.zip -DestinationPath . -Force
+    .\agent-profile.exe agents
+  } else { throw "checksum mismatch: expected $expected got $hash" }
 }
 SNIP
 }
@@ -188,7 +189,7 @@ rejects "t11 unguarded PowerShell" "unguarded PowerShell"
 
 fresh
 # shellcheck disable=SC2016 # sed expression, the $ are literal
-edit "$d/index.html" 's#\$hash -and \$expected -and \$hash -ieq#$hash -ieq#'
+edit "$d/index.html" 's#if (\$hash -and \$expected -and (\$hash -ieq \$expected)) {#if (\$hash -ieq \$expected) {#'
 rejects "t11b unguarded Windows compare" "unverified unpack (Windows)"
 
 # t15 a stylesheet that imports another origin is rejected (the privacy guard covers CSS and JS)
@@ -200,6 +201,17 @@ rejects "t15 external host in CSS" "external host"
 fresh
 edit "$d/index.html" '/id="snip-aarch64-unknown-linux-gnu"/,/^<\/pre>/s/agent-profile-aarch64-unknown-linux-gnu/agent-profile-x86_64-unknown-linux-gnu/g'
 rejects "t16 wrong asset on a tab" "wrong asset: aarch64-unknown-linux-gnu"
+
+# t16b a tab whose snippet never names its own asset is rejected
+fresh
+edit "$d/index.html" '/id="snip-aarch64-unknown-linux-gnu"/,/^<\/pre>/s/agent-profile-aarch64-unknown-linux-gnu/other-tool/g'
+rejects "t16b tab without its own asset" "wrong asset: aarch64-unknown-linux-gnu does not name"
+
+# t21 a PowerShell comment that looks like the guard does not count: the unpack must sit inside the if
+fresh
+# shellcheck disable=SC2016 # sed expression, the $ are literal
+edit "$d/index.html" 's#^  if (\$hash -and \$expected -and (\$hash -ieq \$expected)) {#  \# $hash -and $expected -and $hash -ieq $expected\n  {#'
+rejects "t21 commented-out guard" "unverified unpack (Windows)"
 
 # t17 a checksum that cannot stop the chain is rejected
 fresh

@@ -64,7 +64,11 @@ while read -r target archive; do
     if ! grep -q "id=\"tab-$target\"" "$page"; then
         fail "missing tab" "$target"
     fi
-    # A tab may only download and unpack its own asset.
+    # A tab must name its own asset (otherwise it may download anything), and no other.
+    case $snippet in
+        *"agent-profile-$target.$archive"*) ;;
+        *) fail "wrong asset" "$target does not name agent-profile-$target.$archive" ;;
+    esac
     for name in $(printf '%s\n' "$snippet" | grep -oE 'agent-profile-[A-Za-z0-9_-]+\.(tar\.gz|zip)' | sort -u); do
         case $name in
             "agent-profile-$target."*) ;;
@@ -102,10 +106,21 @@ while read -r target archive; do
             *"\$ErrorActionPreference = 'Stop'"*) ;;
             *) fail "unguarded PowerShell" "$target" ;;
         esac
-        before=${snippet%%Expand-Archive*}
+        # PowerShell comments do not count; the unpack must sit inside the guarding `if`, and a mismatch
+        # must throw.
+        code=$(printf '%s\n' "$snippet" | sed '/^[[:space:]]*#/d')
+        before=${code%%Expand-Archive*}
         case $before in
-            *Get-FileHash*' -and '*-ieq* | *Get-FileHash*' -and '*-eq*) ;;
+            *Get-FileHash*) ;;
             *) fail "unverified unpack (Windows)" "$target" ;;
+        esac
+        guard=$(printf '%s\n' "$before" | grep -E '^[[:space:]]*if \(.*-and .*-i?eq .*\) \{$' | tail -n 1)
+        if [ -z "$guard" ]; then
+            fail "unverified unpack (Windows)" "$target"
+        fi
+        case $code in
+            *Expand-Archive*throw*) ;;
+            *) fail "unverified unpack (Windows)" "$target (no throw on mismatch)" ;;
         esac
     fi
 done <<EOF2
