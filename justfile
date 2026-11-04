@@ -39,7 +39,7 @@ msrv:
 
 # Every source file carries header.txt (target/ and .clavity/ are generated or scratch output)
 license-check:
-    addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' .
+    addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' -ignore '.superpowers/**' .
 
 # Dependency advisories, licences, bans and sources
 deny:
@@ -67,6 +67,10 @@ line-citations:
 action-pins:
     sh scripts/check-action-pins.sh
     sh scripts/tests/check-action-pins.sh
+
+# The checksum script that finalizes a release, and its tests.
+release-finalize-tests:
+    sh scripts/tests/release-finalize.sh
 
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
@@ -110,7 +114,7 @@ doc-check:
 # because CI runs the same command. One caveat it cannot fix: `shellcheck` is whatever version is on the
 # machine, and `ubuntu-latest`'s is older than a current local install. The older one reports SC2317 where
 # the newer reports SC2329, so a file can pass here and fail there; `sandbox/run.sh` carries both codes.
-check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins evidence-staleness-tests test probe-tests tools-doc-check doc-check
+check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins release-finalize-tests evidence-staleness-tests test probe-tests tools-doc-check doc-check
 
 # Background watcher
 watch:
