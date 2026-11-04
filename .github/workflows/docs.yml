@@ -93,6 +93,19 @@ jobs:
           </html>
           EOF
 
+      - name: Assemble the site
+        # The landing page takes the Pages root and rustdoc moves to /rustdoc/. The header version is the
+        # latest PUBLISHED release, read here and passed in, so the page never names a version whose
+        # download links do not serve yet (spec 6.1/5.1). One step: a `run:` is its own shell, so a
+        # variable would not reach a later step. If the call fails, the deploy fails.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name | sed 's/^v//')
+          sh scripts/build-site.sh "$VERSION" site-dist
+          mkdir -p site-dist/rustdoc
+          cp -r target/doc/. site-dist/rustdoc/
+
       # No actions/configure-pages: its only job is computing base_url for static
       # site generators, which rustdoc does not consume, and `enablement` defaults
       # to false so it never creates the site either. Pages is enabled with
@@ -100,7 +113,7 @@ jobs:
       # dropping it keeps the build job honestly at contents:read.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: target/doc
+          path: site-dist
 
   deploy:
     name: Deploy to Pages

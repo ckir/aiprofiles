@@ -200,6 +200,27 @@ status=$?
 set -e
 check "t13 extract unknown target exits 1" "$status" "1"
 
+# t14 build-site.sh fills the placeholders and writes the rustdoc redirect stubs
+set +e
+sh "$root/scripts/build-site.sh" 9.9.9 "$tmp/built" >/dev/null 2>&1
+status=$?
+set -e
+check "t14 build-site exits 0" "$status" "0"
+left=$(grep -c '{{' "$tmp/built/index.html" || true)
+check "t14 no placeholder left" "$left" "0"
+has=$(grep -c 'v9.9.9' "$tmp/built/index.html" || true)
+check "t14 version substituted" "$has" "1"
+demo_version=$(sed -n 's/^version=//p' "$root/site/demo/agents.meta")
+has=$(grep -c "agent-profile $demo_version on" "$tmp/built/index.html" || true)
+check "t14 demo version substituted" "$has" "1"
+check "t14 agent_profile stub" "$(grep -c 'url=../rustdoc/agent_profile/index.html' "$tmp/built/agent_profile/index.html")" "1"
+check "t14 fake_agent stub" "$(grep -c 'url=../rustdoc/fake_agent/index.html' "$tmp/built/fake_agent/index.html")" "1"
+set +e
+sh "$root/scripts/build-site.sh" 9.9.9 >/dev/null 2>&1
+status=$?
+set -e
+check "t14 one argument exits 2" "$status" "2"
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures failure(s)"
     exit 1
