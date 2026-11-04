@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -36,6 +37,9 @@ jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
+    # The legs only upload assets; the top-level `actions: write` is for `finalize` alone.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -94,3 +98,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: gh release upload "$TAG" "agent-profile-${{ matrix.target }}.${{ matrix.archive }}" --clobber --repo "$GITHUB_REPOSITORY"
+
+  finalize:
+    name: Checksums and publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      # No `ref:` here on purpose: the job needs scripts/release-finalize.sh from the ref that RUNS this
+      # workflow (main for a real release, the feature branch for a manual dispatch), not from the release
+      # tag, whose tree predates the script. Only the build legs check out the tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Re-runs also download earlier .sha256 files; the script ignores them and rewrites its own.
+      - name: Download archives
+        run: mkdir assets && gh release download "$TAG" --dir assets --pattern 'agent-profile-*' --repo "$GITHUB_REPOSITORY"
+      - name: Write checksums
+        run: sh scripts/release-finalize.sh "$TAG" assets
+      - name: Upload checksums
+        run: gh release upload "$TAG" assets/*.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Publish the release
+        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+      - name: Rebuild the site
+        run: |
+          gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" || {
+            echo "::error::site rebuild not dispatched; run: gh workflow run docs.yml"
+            exit 1
+          }

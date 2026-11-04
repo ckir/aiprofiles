@@ -26,6 +26,10 @@ git_release_name = "v{{ version }}"
 # version that has no tag yet as it is, writing only its changelog (release-plz `next_version` and
 # `Diff::should_update_version`).
 git_release_type = "prod"
+# Spec §6.1: release-plz publishes the release before the binaries exist, so create it as a draft; the
+# `finalize` job in .github/workflows/release.yml uploads checksums and un-drafts it once all five archives
+# are attached. A published release therefore never lacks an asset the landing page links to.
+git_release_draft = true
 # Only `feat`/`fix`/`perf`/`refactor` commits that change files under crates/agent-profile open a release PR;
 # release-plz ignores commits that touch nothing in the package directory (Cargo.lock, CI, root docs).
 release_commits = "^(feat|fix|perf|refactor)(\\(.*\\))?!?:"
