@@ -72,6 +72,12 @@ action-pins:
 release-finalize-tests:
     sh scripts/tests/release-finalize.sh
 
+# Gates the landing page against the release matrix and the demo capture, and the gate's own tests. Red until
+# site/index.html exists; wired into `check` when the page lands.
+site-check:
+    sh scripts/check-site.sh
+    sh scripts/tests/check-site.sh
+
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
 #
