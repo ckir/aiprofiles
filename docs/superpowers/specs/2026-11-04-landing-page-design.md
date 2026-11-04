@@ -333,6 +333,7 @@ each is settled above and listed here so the owner can check them while reading:
 | 2026-11-04 | Linux x86_64 (this box, uncontrolled background load) | without checksum step, v0.1.2 | 1.8 s cold, 1.3 s warm |
 | 2026-11-04 | v0.1.2 release timeline | release published 06:00:52Z, first asset 06:01:38Z, last 06:02:24Z | about 90 s dead-link window |
 | 2026-11-04 | palette contrast (WCAG 2 formula) | every §5.6 text/background pair | lowest 5.41:1 (bar labels on terminal), highest 14.70:1; all pass AA for body text |
+| 2026-11-04 | v0.1.2 checksum dispatch (run 41901626183, feat/landing-page) | finalize job: 5 `.sha256` assets attached, release not a draft; `sha256sum -c -` from a clean directory prints OK. First attempt: both macOS legs never got a hosted runner (GitHub capacity), `gh run rerun --failed` succeeded | pipeline proven on the live release |
 
 ## Stand-downs
 
