@@ -1,0 +1,143 @@
+agent:        claude
+executable:   /home/probe/.local/bin/claude (PATH)
+mechanism:    environment variable CLAUDE_CONFIG_DIR
+support:      proven
+version:      2.1.310 (verified 2026-10-25)
+isolation:    config: supported
+                cited: user settings live in the config directory; project .claude/settings*.json and .mcp.json still layer on top
+              credentials: conditional
+                measured: credential environment variables override it; the per-directory .credentials.json and macOS Keychain entry are cited, not measured
+              state: not guaranteed
+                cited: history and project state moving with the directory is community-sourced only
+
+agent:        codex
+executable:   /home/probe/.local/bin/codex (PATH)
+mechanism:    environment variable CODEX_HOME
+support:      proven
+version:      0.164.0 (verified 2026-10-25)
+isolation:    config: supported
+                cited: config.toml and <name>.config.toml live in CODEX_HOME; project-level configuration layering is not measured
+              credentials: conditional
+                measured: OPENAI_API_KEY, CODEX_API_KEY and CODEX_ACCESS_TOKEN bypass it; that auth.json and the keyring key follow CODEX_HOME is cited, not measured
+              state: conditional
+                cited: CODEX_SQLITE_HOME relocates the state database; the variable is present in the binary but the probe sets only CODEX_HOME, so the relocation is not measured
+
+agent:        aider
+executable:   /home/probe/.local/bin/aider (PATH)
+mechanism:    argument --config <file>
+support:      proven
+version:      0.86.2 (verified 2026-09-15)
+isolation:    config: not guaranteed
+                measured: the user-level ~/.aider.conf.yml, repository and cwd config files, .env files and AIDER_* variables still apply
+              credentials: not supported
+                measured: API keys come from the environment, .env files and config files
+              state: not supported
+                measured: history files are written in the working directory
+
+agent:        gemini
+executable:   not found on PATH
+mechanism:    environment variable GEMINI_CLI_HOME
+support:      proven
+version:      0.65.0 (verified 2026-10-25)
+isolation:    config: supported
+                measured: `+ d /home/agent/probe-target/.gemini` and `+ f /home/agent/probe-target/.gemini/projects.json` — the variable moved the configuration inside the target, nested one level as the agent creates `.gemini` itself
+              credentials: unknown
+                unmeasured: separating stored credentials requires a vendor session; GEMINI_API_KEY, GOOGLE_API_KEY and GOOGLE_APPLICATION_CREDENTIALS (strings measured) are the documented bypass variables, and no stored-credential observation was made
+              state: supported
+                measured: history and tmp state moved as `+ d /home/agent/probe-target/.gemini/history` and `+ d /home/agent/probe-target/.gemini/tmp`
+
+agent:        copilot
+executable:   not found on PATH
+mechanism:    environment variable COPILOT_HOME
+support:      experimental
+version:      1.0.103 (verified 2026-10-25)
+isolation:    config: unknown
+                unmeasured: `delta-env-COPILOT_HOME: (no change: nothing was created, moved or removed at the watched locations)` while the default `~/.copilot` was `(absent)` (§9 outcome 5, Unknown branch)
+              credentials: unknown
+                unmeasured: credential storage not located (§9 outcome 5); `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` are the documented bypass variables (copilot.sh precedence), and no stored-credential observation was made
+              state: unknown
+                unmeasured: the same delta — `(no change: nothing was created, moved or removed at the watched locations)` at both the target and the default `~/.copilot (absent)` (§9 outcome 5)
+
+agent:        opencode
+executable:   not found on PATH
+mechanism:    environment variable OPENCODE_CONFIG_DIR
+support:      proven
+version:      v2.1.4 (verified 2026-10-25)
+isolation:    config: supported
+                measured: `+ f /home/agent/probe-target/service.json` — the config-side write followed OPENCODE_CONFIG_DIR into the target, and the second delta (`envfile:OPENCODE_CONFIG`) shows the same write at the default `.config/opencode/service.json` when only the file variable is set
+              credentials: unknown
+                unmeasured: `auth.json` was never observed anywhere in the deltas — unauthenticated launches never write it — so where stored credentials live was not established and §6's 'probe establishes where credentials are stored' exception is not met; `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` (strings measured) are the documented bypass variables, and no stored-credential observation was made
+              state: not supported
+                measured: `+ f /home/agent/.local/share/opencode/opencode.db` (with `-shm`/`-wal`), `+ d .../shell/...` and `opencode.log` stayed at `.local/share/opencode` under both mechanisms: neither names a data directory and the strings scan contains no `OPENCODE_DATA*`/`OPENCODE_HOME` token (Q2)
+
+agent:        pi
+executable:   not found on PATH
+mechanism:    environment variable PI_CODING_AGENT_DIR
+support:      proven
+version:      1.4.0 (verified 2026-10-25)
+isolation:    config: supported
+                measured: `+ f /home/agent/probe-target/auth.json` and `+ f /home/agent/probe-target/models-store.json` — the config directory's files moved **without** a `.pi/agent` prefix, so `PI_CODING_AGENT_DIR` names the config directory itself (the delta at the watched default `.pi` was empty)
+              credentials: not supported
+                measured: `+ f /home/agent/probe-target/auth.json` under the variable against baseline `f /home/agent/.pi/agent/auth.json` at the default — pi stores credentials in `auth.json` inside its own config directory, which is exactly what `PI_CODING_AGENT_DIR` moves (§6's wider exception: the probe established where credentials are stored), so they travel with the config directory and no separate credential store exists to point anywhere else; env keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) bypass the file entirely (help)
+              state: supported
+                measured: `+ d /home/agent/probe-target/sessions` and `+ f /home/agent/probe-target/models-store.json` — the session and models-store partial-measure cells appeared under the mechanism, and pi wrote plenty before it needed the network
+
+agent:        kiro
+executable:   not found on PATH
+mechanism:    environment variable KIRO_HOME
+support:      proven
+version:      2.34.0 (verified 2026-10-25)
+isolation:    config: supported
+                measured: `+ f /home/agent/probe-target/settings/cli.json` — the settings subsystem moved its file under KIRO_HOME, and the watched default `~/.kiro` and `.local/share/kiro-cli` were both `(absent)` at baseline, so the settings write at the target is the variable's
+              credentials: unknown
+                unmeasured: naming the vendor session required — no credential file appeared in the delta, `KIRO_API_KEY` (strings measured) is the documented bypass variable, and `AWS_ACCESS_KEY_ID`, `AWS_PROFILE` are also strings-measured
+              state: not guaranteed
+                measured: `+ f /home/agent/.local/share/kiro-cli/data.sqlite3`, `+ d .../run-receipts` (`.reaper.lock`) and `+ f .../telemetry-export-drops.lock` — the data subsystem ignores KIRO_HOME and wrote the whole `.local/share/kiro-cli` tree at the default (Q3)
+
+agent:        cursor
+executable:   not found on PATH
+mechanism:    environment variable CURSOR_CONFIG_DIR
+support:      experimental
+version:      2026.10.22-27dcf5f (verified 2026-10-25)
+isolation:    config: supported
+                measured: `+ f /home/agent/probe-target/cli-config.json` — the agent's one pre-network write followed CURSOR_CONFIG_DIR into the target, and the watched fallback location recorded `f /home/agent/.config/cursor  (absent)`, so the XDG fallback was not chosen
+              credentials: unknown
+                unmeasured: where stored credentials live was not established (Q4) — no login/auth step ran and no credential-bearing file surfaced anywhere in the delta; `CURSOR_API_KEY` (strings: `documented CURSOR_API_KEY: present`) is the documented bypass variable, and no stored-credential observation was made
+              state: unknown
+                unmeasured: the agent wrote only `cli-config.json` before it needed network access, so no session/state file was observable — the delta tail names nothing beyond `+ f /home/agent/probe-target/cli-config.json`
+
+agent:        continue
+executable:   not found on PATH
+mechanism:    argument --config <file>
+support:      experimental
+version:      1.5.47 (verified 2026-10-17)
+isolation:    config: unknown
+                unmeasured: the probe's delta at both watched locations — the target and the default `/home/agent/.continue` — was `(no change: nothing was created, moved or removed at the watched locations)`, so whether the agent's own config writes would follow a configured file was not observable while the agent writes nothing before it needs the network (§9 outcome 5)
+              credentials: unknown
+                unmeasured: no login/auth step ran and no credential-bearing file surfaced anywhere in the delta, so where stored credentials live was not established; the documented bypass variables are `CONTINUE_API_KEY`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` (strings: `documented CONTINUE_API_KEY: present`)
+              state: unknown
+                unmeasured: the agent's only pre-network write was `.continue/logs/cn.log`, present at the default location at baseline, and the measured delta recorded `(no change: nothing was created, moved or removed at the watched locations)`, so no state write was observable to place (§9 outcome 5)
+
+agent:        amp
+executable:   not found on PATH
+mechanism:    argument --settings-file <file>
+support:      proven
+version:      0.0.1792872041-gb83e0b (verified 2026-10-25)
+isolation:    config: not guaranteed
+                measured: the flag was accepted (exit 0) but moved nothing to the target — `+ f /home/agent/.local/share/amp/device-id.json` was written at the default, and `.local/share/amp` was the only observed write target of the launch, while the target's `settings.json` was the probe's own file and stayed the only file there
+              credentials: unknown
+                unmeasured: no credential file was observed anywhere in the delta and no login step ran, so where stored credentials live was not established; `AMP_API_KEY` (strings: `documented AMP_API_KEY: present`) is the documented bypass variable
+              state: not guaranteed
+                measured: `+ f /home/agent/.local/share/amp/accounts.json` and `+ f .../device-id.json` were written at the default while pointed at the flag's target — the device identity and account store do not move with `--settings-file`
+
+agent:        cline
+executable:   not found on PATH
+mechanism:    environment variable CLINE_DATA_DIR
+support:      experimental
+version:      3.0.73 (verified 2026-10-17)
+isolation:    config: unknown
+                unmeasured: the probe's delta at both watched locations — the target and the default `/home/agent/.cline` — was `(no change: nothing was created, moved or removed at the watched locations)`, so whether the agent's own config writes would follow CLINE_DATA_DIR was not observable while the agent writes nothing before it needs the network (§9 outcome 5)
+              credentials: unknown
+                unmeasured: no login/auth step ran and no credential-bearing file surfaced anywhere in the delta, so where stored credentials live was not established; the documented bypass variables are `CLINE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `OPENROUTER_API_KEY` (strings: `documented CLINE_API_KEY: present`)
+              state: unknown
+                unmeasured: the agent's only pre-network write was `cli-node-extra-ca-certs.pem`, present at the default location at baseline, and the measured delta recorded `(no change: nothing was created, moved or removed at the watched locations)`, so no state write was observable to place (§9 outcome 5)
