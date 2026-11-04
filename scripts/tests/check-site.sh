@@ -89,6 +89,9 @@ make_site() {
     {
         printf '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>agent-profile</title>\n</head>\n<body>\n'
         printf '<header>agent-profile {{VERSION}}</header>\n'
+        for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do
+            printf '<button type="button" role="tab" id="tab-%s">%s</button>\n' "$t" "$t"
+        done
         for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
             unix_snippet "$t" 'sha256sum -c -' >"$tmp/body"
             block "$t" "$tmp/body"
@@ -187,6 +190,39 @@ fresh
 # shellcheck disable=SC2016 # sed expression, the $ are literal
 edit "$d/index.html" 's#\$hash -and \$expected -and \$hash -ieq#$hash -ieq#'
 rejects "t11b unguarded Windows compare" "unverified unpack (Windows)"
+
+# t15 a stylesheet that imports another origin is rejected (the privacy guard covers CSS and JS)
+fresh
+printf '@import url("https://fonts.googleapis.com/css2?family=X");\n' >"$d/site.css"
+rejects "t15 external host in CSS" "external host"
+
+# t16 a tab whose snippet downloads another target's asset is rejected
+fresh
+edit "$d/index.html" '/id="snip-aarch64-unknown-linux-gnu"/,/^<\/pre>/s/agent-profile-aarch64-unknown-linux-gnu/agent-profile-x86_64-unknown-linux-gnu/g'
+rejects "t16 wrong asset on a tab" "wrong asset: aarch64-unknown-linux-gnu"
+
+# t17 a checksum that cannot stop the chain is rejected
+fresh
+edit "$d/index.html" 's#| sha256sum -c -#| sha256sum -c - ; true#'
+rejects "t17 checksum does not gate the unpack" "unverified unpack: x86_64-unknown-linux-gnu"
+
+# t18 text on the opening <pre> line is invisible to the extractor and is rejected
+fresh
+edit "$d/index.html" 's#\(<pre class="snippet" id="snip-x86_64-unknown-linux-gnu"[^>]*>\)#\1curl -s https://github.com/x/y | sh; #'
+rejects "t18 text on the opening pre line" "text on the opening <pre> line: x86_64-unknown-linux-gnu"
+
+# t19 an uppercase scheme and a single-quoted protocol-relative src are rejected
+fresh
+edit "$d/index.html" "s#</head>#<script src='//cdn.example/x.js'></script>\n</head>#"
+rejects "t19 single-quoted protocol-relative src" "external host"
+fresh
+edit "$d/index.html" 's#</head>#<link href="HTTPS://cdn.example/x.css" rel="stylesheet">\n</head>#'
+rejects "t19 uppercase scheme" "external host"
+
+# t20 a missing tab button is rejected
+fresh
+edit "$d/index.html" '/id="tab-aarch64-apple-darwin"/d'
+rejects "t20 missing tab" "missing tab: aarch64-apple-darwin"
 
 # t12 extract-snippet decodes entities and strips tags
 fresh

@@ -10,9 +10,10 @@ name: Release-plz
 # - `release-pr` opens or refreshes the release PR (version bump + changelog). It uses the RELEASE_PLZ_TOKEN
 #   fine-grained PAT (Contents and Pull requests: read and write) because a PR opened with the default
 #   GITHUB_TOKEN never triggers CI, and main requires CI checks.
-# - `release` tags `vX.Y.Z` and creates the GitHub pre-release, but only when the push is the merge of that
+# - `release` tags `vX.Y.Z` and creates the GitHub release as a draft, but only when the push is the merge of that
 #   release PR (`release_always = false` in release-plz.toml).
-# - `binaries` then builds and uploads the agent-profile archives to that release (release.yml).
+# - `binaries` then builds and uploads the agent-profile archives to that release and, once all five are
+#   attached, writes their checksums and publishes it (release.yml).
 #
 # Third-party actions are pinned to commit SHAs because these jobs hold write tokens.
 

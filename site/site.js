@@ -65,6 +65,8 @@
           button.textContent = "Copy";
           button.classList.remove("done");
         }, 1800);
+      }, function () {
+        button.textContent = "Select the text and copy it";
       });
     });
   });

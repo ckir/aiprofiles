@@ -77,3 +77,19 @@ jobs:
             & $block
             "run $([math]::Round($sw.Elapsed.TotalSeconds, 2)) s"
           }
+
+      # Windows PowerShell 5.1 is the shell a Windows visitor already has; the step above is PowerShell 7.
+      # The spec (5.2) promises both, so the same snippet runs under each.
+      - name: Time it (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $dir = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString()))
+          Set-Location $dir
+          $block = [scriptblock]::Create((Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'snippet')))
+          foreach ($i in 1, 2) {
+            "--- 5.1 run $i"
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            & $block
+            "run $([math]::Round($sw.Elapsed.TotalSeconds, 2)) s"
+          }

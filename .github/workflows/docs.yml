@@ -100,6 +100,7 @@ jobs:
         # variable would not reach a later step. If the call fails, the deploy fails.
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           VERSION=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name | sed 's/^v//')
           sh scripts/build-site.sh "$VERSION" site-dist

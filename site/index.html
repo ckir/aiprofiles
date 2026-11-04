@@ -38,7 +38,7 @@
   <p class="try">Try it in seconds. Pick your system, copy, paste.</p>
 
   <div class="deck">
-    <div class="term" aria-label="Install and run">
+    <div class="term">
       <div class="bar">
         <div class="tabs" role="tablist" aria-label="Operating system" hidden>
           <button type="button" role="tab" id="tab-x86_64-unknown-linux-gnu" aria-controls="panel-x86_64-unknown-linux-gnu" aria-selected="true">Linux x86_64</button>
@@ -96,8 +96,8 @@ curl -fsSLO https://github.com/ckir/aiprofiles/releases/latest/download/agent-pr
 &amp; {
   $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
   $u = 'https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip'
-  Invoke-WebRequest $u -OutFile agent-profile-x86_64-pc-windows-msvc.zip
-  Invoke-WebRequest "$u.sha256" -OutFile agent-profile-x86_64-pc-windows-msvc.zip.sha256
+  Invoke-WebRequest -UseBasicParsing $u -OutFile agent-profile-x86_64-pc-windows-msvc.zip
+  Invoke-WebRequest -UseBasicParsing "$u.sha256" -OutFile agent-profile-x86_64-pc-windows-msvc.zip.sha256
   $expected = ((Get-Content .\agent-profile-x86_64-pc-windows-msvc.zip.sha256 -Raw) -split '\s+')[0]
   $hash = (Get-FileHash .\agent-profile-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
   if ($hash -and $expected -and ($hash -ieq $expected)) {
@@ -160,14 +160,16 @@ isolation:    config: not guaranteed
 <section class="strip" aria-label="Details">
   <div class="col" id="keep">
     <h2>Keep it</h2>
-    <p>The snippet leaves the binary in the folder you ran it in. To keep it, move it onto your PATH.</p>
+    <p>The snippet leaves the binary in the folder you ran it in. To keep it, move it to a folder on your PATH.</p>
     <p class="os">Linux and macOS</p>
     <pre class="cmd">mkdir -p ~/.local/bin &amp;&amp; mv agent-profile ~/.local/bin/</pre>
+    <p class="note">If <code>agent-profile</code> is then not found, add that folder to your PATH. In zsh, the macOS default: <code>echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc</code>, then open a new terminal.</p>
     <p class="os">Windows</p>
-    <pre class="cmd">New-Item -ItemType Directory -Force $HOME\bin | Out-Null; Move-Item .\agent-profile.exe $HOME\bin\</pre>
+    <pre class="cmd">New-Item -ItemType Directory -Force $HOME\bin | Out-Null; Move-Item -Force .\agent-profile.exe $HOME\bin\</pre>
+    <p class="note">Windows does not look in that folder yet. Add it once: <code>[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$HOME\bin", 'User')</code>, then open a new terminal.</p>
     <p class="note">The release binaries are not code-signed, so macOS may refuse to open the downloaded file and Windows may ask before running it. If that happens, <code>xattr -d com.apple.quarantine agent-profile</code> on macOS or <code>Unblock-File .\agent-profile.exe</code> on Windows clears the mark. Whether either system asks depends on how the file arrived and on your settings.</p>
     <p class="os">Rust users</p>
-    <pre class="cmd">cargo install --git https://github.com/ckir/aiprofiles agent-profile</pre>
+    <pre class="cmd">cargo install --locked --git https://github.com/ckir/aiprofiles --bin agent-profile agent-profile</pre>
     <p class="note">Needs Rust 1.98.</p>
   </div>
 

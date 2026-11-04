@@ -10,6 +10,8 @@ name: Release binaries
 # - Called by release-plz.yml right after release-plz creates the release.
 # - Run by hand (Actions → Release binaries → Run workflow) with an existing tag to rebuild and re-upload
 #   after a failed run; `--clobber` replaces any archive already attached.
+# After the build legs, the `finalize` job writes a .sha256 beside each archive, un-drafts the release
+# (release-plz.toml creates it as a draft) and dispatches docs.yml to rebuild the site.
 # Only `--bin agent-profile` is built: the fake-agent test fixture never ships.
 
 on:
@@ -119,12 +121,21 @@ jobs:
       # Re-runs also download earlier .sha256 files; the script ignores them and rewrites its own.
       - name: Download archives
         run: mkdir assets && gh release download "$TAG" --dir assets --pattern 'agent-profile-*' --repo "$GITHUB_REPOSITORY"
+      - name: Check all five archives are attached
+        # The script only fails on zero archives; un-drafting with fewer than the five the page links to
+        # would publish dead links, so finalize enforces the count itself (spec 6.1).
+        run: |
+          n=$(find assets -maxdepth 1 \( -name 'agent-profile-*.tar.gz' -o -name 'agent-profile-*.zip' \) | wc -l)
+          if [ "$n" -ne 5 ]; then
+            echo "expected 5 archives on $TAG, found $n" >&2
+            exit 1
+          fi
       - name: Write checksums
         run: sh scripts/release-finalize.sh "$TAG" assets
       - name: Upload checksums
         run: gh release upload "$TAG" assets/*.sha256 --clobber --repo "$GITHUB_REPOSITORY"
       - name: Publish the release
-        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
       - name: Rebuild the site
         run: |
           gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" || {
