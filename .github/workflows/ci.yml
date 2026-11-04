@@ -97,6 +97,29 @@ jobs:
       - run: sh scripts/check-action-pins.sh
       - run: sh scripts/tests/check-action-pins.sh
 
+  release-finalize-tests:
+    # The script that writes a .sha256 beside every release archive, and its tests, the same command
+    # `just release-finalize-tests` runs.
+    name: Release checksum script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh scripts/tests/release-finalize.sh
+
+  site-check:
+    # The landing page against the release matrix in release.yml and the committed demo capture, and the
+    # gate's own tests, the same two commands `just site-check` runs.
+    name: Site gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh scripts/check-site.sh
+      - run: sh scripts/tests/check-site.sh
+
   evidence-staleness-tests:
     # The offline tests of the weekly staleness check (evidence-staleness.yml), the same command
     # `just evidence-staleness-tests` runs. They read no network: the script's EVIDENCE_LATEST_DIR hook

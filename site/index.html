@@ -1,0 +1,218 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-profile: your coding agents, in separate rooms</title>
+<meta name="description" content="A local, privacy-first CLI that gives each coding agent its own profile per repository. Download, verify the checksum and run it in one paste.">
+<meta name="theme-color" content="#0A0F1C">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#install">Skip to install</a>
+
+<header class="top">
+  <a class="mark" href="./">agent-profile</a>
+  <span class="ver">v{{VERSION}}</span>
+  <nav aria-label="Project links">
+    <a href="https://github.com/ckir/aiprofiles">GitHub</a>
+    <a href="https://github.com/ckir/aiprofiles#readme">README</a>
+    <a href="rustdoc/agent_profile/index.html">Rustdoc</a>
+    <a href="https://github.com/ckir/aiprofiles/releases">Releases</a>
+  </nav>
+</header>
+
+<main>
+<section class="hero" id="install">
+  <h1>Your coding agents, in separate rooms.</h1>
+  <p class="lead">Work and personal. Client A and client B. One profile per repository, chosen for you when you launch, and the agent never sees across the wall.</p>
+  <p class="try">Try it in seconds. Pick your system, copy, paste.</p>
+
+  <div class="deck">
+    <div class="term">
+      <div class="bar">
+        <div class="tabs" role="tablist" aria-label="Operating system" hidden>
+          <button type="button" role="tab" id="tab-x86_64-unknown-linux-gnu" aria-controls="panel-x86_64-unknown-linux-gnu" aria-selected="true">Linux x86_64</button>
+          <button type="button" role="tab" id="tab-aarch64-unknown-linux-gnu" aria-controls="panel-aarch64-unknown-linux-gnu" aria-selected="false" tabindex="-1">Linux arm64</button>
+          <button type="button" role="tab" id="tab-aarch64-apple-darwin" aria-controls="panel-aarch64-apple-darwin" aria-selected="false" tabindex="-1">macOS Apple Silicon</button>
+          <button type="button" role="tab" id="tab-x86_64-apple-darwin" aria-controls="panel-x86_64-apple-darwin" aria-selected="false" tabindex="-1">macOS Intel</button>
+          <button type="button" role="tab" id="tab-x86_64-pc-windows-msvc" aria-controls="panel-x86_64-pc-windows-msvc" aria-selected="false" tabindex="-1">Windows x86_64</button>
+        </div>
+        <span class="checked">sha256 checked</span>
+      </div>
+
+      <figure class="panel" id="panel-x86_64-unknown-linux-gnu" role="tabpanel" aria-labelledby="tab-x86_64-unknown-linux-gnu">
+        <figcaption><span class="label">Linux x86_64</span> <button type="button" class="copy" data-copy="snip-x86_64-unknown-linux-gnu" hidden>Copy</button></figcaption>
+<pre class="snippet" id="snip-x86_64-unknown-linux-gnu" tabindex="0" aria-label="Install and run on Linux x86_64">
+curl -fsSLO https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-unknown-linux-gnu.tar.gz \
+ &amp;&amp; curl -fsSL  https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-unknown-linux-gnu.tar.gz.sha256 | sha256sum -c - \
+ &amp;&amp; tar -xzf agent-profile-x86_64-unknown-linux-gnu.tar.gz \
+ &amp;&amp; ./agent-profile agents
+</pre>
+      </figure>
+
+      <figure class="panel" id="panel-aarch64-unknown-linux-gnu" role="tabpanel" aria-labelledby="tab-aarch64-unknown-linux-gnu">
+        <figcaption><span class="label">Linux arm64</span> <button type="button" class="copy" data-copy="snip-aarch64-unknown-linux-gnu" hidden>Copy</button></figcaption>
+<pre class="snippet" id="snip-aarch64-unknown-linux-gnu" tabindex="0" aria-label="Install and run on Linux arm64">
+curl -fsSLO https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-unknown-linux-gnu.tar.gz \
+ &amp;&amp; curl -fsSL  https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-unknown-linux-gnu.tar.gz.sha256 | sha256sum -c - \
+ &amp;&amp; tar -xzf agent-profile-aarch64-unknown-linux-gnu.tar.gz \
+ &amp;&amp; ./agent-profile agents
+</pre>
+      </figure>
+
+      <figure class="panel" id="panel-aarch64-apple-darwin" role="tabpanel" aria-labelledby="tab-aarch64-apple-darwin">
+        <figcaption><span class="label">macOS Apple Silicon</span> <button type="button" class="copy" data-copy="snip-aarch64-apple-darwin" hidden>Copy</button></figcaption>
+<pre class="snippet" id="snip-aarch64-apple-darwin" tabindex="0" aria-label="Install and run on macOS Apple Silicon">
+curl -fsSLO https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-apple-darwin.tar.gz \
+ &amp;&amp; curl -fsSL  https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-apple-darwin.tar.gz.sha256 | shasum -a 256 -c - \
+ &amp;&amp; tar -xzf agent-profile-aarch64-apple-darwin.tar.gz \
+ &amp;&amp; ./agent-profile agents
+</pre>
+      </figure>
+
+      <figure class="panel" id="panel-x86_64-apple-darwin" role="tabpanel" aria-labelledby="tab-x86_64-apple-darwin">
+        <figcaption><span class="label">macOS Intel</span> <button type="button" class="copy" data-copy="snip-x86_64-apple-darwin" hidden>Copy</button></figcaption>
+<pre class="snippet" id="snip-x86_64-apple-darwin" tabindex="0" aria-label="Install and run on macOS Intel">
+curl -fsSLO https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-apple-darwin.tar.gz \
+ &amp;&amp; curl -fsSL  https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-apple-darwin.tar.gz.sha256 | shasum -a 256 -c - \
+ &amp;&amp; tar -xzf agent-profile-x86_64-apple-darwin.tar.gz \
+ &amp;&amp; ./agent-profile agents
+</pre>
+      </figure>
+
+      <figure class="panel" id="panel-x86_64-pc-windows-msvc" role="tabpanel" aria-labelledby="tab-x86_64-pc-windows-msvc">
+        <figcaption><span class="label">Windows x86_64, PowerShell</span> <button type="button" class="copy" data-copy="snip-x86_64-pc-windows-msvc" hidden>Copy</button></figcaption>
+<pre class="snippet" id="snip-x86_64-pc-windows-msvc" tabindex="0" aria-label="Install and run on Windows x86_64 in PowerShell">
+&amp; {
+  $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
+  $u = 'https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip'
+  Invoke-WebRequest -UseBasicParsing $u -OutFile agent-profile-x86_64-pc-windows-msvc.zip
+  Invoke-WebRequest -UseBasicParsing "$u.sha256" -OutFile agent-profile-x86_64-pc-windows-msvc.zip.sha256
+  $expected = ((Get-Content .\agent-profile-x86_64-pc-windows-msvc.zip.sha256 -Raw) -split '\s+')[0]
+  $hash = (Get-FileHash .\agent-profile-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
+  if ($hash -and $expected -and ($hash -ieq $expected)) {
+    Expand-Archive .\agent-profile-x86_64-pc-windows-msvc.zip -DestinationPath . -Force
+    .\agent-profile.exe agents
+  } else { throw "checksum mismatch: expected $expected got $hash" }
+}
+</pre>
+      </figure>
+
+      <p class="disclose">Downloads one archive from the GitHub release, checks its SHA256, unpacks one file into this folder and runs it. The archive and the binary stay in this folder until you delete them or keep the binary (below). Nothing is installed anywhere else. Nothing leaves your machine.</p>
+    </div>
+
+    <div class="term demo-term">
+      <div class="bar"><span class="title">agent-profile agents</span></div>
+<pre id="demo" tabindex="0" aria-label="Output of agent-profile agents">
+agent:        claude
+executable:   /home/probe/.local/bin/claude (PATH)
+mechanism:    environment variable CLAUDE_CONFIG_DIR
+support:      proven
+version:      2.1.310 (verified 2026-10-25)
+isolation:    config: supported
+                cited: user settings live in the config directory; project .claude/settings*.json and .mcp.json still layer on top
+              credentials: conditional
+                measured: credential environment variables override it; the per-directory .credentials.json and macOS Keychain entry are cited, not measured
+              state: not guaranteed
+                cited: history and project state moving with the directory is community-sourced only
+
+agent:        codex
+executable:   /home/probe/.local/bin/codex (PATH)
+mechanism:    environment variable CODEX_HOME
+support:      proven
+version:      0.164.0 (verified 2026-10-25)
+isolation:    config: supported
+                cited: config.toml and &lt;name&gt;.config.toml live in CODEX_HOME; project-level configuration layering is not measured
+              credentials: conditional
+                measured: OPENAI_API_KEY, CODEX_API_KEY and CODEX_ACCESS_TOKEN bypass it; that auth.json and the keyring key follow CODEX_HOME is cited, not measured
+              state: conditional
+                cited: CODEX_SQLITE_HOME relocates the state database; the variable is present in the binary but the probe sets only CODEX_HOME, so the relocation is not measured
+
+agent:        aider
+executable:   /home/probe/.local/bin/aider (PATH)
+mechanism:    argument --config &lt;file&gt;
+support:      proven
+version:      0.86.2 (verified 2026-09-15)
+isolation:    config: not guaranteed
+                measured: the user-level ~/.aider.conf.yml, repository and cwd config files, .env files and AIDER_* variables still apply
+              credentials: not supported
+                measured: API keys come from the environment, .env files and config files
+              state: not supported
+                measured: history files are written in the working directory
+… and 9 more
+</pre>
+      <p class="caption">Captured in the project's sandbox from agent-profile {{DEMO_VERSION}} on {{DEMO_DATE}}</p>
+      <p class="promptline" aria-hidden="true"><span class="p">$</span> <span class="cursor"></span></p>
+    </div>
+  </div>
+</section>
+
+<section class="strip" aria-label="Details">
+  <div class="col" id="keep">
+    <h2>Keep it</h2>
+    <p>The snippet leaves the binary in the folder you ran it in. To keep it, move it to a folder on your PATH.</p>
+    <p class="os">Linux and macOS</p>
+    <pre class="cmd">mkdir -p ~/.local/bin &amp;&amp; mv agent-profile ~/.local/bin/</pre>
+    <p class="note">If <code>agent-profile</code> is then not found, add that folder to your PATH. In zsh, the macOS default: <code>echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc</code>, then open a new terminal.</p>
+    <p class="os">Windows</p>
+    <pre class="cmd">New-Item -ItemType Directory -Force $HOME\bin | Out-Null; Move-Item -Force .\agent-profile.exe $HOME\bin\</pre>
+    <p class="note">Windows does not look in that folder yet. Add it once: <code>[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$HOME\bin", 'User')</code>, then open a new terminal.</p>
+    <p class="note">The release binaries are not code-signed, so macOS may refuse to open the downloaded file and Windows may ask before running it. If that happens, <code>xattr -d com.apple.quarantine agent-profile</code> on macOS or <code>Unblock-File .\agent-profile.exe</code> on Windows clears the mark. Whether either system asks depends on how the file arrived and on your settings.</p>
+    <p class="os">Rust users</p>
+    <pre class="cmd">cargo install --locked --git https://github.com/ckir/aiprofiles --bin agent-profile agent-profile</pre>
+    <p class="note">Needs Rust 1.98.</p>
+  </div>
+
+  <div class="col" id="downloads">
+    <h2>Downloads</h2>
+    <p>The five archives of the latest release, each with its checksum.</p>
+    <ul class="dl">
+      <li><span>Linux x86_64</span> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-unknown-linux-gnu.tar.gz">archive</a> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-unknown-linux-gnu.tar.gz.sha256">sha256</a></li>
+      <li><span>Linux arm64</span> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-unknown-linux-gnu.tar.gz">archive</a> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-unknown-linux-gnu.tar.gz.sha256">sha256</a></li>
+      <li><span>macOS Apple Silicon</span> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-apple-darwin.tar.gz">archive</a> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-aarch64-apple-darwin.tar.gz.sha256">sha256</a></li>
+      <li><span>macOS Intel</span> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-apple-darwin.tar.gz">archive</a> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-apple-darwin.tar.gz.sha256">sha256</a></li>
+      <li><span>Windows x86_64</span> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip">archive</a> <a href="https://github.com/ckir/aiprofiles/releases/latest/download/agent-profile-x86_64-pc-windows-msvc.zip.sha256">sha256</a></li>
+    </ul>
+    <p><a href="https://github.com/ckir/aiprofiles/releases">All releases</a></p>
+  </div>
+
+  <div class="col" id="never">
+    <h2>What it never does</h2>
+    <ul class="never">
+      <li>Never copies credentials. <a href="https://github.com/ckir/aiprofiles#readme">README</a></li>
+      <li>Never extracts tokens. <a href="https://github.com/ckir/aiprofiles#readme">README</a></li>
+      <li>Never sends telemetry. <a href="https://github.com/ckir/aiprofiles#readme">README</a></li>
+      <li>Never lets the repository choose a profile. <a href="https://github.com/ckir/aiprofiles#readme">README</a></li>
+    </ul>
+    <p class="note">What each agent keeps apart, and what it does not, is measured per agent: <a href="https://github.com/ckir/aiprofiles#supported-agents">Supported agents</a>.</p>
+  </div>
+</section>
+
+<section class="band" aria-label="clavity">
+  <h2>Officially supported by clavity, and complete on its own.</h2>
+  <p>clavity is the project that pairs Claude Code with Antigravity, and it officially supports agent-profile. agent-profile needs nothing from clavity: install it as above and it works by itself.</p>
+  <p><a href="https://github.com/ckir/clavity">clavity</a> <a href="https://github.com/ckir/aiprofiles#readme">README</a></p>
+</section>
+</main>
+
+<footer class="foot">
+  <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial 1.0.0</a>
+  <nav aria-label="Footer links">
+    <a href="https://github.com/ckir/aiprofiles">GitHub</a>
+    <a href="https://github.com/ckir/aiprofiles#readme">README</a>
+    <a href="rustdoc/agent_profile/index.html">Rustdoc</a>
+    <a href="https://github.com/ckir/aiprofiles/releases">Releases</a>
+  </nav>
+</footer>
+</body>
+</html>

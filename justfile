@@ -39,7 +39,7 @@ msrv:
 
 # Every source file carries header.txt (target/ and .clavity/ are generated or scratch output)
 license-check:
-    addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' .
+    addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' -ignore '.superpowers/**' .
 
 # Dependency advisories, licences, bans and sources
 deny:
@@ -67,6 +67,15 @@ line-citations:
 action-pins:
     sh scripts/check-action-pins.sh
     sh scripts/tests/check-action-pins.sh
+
+# The checksum script that finalizes a release, and its tests.
+release-finalize-tests:
+    sh scripts/tests/release-finalize.sh
+
+# Gates the landing page against the release matrix and the demo capture, and the gate's own tests.
+site-check:
+    sh scripts/check-site.sh
+    sh scripts/tests/check-site.sh
 
 # The sandbox harness's own tests: probe steps, transcript assembly, matrix resolution.
 # No container and no agent needed, so these run in the ordinary gate rather than in the Sandbox workflow.
@@ -103,14 +112,14 @@ tools-doc-check:
 doc-check:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 
-# The local gate: fmt + clippy + typos + license-check + shellcheck + line-citations + action-pins + test + the probe harness +
+# The local gate: fmt + clippy + typos + license-check + shellcheck + line-citations + action-pins + release-finalize-tests + site-check + test + the probe harness +
 # tools-doc freshness + the docs build
 #
 # It mirrors the REQUIRED CHECKS in ci.yml, and the mirror is the point -- every recipe here exists
 # because CI runs the same command. One caveat it cannot fix: `shellcheck` is whatever version is on the
 # machine, and `ubuntu-latest`'s is older than a current local install. The older one reports SC2317 where
 # the newer reports SC2329, so a file can pass here and fail there; `sandbox/run.sh` carries both codes.
-check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins evidence-staleness-tests test probe-tests tools-doc-check doc-check
+check: fmt-check clippy typos license-check shellcheck deny-offline line-citations action-pins release-finalize-tests site-check evidence-staleness-tests test probe-tests tools-doc-check doc-check
 
 # Background watcher
 watch:

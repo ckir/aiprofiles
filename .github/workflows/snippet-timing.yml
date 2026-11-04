@@ -1,0 +1,95 @@
+# Copyright (c) 2026 Costas Kirgoussios
+#
+# This software is licensed under the PolyForm Noncommercial License 1.0.0.
+# You may obtain a copy of the License at:
+# https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+name: Snippet timing
+
+# Runs each install tab of the landing page verbatim (read from site/index.html by
+# scripts/extract-snippet.sh, never retyped) on a runner of the matching architecture and prints the
+# wall-clock seconds of two consecutive runs; the second is the warm figure. Dispatch only: never scheduled,
+# never on push.
+#
+# What it is evidence for, and no more (spec 7): the snippet's syntax on each shell, the download and
+# checksum path, and how long those take. Headless runners have no interactive session and never raise
+# Gatekeeper or SmartScreen, so it says nothing about what a desktop OS shows a person. Record the figures
+# as dated "CI runner" lines in the spec's section 10.
+#
+# Each architecture runs on its own kind of runner (the release matrix builds arm64 Linux on an x86_64
+# runner by cross compiling, which cannot execute the result here).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  time:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Extract the snippet from the page
+        shell: bash
+        run: sh scripts/extract-snippet.sh site/index.html "${{ matrix.target }}" > snippet
+
+      - name: Time it (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          TIMEFORMAT='run %R s'
+          dir=$(mktemp -d)
+          cd "$dir"
+          for i in 1 2; do
+            echo "--- run $i"
+            time sh "$GITHUB_WORKSPACE/snippet"
+          done
+
+      - name: Time it (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString()))
+          Set-Location $dir
+          $block = [scriptblock]::Create((Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'snippet')))
+          foreach ($i in 1, 2) {
+            "--- run $i"
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            & $block
+            "run $([math]::Round($sw.Elapsed.TotalSeconds, 2)) s"
+          }
+
+      # Windows PowerShell 5.1 is the shell a Windows visitor already has; the step above is PowerShell 7.
+      # The spec (5.2) promises both, so the same snippet runs under each.
+      - name: Time it (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $dir = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString()))
+          Set-Location $dir
+          $block = [scriptblock]::Create((Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE 'snippet')))
+          foreach ($i in 1, 2) {
+            "--- 5.1 run $i"
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            & $block
+            "run $([math]::Round($sw.Elapsed.TotalSeconds, 2)) s"
+          }
