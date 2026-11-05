@@ -45,6 +45,11 @@ zip=agent-profile-x86_64-pc-windows-msvc.zip
 want="$(cd "$dir" && sha256sum "$zip" | cut -d' ' -f1)  $zip"
 got=$(cat "$dir/$zip.sha256")
 check "t3 windows checksum content" "$got" "$want"
+for name in agent-profile-x86_64-unknown-linux-gnu.tar.gz agent-profile-aarch64-unknown-linux-gnu.tar.gz agent-profile-x86_64-apple-darwin.tar.gz agent-profile-aarch64-apple-darwin.tar.gz; do
+    want="$(cd "$dir" && sha256sum "$name" | cut -d' ' -f1)  $name"
+    got=$(cat "$dir/$name.sha256" 2>/dev/null || echo missing)
+    check "t3b checksum content $name" "$got" "$want"
+done
 
 stale=$(cat "$dir/agent-profile-x86_64-unknown-linux-gnu.tar.gz.sha256")
 was_stale=no
@@ -63,7 +68,7 @@ out=$(sh "$root/scripts/release-finalize.sh" v9.9.9 "$empty" 2>&1)
 status=$?
 set -e
 check "t6 empty directory exits 1" "$status" "1"
-case $out in *"$empty"*) check "t6 message names the directory" "yes" "yes" ;; *) check "t6 message names the directory" "no" "yes" ;; esac
+case $out in *"no agent-profile archive in $empty"*) check "t6 message names the directory" "yes" "yes" ;; *) check "t6 message names the directory" "no" "yes" ;; esac
 
 set +e
 sh "$root/scripts/release-finalize.sh" v9.9.9 >/dev/null 2>&1

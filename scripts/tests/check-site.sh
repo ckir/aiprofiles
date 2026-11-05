@@ -236,6 +236,17 @@ fresh
 edit "$d/index.html" '/id="tab-aarch64-apple-darwin"/d'
 rejects "t20 missing tab" "missing tab: aarch64-apple-darwin"
 
+# t22 a Windows snippet whose mismatch branch does not throw is rejected (a mismatch must stop the run)
+fresh
+# shellcheck disable=SC2016 # sed expression, the $ are literal
+edit "$d/index.html" 's#} else { throw "checksum mismatch: expected $expected got $hash" }#} else { Write-Host "checksum mismatch" }#'
+rejects "t22 Windows mismatch does not throw" "unverified unpack (Windows): x86_64-pc-windows-msvc (no throw on mismatch)"
+
+# t23 a Unix snippet that checks the checksum but never unpacks is rejected
+fresh
+edit "$d/index.html" '/id="snip-x86_64-unknown-linux-gnu"/,/^<\/pre>/s/tar -xzf/tar -tzf/'
+rejects "t23 Unix snippet without unpack" "no unpack step"
+
 # t12 extract-snippet decodes entities and strips tags
 fresh
 got=$(sh "$root/scripts/extract-snippet.sh" "$d/index.html" x86_64-unknown-linux-gnu | sed -n 2p)
@@ -261,6 +272,9 @@ check "t14 version substituted" "$has" "1"
 demo_version=$(sed -n 's/^version=//p' "$root/site/demo/agents.meta")
 has=$(grep -c "agent-profile $demo_version on" "$tmp/built/index.html" || true)
 check "t14 demo version substituted" "$has" "1"
+demo_date=$(sed -n 's/^date=//p' "$root/site/demo/agents.meta")
+has=$(grep -c "$demo_date" "$tmp/built/index.html" || true)
+check "t14 demo date substituted" "$([ "$has" -ge 1 ] && echo yes || echo no)" "yes"
 check "t14 agent_profile stub" "$(grep -c 'url=../rustdoc/agent_profile/index.html' "$tmp/built/agent_profile/index.html")" "1"
 check "t14 fake_agent stub" "$(grep -c 'url=../rustdoc/fake_agent/index.html' "$tmp/built/fake_agent/index.html")" "1"
 set +e
@@ -268,6 +282,13 @@ sh "$root/scripts/build-site.sh" 9.9.9 >/dev/null 2>&1
 status=$?
 set -e
 check "t14 one argument exits 2" "$status" "2"
+for bad in '../bad' '1.0/2.0' 'a b' '1;rm'; do
+    set +e
+    sh "$root/scripts/build-site.sh" "$bad" "$tmp/built-bad" >/dev/null 2>&1
+    status=$?
+    set -e
+    check "t14 unsafe version '$bad' exits 2" "$status" "2"
+done
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures failure(s)"
