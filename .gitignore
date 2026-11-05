@@ -26,3 +26,6 @@ target
 
 # Claude Code worktrees (EnterWorktree); each is a linked checkout of this repository
 .claude/worktrees/
+
+# Local brainstorming and plan-execution scratch (mockups, ledgers)
+.superpowers/

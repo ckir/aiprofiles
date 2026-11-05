@@ -54,7 +54,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: go install github.com/google/addlicense@v1.2.0
-      - run: $(go env GOPATH)/bin/addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' .
+      - run: |
+          "$(go env GOPATH)"/bin/addlicense -check -f header.txt -ignore 'target/**' -ignore '.clavity/**' -ignore '.superpowers/**' .
 
   shellcheck:
     name: Shellcheck
