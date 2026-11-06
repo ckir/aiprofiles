@@ -1,0 +1,179 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Product Roadmap - Agent Profile Engineering Milestones</title>
+<meta name="description" content="Engineering milestones, released capabilities, and tracked technical debt for agent-profile.">
+<link rel="canonical" href="https://ckir.github.io/aiprofiles/roadmap/">
+<meta property="og:title" content="Product Roadmap - Agent Profile Engineering Milestones">
+<meta property="og:description" content="Engineering roadmap and verified milestones for agent-profile.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ckir.github.io/aiprofiles/roadmap/">
+<meta property="og:image" content="../assets/banner.svg">
+<link rel="icon" type="image/svg+xml" href="../assets/agent-profile.svg">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<nav class="site-nav" aria-label="Main Navigation">
+  <div class="nav-wrap">
+    <a class="nav-brand" href="../">
+      <img src="../assets/agent-profile.svg" width="28" height="28" alt="Agent Profile">
+      <span>Agent Profile</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../how-it-works/">How It Works</a></li>
+      <li><a href="../agents/">Supported Agents</a></li>
+      <li><a href="../docs/">Docs</a></li>
+      <li><a href="./" aria-current="page">Roadmap</a></li>
+      <li><a href="../about/">About</a></li>
+      <li><a href="../#install">Install</a></li>
+    </ul>
+    <a class="cta nav-cta" href="../#install">Install Binary</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="../">Home</a><span>/</span><span>Roadmap</span>
+  </nav>
+
+  <header>
+    <h1>Product Roadmap</h1>
+    <p class="subline">Measured engineering milestones, current release status, and tracked technical debt.</p>
+  </header>
+
+  <section>
+    <h2>Current Status: v0.1.0 Released</h2>
+    <p>Every phase of the V3 Specification is implemented, verified, and shipped in the v0.1.0 release.</p>
+
+    <div class="cards">
+      <div class="card driver">
+        <h3>Shipped &amp; Verified</h3>
+        <p class="tag">Production Ready (v0.1.0)</p>
+        <ul>
+          <li><strong>Core Subprocess Isolation:</strong> <code>LaunchPlan</code> contract, Unix <code>exec</code>, Windows child launcher, passthrough args, exit code preservation.</li>
+          <li><strong>Twelve Evidence-Measured Adapters:</strong> Claude Code, OpenAI Codex, Aider, Gemini CLI, GitHub Copilot, OpenCode, Cursor, Continue, Amp, Cline, Windsurf, Kiro.</li>
+          <li><strong>Repository Resolution:</strong> Canonical Git root discovery, symlink/junction canonicalization, worktree/submodule isolation, deterministic precedence engine.</li>
+          <li><strong>Mapping &amp; Lifecycle CLI:</strong> <code>link</code>, <code>unlink</code>, <code>status</code>, <code>resolve</code>, <code>current</code>, <code>create</code>, <code>list</code>, <code>delete</code>, <code>repositories</code>.</li>
+          <li><strong>Inspection &amp; Diagnostics:</strong> Comprehensive <code>doctor</code> subcommand, machine-readable <code>--json</code> across all reporting commands.</li>
+          <li><strong>Shell Ergonomics:</strong> Native tab autocompletions for Bash, Zsh, Fish, PowerShell, and Elvish.</li>
+        </ul>
+      </div>
+
+      <div class="card peer">
+        <h3>Active Focus (v0.2.0)</h3>
+        <p class="tag">In Progress</p>
+        <ul>
+          <li><strong>Automated Sandbox Regression CI:</strong> Continuous containerized delta-probing on agent version upgrades.</li>
+          <li><strong>Mechanism Migration Tracking:</strong> Sentinel path detection in <code>doctor</code> for vendor configuration changes.</li>
+          <li><strong>Dynamic Shell Completions:</strong> Evaluating dynamic profile-name autocompletion hooks across shells.</li>
+          <li><strong>Keychain &amp; Helper Auditing:</strong> Extended diagnostic checks to identify OS keyring credential bleed.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The 6 Sub-Project Build Sequence</h2>
+    <p>How the architecture was engineered under the V3 Specification:</p>
+    <table class="spec-table" aria-label="Subproject implementation timeline">
+      <thead>
+        <tr>
+          <th>Subproject</th>
+          <th>Deliverable</th>
+          <th>Spec Phases</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>SP0</strong></td>
+          <td>Scaffolding, workspace tooling, PolyForm licensing, test fixtures.</td>
+          <td>Setup</td>
+          <td><span class="badge badge-proven">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>SP1</strong></td>
+          <td>Core CLI, TOML config with locked atomic writes, LaunchPlan, process launcher.</td>
+          <td>Phase 1, 3</td>
+          <td><span class="badge badge-proven">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>SP2</strong></td>
+          <td>Adapter architecture, capability metadata, Claude Code, Codex, Aider adapters.</td>
+          <td>Phase 4A</td>
+          <td><span class="badge badge-proven">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>SP3</strong></td>
+          <td>Repository discovery, canonical Git identity, precedence engine, link/unlink.</td>
+          <td>Phase 2, 5</td>
+          <td><span class="badge badge-proven">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>SP4</strong></td>
+          <td>Remaining 9 adapters backed by containerized CI sandbox probe captures.</td>
+          <td>Phase 4B</td>
+          <td><span class="badge badge-proven">Done</span></td>
+        </tr>
+        <tr>
+          <td><strong>SP5</strong></td>
+          <td>Lifecycle management, repositories report, doctor, completions, documentation.</td>
+          <td>Phase 5, 6</td>
+          <td><span class="badge badge-proven">Done</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Tracked Technical Debt &amp; Boundaries</h2>
+    <div class="note">
+      <p><strong>Antigravity CLI has no isolation mechanism, and the evidence says so:</strong><br>
+      Measured against <code>agy</code>: nothing relocates <code>~/.gemini/antigravity-cli/</code>, and credentials live in the OS keyring. Because Agent Profile guarantees that every adapter establishes real isolation, Antigravity CLI is not shipped as an adapter until upstream supports relocation.</p>
+    </div>
+    <div class="note" style="margin-top: 1rem;">
+      <p><strong>Profile Names Completion:</strong><br>
+      The current shell completion scripts are intentionally static. Completing dynamic profile names from disk requires an active runtime bridge, planned for the v0.2 cycle.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Future Research: Workspace Swarms</h2>
+    <p>In collaborative AI environments like Clavity (Claude Code driver + Antigravity peer), multiple agents coordinate inside the same repository. We are actively investigating ephemeral disposable profiles and cryptographic memory partitions for dual-agent pairing.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-grid">
+    <img src="../assets/agent-profile.svg" width="96" height="96" alt="Agent Profile Shield Emblem">
+    <div>
+      <p>Licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial License 1.0.0</a>.</p>
+      <nav class="foot-nav" aria-label="Footer links">
+        <a href="../">Home</a> | 
+        <a href="../how-it-works/">How It Works</a> | 
+        <a href="../agents/">Supported Agents</a> | 
+        <a href="../docs/">Documentation</a> | 
+        <a href="./">Roadmap</a> | 
+        <a href="../about/">About</a> | 
+        <a href="../rustdoc/agent_profile/index.html">Rustdoc</a> | 
+        <a href="https://github.com/ckir/aiprofiles">GitHub</a> | 
+        <a href="https://github.com/ckir/aiprofiles/releases">Releases</a> | 
+        <a href="https://github.com/ckir/aiprofiles/issues">Issues</a>
+      </nav>
+      <p class="fine">Claude and Claude Code are trademarks of Anthropic. OpenAI and Codex are trademarks of OpenAI. Gemini is a trademark of Google LLC. GitHub and Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Agent Profile is an independent open-source project, not affiliated with, endorsed by, or sponsored by any of these organizations.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

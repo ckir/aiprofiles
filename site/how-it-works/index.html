@@ -1,0 +1,223 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>How It Works - Deterministic Agent Profile Isolation</title>
+<meta name="description" content="Detailed explanation of the 6-stage execution pipeline, canonical Git root discovery, deterministic precedence ladder, and LaunchPlan pattern.">
+<link rel="canonical" href="https://ckir.github.io/aiprofiles/how-it-works/">
+<meta property="og:title" content="How It Works - Deterministic Agent Profile Isolation">
+<meta property="og:description" content="The 6-stage architecture separating coding agents per repository with zero credential bleed.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ckir.github.io/aiprofiles/how-it-works/">
+<meta property="og:image" content="../assets/banner.svg">
+<link rel="icon" type="image/svg+xml" href="../assets/agent-profile.svg">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<nav class="site-nav" aria-label="Main Navigation">
+  <div class="nav-wrap">
+    <a class="nav-brand" href="../">
+      <img src="../assets/agent-profile.svg" width="28" height="28" alt="Agent Profile">
+      <span>Agent Profile</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="./" aria-current="page">How It Works</a></li>
+      <li><a href="../agents/">Supported Agents</a></li>
+      <li><a href="../docs/">Docs</a></li>
+      <li><a href="../roadmap/">Roadmap</a></li>
+      <li><a href="../about/">About</a></li>
+      <li><a href="../#install">Install</a></li>
+    </ul>
+    <a class="cta nav-cta" href="../#install">Install Binary</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="../">Home</a><span>/</span><span>How It Works</span>
+  </nav>
+
+  <header>
+    <h1>How Agent Profile Works</h1>
+    <p class="subline">A deterministic, privacy-first pipeline from repository discovery to subprocess launch.</p>
+  </header>
+
+  <section>
+    <h2>The Core Principle: Your Agents, in Separate Rooms</h2>
+    <p>Modern software engineers routinely switch contexts: corporate client code, internal proprietary services, personal hobby projects, and open-source contributions. Yet virtually every coding assistant defaults to storing tokens, prompt histories, MCP servers, and cached context in a single global home folder (such as <code>~/.claude/</code>, <code>~/.codex/</code>, or <code>~/.config/cursor/</code>).</p>
+    <p>This creates serious security risks:</p>
+    <ul>
+      <li><strong>Credential Contamination:</strong> Client A's API keys or enterprise auth tokens sit in the same directory scanned when contributing to a public open-source project.</li>
+      <li><strong>Context &amp; History Leakage:</strong> Agent history files and local sqlite databases preserve previous completions across projects, allowing sensitive prompt details to bleed into unrelated completions.</li>
+      <li><strong>Repository Exploitation:</strong> Malicious or compromised repositories may craft project configuration files that quietly extract ambient credentials.</li>
+    </ul>
+    <p><strong>Agent Profile</strong> solves this by establishing clean, deterministic profile rooms per repository. The agent owns authentication; Agent Profile owns profile selection.</p>
+  </section>
+
+  <section>
+    <h2>The 6-Stage Execution Pipeline</h2>
+    <p>Every execution of <code>agent-profile</code> follows a strict, one-way data pipeline where each stage verifies invariants before advancing:</p>
+
+    <div class="cards">
+      <div class="card driver">
+        <span class="tag">Stage 1</span>
+        <h3>CLI Invocation &amp; Argument Separation</h3>
+        <p>Parses the agent name (e.g. <code>claude</code>, <code>codex</code>, <code>aider</code>), optional profile word, and wrapper flags (<code>--dry-run</code>, <code>--repo &lt;path&gt;</code>). Everything after <code>--</code> is isolated and preserved verbatim to pass to the agent process untouched.</p>
+      </div>
+
+      <div class="card peer">
+        <span class="tag">Stage 2</span>
+        <h3>Canonical Repository Discovery</h3>
+        <p>Discovers the git repository for the current working directory (or <code>--repo</code> override). Resolves symlinks, NTFS junctions, and path casing to a single canonical root. Git submodules and linked worktrees are strictly treated as distinct repositories of their own.</p>
+      </div>
+
+      <div class="card peer">
+        <span class="tag">Stage 3</span>
+        <h3>Deterministic Precedence Resolution</h3>
+        <p>Resolves the target profile through an unyielding 4-step ladder: Agent-specific mapping → Repository mapping → <code>default_profile</code> → Error. It never guesses from directory names or Git branch names.</p>
+      </div>
+
+      <div class="card peer">
+        <span class="tag">Stage 4</span>
+        <h3>Adapter Synthesis</h3>
+        <p>Invokes the agent's adapter to produce relocated environment variables (e.g. <code>CLAUDE_CONFIG_DIR</code>, <code>CODEX_HOME</code>) or flag arguments (e.g. <code>--config</code>). The adapter computes data only; it never spawns processes.</p>
+      </div>
+
+      <div class="card driver">
+        <span class="tag">Stage 5</span>
+        <h3>LaunchPlan Verification</h3>
+        <p>Emits an immutable <code>LaunchPlan</code> specifying executable path, arguments, working directory, and environment modifications. In <code>--dry-run</code> mode, this plan is formatted and printed for operator inspection.</p>
+      </div>
+
+      <div class="card driver">
+        <span class="tag">Stage 6</span>
+        <h3>Subprocess Launch &amp; Signal Forwarding</h3>
+        <p>The centralized process launcher executes the agent binary with the sterile environment. Process exit codes, signals (SIGINT, SIGTERM), and standard streams pass through cleanly.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The Deterministic Precedence Ladder</h2>
+    <p>When launching without an explicit profile name (for example, <code>agent-profile claude</code>), the profile is resolved deterministically:</p>
+    <table class="spec-table" aria-label="Precedence ladder order">
+      <thead>
+        <tr>
+          <th>Priority</th>
+          <th>Source</th>
+          <th>Mechanism</th>
+          <th>Scope</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Highest</strong></td>
+          <td>Agent-specific repository link</td>
+          <td><code>agent-profile &lt;agent&gt; link &lt;profile&gt;</code></td>
+          <td>Applies only to this specific agent in this canonical repository root.</td>
+        </tr>
+        <tr>
+          <td><strong>2. Second</strong></td>
+          <td>Repository-wide link</td>
+          <td><code>agent-profile link &lt;profile&gt;</code></td>
+          <td>Applies to all agents launched in this canonical repository root.</td>
+        </tr>
+        <tr>
+          <td><strong>3. Third</strong></td>
+          <td>Global default profile</td>
+          <td><code>default_profile = "name"</code> in <code>config.toml</code></td>
+          <td>Fallback profile when no repository-specific mapping exists.</td>
+        </tr>
+        <tr>
+          <td><strong>4. Terminal</strong></td>
+          <td>Resolution Error</td>
+          <td>Non-zero exit with descriptive diagnostic</td>
+          <td>Refuses to guess. Suggests exact <code>link</code> or <code>create</code> commands.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">To inspect how the current repository resolves without running an agent, use <code>agent-profile &lt;agent&gt; resolve</code> or <code>agent-profile status</code>.</p>
+  </section>
+
+  <section>
+    <h2>Repository Boundaries: Worktrees, Submodules, and Junctions</h2>
+    <p>A repository mapping applies strictly to that canonical repository:</p>
+    <ul>
+      <li><strong>Canonicalization:</strong> A subdirectory, symlink, or NTFS junction always resolves to its canonical Git root before lookup. Moving into <code>src/engine/</code> continues to resolve to the parent repository mapping.</li>
+      <li><strong>Submodules:</strong> A Git submodule is an independent repository. It never inherits the parent repository's profile mapping.</li>
+      <li><strong>Linked Worktrees:</strong> Git worktrees possess distinct working trees and are treated as distinct repositories so experimental or parallel branches can carry dedicated profiles.</li>
+      <li><strong>Untrusted Repositories:</strong> Agent Profile deliberately ignores in-repo configuration files for profile selection. An untrusted public repo can never dictate which profile your machine selects.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The LaunchPlan Architecture</h2>
+    <p>In classical CLI wrapper designs, individual agent plugins directly call <code>std::process::Command::spawn</code>. This architectural flaw makes wrapper behavior impossible to test without side effects and encourages inconsistent signal handling.</p>
+    <p>Agent Profile implements a clean separation of concerns:</p>
+    <pre class="cmd">
+CLI Command
+  ↓
+Repository Discovery (Canonical Git Root)
+  ↓
+Profile Resolution (Deterministic Ladder)
+  ↓
+Agent Adapter (Calculates Environment &amp; Arguments)
+  ↓
+LaunchPlan (Immutable Pure Data Structure)
+  ↓
+Process Launcher (Executes Subprocess in Clean Environment)
+    </pre>
+    <p>Adapters produce a <code>LaunchPlan</code>; they never spawn processes. This guarantees that every adapter is 100% unit testable in pure Rust, and the launcher enforces security invariants across all twelve adapters.</p>
+  </section>
+
+  <section>
+    <h2>The Evidence-Based Isolation Harness</h2>
+    <p>We do not trust vendor documentation when it claims an environment variable or flag provides isolation. Every adapter in Agent Profile is verified through an empirical sandbox test harness in Linux containers:</p>
+    <ul>
+      <li><strong>Filesystem Delta Tracing:</strong> We snapshot the filesystem, execute the agent with our relocated configuration, and record every file created, modified, or removed across both the target directory and the default user directory.</li>
+      <li><strong>Process Auditing:</strong> We inspect binary strings and syscalls for hardcoded fallback paths and undocumented credential stores.</li>
+      <li><strong>Three-Level Isolation Grading:</strong>
+        <ul>
+          <li><code>config</code>: User settings and preferences are proven isolated.</li>
+          <li><code>credentials</code>: Stored auth keys and session cookies are proven isolated.</li>
+          <li><code>state</code>: Completion logs, prompt history, and SQLite databases are proven isolated.</li>
+        </ul>
+      </li>
+    </ul>
+    <p><a class="cta" href="../agents/">Review the Complete 12-Agent Matrix →</a></p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-grid">
+    <img src="../assets/agent-profile.svg" width="96" height="96" alt="Agent Profile Shield Emblem">
+    <div>
+      <p>Licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial License 1.0.0</a>.</p>
+      <nav class="foot-nav" aria-label="Footer links">
+        <a href="../">Home</a> | 
+        <a href="./">How It Works</a> | 
+        <a href="../agents/">Supported Agents</a> | 
+        <a href="../docs/">Documentation</a> | 
+        <a href="../roadmap/">Roadmap</a> | 
+        <a href="../about/">About</a> | 
+        <a href="../rustdoc/agent_profile/index.html">Rustdoc</a> | 
+        <a href="https://github.com/ckir/aiprofiles">GitHub</a> | 
+        <a href="https://github.com/ckir/aiprofiles/releases">Releases</a> | 
+        <a href="https://github.com/ckir/aiprofiles/issues">Issues</a>
+      </nav>
+      <p class="fine">Claude and Claude Code are trademarks of Anthropic. OpenAI and Codex are trademarks of OpenAI. Gemini is a trademark of Google LLC. GitHub and Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Agent Profile is an independent open-source project, not affiliated with, endorsed by, or sponsored by any of these organizations.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
