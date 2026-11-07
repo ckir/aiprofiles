@@ -1,0 +1,260 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Supported Coding Agents - Isolation Matrix &amp; Evidence Citations</title>
+<meta name="description" content="Complete capability matrix and evidence-measured isolation levels across twelve leading AI coding agents.">
+<link rel="canonical" href="https://ckir.github.io/aiprofiles/agents/">
+<meta property="og:title" content="Supported Coding Agents - Isolation Matrix &amp; Evidence Citations">
+<meta property="og:description" content="Verified isolation matrix and sandbox probe findings across twelve coding agents.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ckir.github.io/aiprofiles/agents/">
+<meta property="og:image" content="../assets/banner.svg">
+<link rel="icon" type="image/svg+xml" href="../assets/agent-profile.svg">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<nav class="site-nav" aria-label="Main Navigation">
+  <div class="nav-wrap">
+    <a class="nav-brand" href="../">
+      <img src="../assets/agent-profile.svg" width="28" height="28" alt="Agent Profile">
+      <span>Agent Profile</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../how-it-works/">How It Works</a></li>
+      <li><a href="./" aria-current="page">Supported Agents</a></li>
+      <li><a href="../docs/">Docs</a></li>
+      <li><a href="../roadmap/">Roadmap</a></li>
+      <li><a href="../about/">About</a></li>
+      <li><a href="../#install">Install</a></li>
+    </ul>
+    <a class="cta nav-cta" href="../#install">Install Binary</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="../">Home</a><span>/</span><span>Supported Agents</span>
+  </nav>
+
+  <header>
+    <h1>Supported Coding Agents Matrix</h1>
+    <p class="subline">Twelve evidence-measured adapters backed by automated Linux sandbox probe captures.</p>
+  </header>
+
+  <section>
+    <h2>The Evidence Evaluation Standard</h2>
+    <p>Most multi-agent tooling relies on vendor marketing sheets or outdated README entries. <strong>Agent Profile rejects assumptions</strong>. Our adapters are measured against an automated Linux sandbox harness that inspects filesystem deltas, process strace events, and environment inheritance across unauthenticated launches.</p>
+    <div class="cards">
+      <div class="card">
+        <span class="badge badge-proven">Proven Support</span>
+        <p>The adapter mechanism has been empirically observed relocating files inside our test sandbox. The agent launches successfully, respects the isolation variable, and exhibits predictable behavior.</p>
+      </div>
+      <div class="card">
+        <span class="badge badge-experimental">Experimental Support</span>
+        <p>The adapter relocates primary configuration, but certain credential or state subsystems require network authentication or vendor login steps not yet fully mapped in offline sandbox tests.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The 12-Agent Capability Matrix</h2>
+    <p>Status as verified against agent-profile probe captures:</p>
+    <div style="overflow-x: auto;">
+      <table class="spec-table" aria-label="Agent isolation capability matrix">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Support Tier</th>
+            <th>Isolation Mechanism</th>
+            <th>Config</th>
+            <th>Credentials</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Claude Code</strong></td>
+            <td><span class="badge badge-proven">Proven</span></td>
+            <td><code>CLAUDE_CONFIG_DIR</code> (env)</td>
+            <td><span class="badge badge-proven">Supported</span></td>
+            <td><span class="badge badge-experimental">Conditional</span></td>
+            <td><span class="badge badge-unmeasured">Not Guaranteed</span></td>
+          </tr>
+          <tr>
+            <td><strong>OpenAI Codex</strong></td>
+            <td><span class="badge badge-proven">Proven</span></td>
+            <td><code>CODEX_HOME</code> (env)</td>
+            <td><span class="badge badge-proven">Supported</span></td>
+            <td><span class="badge badge-experimental">Conditional</span></td>
+            <td><span class="badge badge-experimental">Conditional</span></td>
+          </tr>
+          <tr>
+            <td><strong>Aider</strong></td>
+            <td><span class="badge badge-proven">Proven</span></td>
+            <td><code>--config &lt;file&gt;</code> (arg)</td>
+            <td><span class="badge badge-unmeasured">Not Guaranteed</span></td>
+            <td><span class="badge badge-unmeasured">Not Supported</span></td>
+            <td><span class="badge badge-unmeasured">Not Supported</span></td>
+          </tr>
+          <tr>
+            <td><strong>Gemini CLI</strong></td>
+            <td><span class="badge badge-proven">Proven</span></td>
+            <td><code>GEMINI_CLI_HOME</code> (env)</td>
+            <td><span class="badge badge-proven">Supported</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-proven">Supported</span></td>
+          </tr>
+          <tr>
+            <td><strong>OpenCode</strong></td>
+            <td><span class="badge badge-proven">Proven</span></td>
+            <td><code>OPENCODE_CONFIG_DIR</code> (env)</td>
+            <td><span class="badge badge-proven">Supported</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Not Supported</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cursor CLI</strong></td>
+            <td><span class="badge badge-experimental">Experimental</span></td>
+            <td><code>CURSOR_CONFIG_DIR</code> (env)</td>
+            <td><span class="badge badge-proven">Supported</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+          </tr>
+          <tr>
+            <td><strong>Copilot CLI</strong></td>
+            <td><span class="badge badge-experimental">Experimental</span></td>
+            <td><code>COPILOT_HOME</code> (env)</td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+          </tr>
+          <tr>
+            <td><strong>Amp (Ampere)</strong></td>
+            <td><span class="badge badge-proven">Proven</span></td>
+            <td><code>--settings-file &lt;file&gt;</code> (arg)</td>
+            <td><span class="badge badge-unmeasured">Not Guaranteed</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Not Guaranteed</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cline CLI</strong></td>
+            <td><span class="badge badge-experimental">Experimental</span></td>
+            <td><code>CLINE_DATA_DIR</code> (env)</td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+          </tr>
+          <tr>
+            <td><strong>Continue</strong></td>
+            <td><span class="badge badge-experimental">Experimental</span></td>
+            <td><code>--config &lt;file&gt;</code> (arg)</td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+          </tr>
+          <tr>
+            <td><strong>Windsurf</strong></td>
+            <td><span class="badge badge-experimental">Experimental</span></td>
+            <td><code>WINDSURF_CONFIG_DIR</code> (env)</td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+          </tr>
+          <tr>
+            <td><strong>Kiro CLI</strong></td>
+            <td><span class="badge badge-experimental">Experimental</span></td>
+            <td><code>KIRO_HOME</code> (env)</td>
+            <td><span class="badge badge-proven">Supported</span></td>
+            <td><span class="badge badge-unmeasured">Unknown</span></td>
+            <td><span class="badge badge-unmeasured">Not Supported</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deep Dive: Detailed Evidence Citations</h2>
+
+    <div class="card driver">
+      <h3>Claude Code (Anthropic)</h3>
+      <p><strong>Mechanism:</strong> Environment variable <code>CLAUDE_CONFIG_DIR</code></p>
+      <p><strong>Config Isolation:</strong> Supported. User settings and tool configuration files live in the relocated config directory. Note that project-local <code>.claude/settings*.json</code> and <code>.mcp.json</code> layer on top within the repository.</p>
+      <p><strong>Credential Isolation:</strong> Conditional. Ambient environment variables (e.g. <code>ANTHROPIC_API_KEY</code>) override disk settings. The per-directory <code>.credentials.json</code> and macOS Keychain entries follow documented paths.</p>
+      <p><strong>State Isolation:</strong> Not guaranteed. Community reports show history files moving with the directory, but vendor documentation does not formally guarantee complete database relocation.</p>
+    </div>
+
+    <div class="card peer" style="margin-top: 1.5rem;">
+      <h3>OpenAI Codex CLI</h3>
+      <p><strong>Mechanism:</strong> Environment variable <code>CODEX_HOME</code></p>
+      <p><strong>Config Isolation:</strong> Supported. <code>config.toml</code> and named configuration profiles live inside <code>CODEX_HOME</code>.</p>
+      <p><strong>Credential Isolation:</strong> Conditional. <code>OPENAI_API_KEY</code>, <code>CODEX_API_KEY</code>, and <code>CODEX_ACCESS_TOKEN</code> bypass disk storage when present in the ambient environment.</p>
+      <p><strong>State Isolation:</strong> Conditional. <code>CODEX_SQLITE_HOME</code> relocates the state database when explicitly configured.</p>
+    </div>
+
+    <div class="card" style="margin-top: 1.5rem;">
+      <h3>Gemini CLI (Google)</h3>
+      <p><strong>Mechanism:</strong> Environment variable <code>GEMINI_CLI_HOME</code></p>
+      <p><strong>Config Isolation:</strong> Supported. The probe harness observed filesystem creation at <code>+ d /target/.gemini</code> and <code>+ f /target/.gemini/projects.json</code>.</p>
+      <p><strong>State Isolation:</strong> Supported. History and temporary execution files relocated cleanly into <code>+ d /target/.gemini/history</code> and <code>+ d /target/.gemini/tmp</code>.</p>
+    </div>
+
+    <div class="card" style="margin-top: 1.5rem;">
+      <h3>Aider</h3>
+      <p><strong>Mechanism:</strong> CLI argument injection <code>--config &lt;file&gt;</code></p>
+      <p><strong>Config Isolation:</strong> Not guaranteed. Aider's configuration cascade merges the user-level <code>~/.aider.conf.yml</code>, repository-level files, and <code>.env</code> files.</p>
+      <p><strong>State Isolation:</strong> Not supported. Conversation history files (<code>.aider.chat.history.md</code>) are written directly into the working directory.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Auditing Local Adapters on Your Machine</h2>
+    <p>You can inspect the exact capability matrix and verified executable paths on your own system at any time:</p>
+    <pre class="cmd">
+# Display capability matrix and PATH resolution for all 12 agents:
+agent-profile agents
+
+# Machine-readable JSON output for automated validation scripts:
+agent-profile agents --json
+
+# Run health diagnostics on a specific agent adapter:
+agent-profile claude doctor
+agent-profile claude doctor work --json
+    </pre>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-grid">
+    <img src="../assets/agent-profile.svg" width="96" height="96" alt="Agent Profile Shield Emblem">
+    <div>
+      <p>Licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial License 1.0.0</a>.</p>
+      <nav class="foot-nav" aria-label="Footer links">
+        <a href="../">Home</a> | 
+        <a href="../how-it-works/">How It Works</a> | 
+        <a href="./">Supported Agents</a> | 
+        <a href="../docs/">Documentation</a> | 
+        <a href="../roadmap/">Roadmap</a> | 
+        <a href="../about/">About</a> | 
+        <a href="../rustdoc/agent_profile/index.html">Rustdoc</a> | 
+        <a href="https://github.com/ckir/aiprofiles">GitHub</a> | 
+        <a href="https://github.com/ckir/aiprofiles/releases">Releases</a> | 
+        <a href="https://github.com/ckir/aiprofiles/issues">Issues</a>
+      </nav>
+      <p class="fine">Claude and Claude Code are trademarks of Anthropic. OpenAI and Codex are trademarks of OpenAI. Gemini is a trademark of Google LLC. GitHub and Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Agent Profile is an independent open-source project, not affiliated with, endorsed by, or sponsored by any of these organizations.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

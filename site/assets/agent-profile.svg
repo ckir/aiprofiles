@@ -1,0 +1,49 @@
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none">
+  <defs>
+    <linearGradient id="shieldGrad" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffb040"/>
+      <stop offset="50%" stop-color="#ff7a18"/>
+      <stop offset="100%" stop-color="#00cfff"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="16" y1="16" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00eaff"/>
+      <stop offset="100%" stop-color="#052b70"/>
+    </linearGradient>
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Protective Shield Perimeter -->
+  <path d="M24 4 L40 10 V23 C40 33 32.5 40.5 24 44 C15.5 40.5 8 33 8 23 V10 Z"
+        stroke="url(#shieldGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+        fill="#040b19" fill-opacity="0.9" filter="url(#neonGlow)"/>
+
+  <!-- Isolated Compartment Walls (Separate Rooms) -->
+  <path d="M24 11 V37" stroke="#00cfff" stroke-width="1.75" stroke-dasharray="2 2" stroke-linecap="round"/>
+  <path d="M11 24 H37" stroke="#00cfff" stroke-width="1.75" stroke-dasharray="2 2" stroke-linecap="round"/>
+
+  <!-- Left Room: Agent Profile Alpha -->
+  <rect x="12" y="14" width="8" height="7" rx="1.5" fill="#ffb040" fill-opacity="0.25" stroke="#ffb040" stroke-width="1.5"/>
+  <circle cx="16" cy="17.5" r="1.5" fill="#ffb040"/>
+
+  <!-- Right Room: Agent Profile Beta -->
+  <rect x="28" y="14" width="8" height="7" rx="1.5" fill="#00cfff" fill-opacity="0.25" stroke="#00cfff" stroke-width="1.5"/>
+  <circle cx="32" cy="17.5" r="1.5" fill="#00cfff"/>
+
+  <!-- Central Launch Plan Node -->
+  <polygon points="24,19 28.5,24 24,29 19.5,24" fill="url(#coreGrad)" stroke="#00eaff" stroke-width="1.5"/>
+  <circle cx="24" cy="24" r="1.5" fill="#ffffff"/>
+
+  <!-- Bottom Room: Isolated Runtime Vault -->
+  <rect x="19" y="31" width="10" height="7" rx="1.5" fill="#00cfff" fill-opacity="0.2" stroke="#00eaff" stroke-width="1.5"/>
+  <line x1="22" y1="34.5" x2="26" y2="34.5" stroke="#00eaff" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
