@@ -1,0 +1,220 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Documentation - Agent Profile Technical Manual &amp; Reference</title>
+<meta name="description" content="Comprehensive CLI command reference, configuration schema, directory layout, and operator guide for agent-profile.">
+<link rel="canonical" href="https://ckir.github.io/aiprofiles/docs/">
+<meta property="og:title" content="Documentation - Agent Profile Technical Manual &amp; Reference">
+<meta property="og:description" content="CLI command manual, configuration reference, and architecture guides.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ckir.github.io/aiprofiles/docs/">
+<meta property="og:image" content="../assets/banner.svg">
+<link rel="icon" type="image/svg+xml" href="../assets/agent-profile.svg">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<nav class="site-nav" aria-label="Main Navigation">
+  <div class="nav-wrap">
+    <a class="nav-brand" href="../">
+      <img src="../assets/agent-profile.svg" width="28" height="28" alt="Agent Profile">
+      <span>Agent Profile</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../how-it-works/">How It Works</a></li>
+      <li><a href="../agents/">Supported Agents</a></li>
+      <li><a href="./" aria-current="page">Docs</a></li>
+      <li><a href="../roadmap/">Roadmap</a></li>
+      <li><a href="../about/">About</a></li>
+      <li><a href="../#install">Install</a></li>
+    </ul>
+    <a class="cta nav-cta" href="../#install">Install Binary</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="../">Home</a><span>/</span><span>Docs</span>
+  </nav>
+
+  <header>
+    <h1>Agent Profile Documentation</h1>
+    <p class="subline">Comprehensive command reference, configuration specification, and operator manual.</p>
+  </header>
+
+  <section>
+    <h2>Quickstart: Everyday Workflow</h2>
+    <p>Agent Profile selects profiles based on the canonical Git repository you are in. When you launch without a profile name, the tool resolves it automatically:</p>
+
+    <pre class="cmd">
+# 1. Enter your project directory:
+cd ~/dev/client-portal
+
+# 2. Link this repository to a dedicated profile:
+agent-profile link client-portal
+
+# 3. Launch your coding agent (it automatically uses the client-portal profile):
+agent-profile claude
+
+# 4. Pass arguments directly to the underlying agent after --:
+agent-profile claude -- --model claude-3-7-sonnet
+
+# 5. Check what would be selected without launching anything:
+agent-profile claude resolve
+agent-profile status
+    </pre>
+  </section>
+
+  <section>
+    <h2>Complete CLI Command Reference</h2>
+
+    <div class="card driver">
+      <h3>1. Launching Agents</h3>
+      <pre class="cmd">agent-profile &lt;agent&gt; [&lt;profile&gt;] [OPTIONS] [-- &lt;agent args...&gt;]</pre>
+      <p>Launches <code>&lt;agent&gt;</code> inside <code>&lt;profile&gt;</code>. If <code>&lt;profile&gt;</code> is omitted, resolves from repository mapping or <code>default_profile</code>. Profiles are automatically materialized on first launch.</p>
+      <ul>
+        <li><code>--dry-run</code>: Emits the calculated <code>LaunchPlan</code> without launching the agent or modifying filesystem state.</li>
+        <li><code>--repo &lt;path&gt;</code>: Evaluates resolution as if operating from <code>&lt;path&gt;</code> rather than the current working directory.</li>
+        <li><code>-- &lt;args...&gt;</code>: Passes all subsequent arguments directly to the agent binary verbatim.</li>
+      </ul>
+    </div>
+
+    <div class="card peer" style="margin-top: 1.5rem;">
+      <h3>2. Repository Mapping &amp; Status</h3>
+      <pre class="cmd">
+agent-profile [&lt;agent&gt;] status [--repo &lt;path&gt;] [--json]
+agent-profile &lt;agent&gt; resolve [--repo &lt;path&gt;] [--json]
+agent-profile &lt;agent&gt; current [--repo &lt;path&gt;]
+agent-profile [&lt;agent&gt;] link &lt;profile&gt; [--repo &lt;path&gt;]
+agent-profile [&lt;agent&gt;] unlink [--repo &lt;path&gt;]
+agent-profile repositories [--json]
+      </pre>
+      <ul>
+        <li><code>status</code>: Displays current repository root, linked profile, and adapter availability.</li>
+        <li><code>resolve</code>: Explains the exact precedence step that selected the active profile.</li>
+        <li><code>link</code>: Binds the canonical root to a profile. Specifying <code>&lt;agent&gt; link</code> creates an agent-specific override.</li>
+        <li><code>unlink</code>: Clears the stored mapping for this repository.</li>
+        <li><code>repositories</code>: Lists all stored mappings with their health state (<code>active</code>, <code>moved</code>, <code>not_a_repository</code>, <code>missing</code>, <code>unreadable</code>, <code>foreign</code>).</li>
+      </ul>
+    </div>
+
+    <div class="card" style="margin-top: 1.5rem;">
+      <h3>3. Profile Lifecycle Management</h3>
+      <pre class="cmd">
+agent-profile &lt;agent&gt; create &lt;profile&gt;
+agent-profile &lt;agent&gt; delete &lt;profile&gt; [--yes]
+agent-profile [&lt;agent&gt;] list [--json]
+agent-profile profiles [--json]
+agent-profile agents [--json]
+      </pre>
+      <ul>
+        <li><code>create</code>: Explicitly creates the profile directory and configuration skeleton.</li>
+        <li><code>delete</code>: Removes a profile directory. Requires confirmation unless <code>--yes</code> is passed. Rejects deletion if any active repository mapping references the profile.</li>
+        <li><code>profiles</code>: Lists all materialized profiles across all installed agents.</li>
+        <li><code>agents</code>: Lists all twelve supported agents, PATH resolution, and isolation matrix.</li>
+      </ul>
+    </div>
+
+    <div class="card" style="margin-top: 1.5rem;">
+      <h3>4. Diagnostics &amp; Shell Completions</h3>
+      <pre class="cmd">
+agent-profile doctor [--repo &lt;path&gt;] [--json]
+agent-profile &lt;agent&gt; doctor [&lt;profile&gt;] [--repo &lt;path&gt;] [--json]
+agent-profile completions &lt;bash|zsh|fish|powershell|elvish&gt;
+      </pre>
+      <ul>
+        <li><code>doctor</code>: Verifies binary paths, configuration permissions, Git canonicalization, and repository integrity.</li>
+        <li><code>completions</code>: Generates native shell autocompletions for all subcommands, agents, and local profiles.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Configuration &amp; Filesystem Layout</h2>
+    <p>All state lives locally in <code>~/.agent-profile/</code> (or <code>%USERPROFILE%\.agent-profile\</code> on Windows). Override with the <code>AGENT_PROFILE_HOME</code> environment variable:</p>
+    <pre class="cmd">
+~/.agent-profile/
+├── config.toml            # Global configuration (default_profile, logging)
+├── repositories.toml      # Stored canonical repository mappings
+└── profiles/
+    ├── personal/
+    │   ├── claude/        # CLAUDE_CONFIG_DIR
+    │   └── codex/         # CODEX_HOME
+    └── client-acme/
+        ├── claude/
+        └── codex/
+    </pre>
+
+    <h3>Sample <code>config.toml</code></h3>
+    <pre class="cmd">
+# ~/.agent-profile/config.toml
+default_profile = "personal"
+
+[logging]
+level = "warn"
+    </pre>
+  </section>
+
+  <section>
+    <h2>Authoring New Agent Adapters</h2>
+    <p>Adding support for a new coding agent requires implementing the <code>AgentAdapter</code> trait in Rust. Adapters calculate launch parameters as pure functions without side effects:</p>
+    <pre class="cmd">
+pub trait AgentAdapter: Send + Sync {
+    /// Canonical agent identifier (e.g. "claude", "codex")
+    fn name(&amp;self) -&gt; &amp;'static str;
+
+    /// Primary isolation mechanism description
+    fn mechanism(&amp;self) -&gt; Mechanism;
+
+    /// Synthesize an immutable LaunchPlan for the target profile
+    fn synthesize(&amp;self, profile_dir: &amp;Path, args: &amp;[String]) -&gt; Result&lt;LaunchPlan, AdapterError&gt;;
+
+    /// Audit executable availability and environment health
+    fn doctor(&amp;self) -&gt; DiagnosticReport;
+}
+    </pre>
+  </section>
+
+  <section>
+    <h2>Authoritative References</h2>
+    <ul>
+      <li><a href="https://github.com/ckir/aiprofiles/blob/main/agent-profile-implementation-spec-v3.md">Agent Profile Implementation Specification V3</a> — Formal 31KB specification defining every data structure and error code.</li>
+      <li><a href="../rustdoc/agent_profile/index.html">Rustdoc API Documentation</a> — Complete crate API documentation and internal module contracts.</li>
+      <li><a href="https://github.com/ckir/aiprofiles">GitHub Repository</a> — Source code, issue tracker, and discussions.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-grid">
+    <img src="../assets/agent-profile.svg" width="96" height="96" alt="Agent Profile Shield Emblem">
+    <div>
+      <p>Licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial License 1.0.0</a>.</p>
+      <nav class="foot-nav" aria-label="Footer links">
+        <a href="../">Home</a> | 
+        <a href="../how-it-works/">How It Works</a> | 
+        <a href="../agents/">Supported Agents</a> | 
+        <a href="./">Documentation</a> | 
+        <a href="../roadmap/">Roadmap</a> | 
+        <a href="../about/">About</a> | 
+        <a href="../rustdoc/agent_profile/index.html">Rustdoc</a> | 
+        <a href="https://github.com/ckir/aiprofiles">GitHub</a> | 
+        <a href="https://github.com/ckir/aiprofiles/releases">Releases</a> | 
+        <a href="https://github.com/ckir/aiprofiles/issues">Issues</a>
+      </nav>
+      <p class="fine">Claude and Claude Code are trademarks of Anthropic. OpenAI and Codex are trademarks of OpenAI. Gemini is a trademark of Google LLC. GitHub and Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Agent Profile is an independent open-source project, not affiliated with, endorsed by, or sponsored by any of these organizations.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

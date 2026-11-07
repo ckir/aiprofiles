@@ -1,0 +1,110 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 Costas Kirgoussios
+
+  This software is licensed under the PolyForm Noncommercial License 1.0.0.
+  You may obtain a copy of the License at:
+  https://polyformproject.org/licenses/noncommercial/1.0.0/
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>About Agent Profile - Origins, Philosophy &amp; Principles</title>
+<meta name="description" content="Learn about Agent Profile's origins, privacy principles, engineering philosophy, and open licensing.">
+<link rel="canonical" href="https://ckir.github.io/aiprofiles/about/">
+<meta property="og:title" content="About Agent Profile - Origins, Philosophy &amp; Principles">
+<meta property="og:description" content="The privacy principles and engineering philosophy behind Agent Profile.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ckir.github.io/aiprofiles/about/">
+<meta property="og:image" content="../assets/banner.svg">
+<link rel="icon" type="image/svg+xml" href="../assets/agent-profile.svg">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<nav class="site-nav" aria-label="Main Navigation">
+  <div class="nav-wrap">
+    <a class="nav-brand" href="../">
+      <img src="../assets/agent-profile.svg" width="28" height="28" alt="Agent Profile">
+      <span>Agent Profile</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../how-it-works/">How It Works</a></li>
+      <li><a href="../agents/">Supported Agents</a></li>
+      <li><a href="../docs/">Docs</a></li>
+      <li><a href="../roadmap/">Roadmap</a></li>
+      <li><a href="./" aria-current="page">About</a></li>
+      <li><a href="../#install">Install</a></li>
+    </ul>
+    <a class="cta nav-cta" href="../#install">Install Binary</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="../">Home</a><span>/</span><span>About</span>
+  </nav>
+
+  <header>
+    <h1>About Agent Profile</h1>
+    <p class="subline">Local, privacy-first isolation for professional multi-agent software engineering.</p>
+  </header>
+
+  <section>
+    <h2>Origins &amp; Philosophy</h2>
+    <p>As software engineers adopted multiple autonomous coding assistants across client contracts and open-source work, a critical failure mode emerged: global credential and state contamination. Launching an agent in an open-source clone inadvertently exposed private API keys and company prompt histories stored in default user home directories.</p>
+    <p>Agent Profile was created by Costas Kirgoussios to establish strict, deterministic compartment walls between repositories. Its design adheres to three unwavering tenets:</p>
+    <blockquote>
+      <p><strong>1. Agent Profile owns profile selection.</strong> The coding agent owns authentication and agent-specific configuration.</p>
+      <p><strong>2. The evidence determines what Agent Profile is allowed to claim.</strong> No feature or isolation claim is made without empirical verification in an automated sandbox harness.</p>
+      <p><strong>3. Never trust the repository.</strong> An untrusted repository must never be permitted to specify, override, or alter profile selection.</p>
+    </blockquote>
+  </section>
+
+  <section>
+    <h2>Privacy &amp; Security Guarantees</h2>
+    <ul>
+      <li><strong>Completely Local:</strong> Everything executes locally on your workstation. No cloud servers, no proxy relays, no centralized token storage.</li>
+      <li><strong>Zero Telemetry:</strong> Agent Profile contains zero analytics SDKs, zero phone-home routines, and zero metric beacons.</li>
+      <li><strong>Zero Token Extraction:</strong> We never copy, extract, decrypt, or log your API keys or OAuth access tokens.</li>
+      <li><strong>Sterile Subprocess Environments:</strong> The process launcher executes child processes with explicit, clean environment maps to prevent accidental ambient variable leakage.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Licensing</h2>
+    <p>Agent Profile is licensed under the <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial License 1.0.0</a>. You are free to inspect, modify, evaluate, and use Agent Profile for noncommercial research, personal development, open-source projects, and educational experiments.</p>
+    <p>For commercial use or enterprise deployment questions, consult the <a href="https://github.com/ckir/aiprofiles">repository</a> or reach out through <a href="https://github.com/ckir/clavity">Clavity ecosystem channels</a>.</p>
+  </section>
+
+  <section>
+    <h2>Trademarks &amp; Non-Endorsement Disclaimers</h2>
+    <p class="fine">"Claude" and "Claude Code" are trademarks of Anthropic. "OpenAI" and "Codex" are trademarks of OpenAI. "Gemini" and "Google" are trademarks of Google LLC. "GitHub" and "GitHub Copilot" are trademarks of GitHub, Inc. "Cursor" is a trademark of Anysphere, Inc. "Aider" is an open-source project by Paul Gauthier. "Windsurf" is a trademark of Codeium. Agent Profile is an independent open-source project, not affiliated with, endorsed by, or sponsored by any of these organizations. All trademarks are used strictly to identify the external developer tools with which this software interoperates.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-grid">
+    <img src="../assets/agent-profile.svg" width="96" height="96" alt="Agent Profile Shield Emblem">
+    <div>
+      <p>Licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/">PolyForm Noncommercial License 1.0.0</a>.</p>
+      <nav class="foot-nav" aria-label="Footer links">
+        <a href="../">Home</a> | 
+        <a href="../how-it-works/">How It Works</a> | 
+        <a href="../agents/">Supported Agents</a> | 
+        <a href="../docs/">Documentation</a> | 
+        <a href="../roadmap/">Roadmap</a> | 
+        <a href="./">About</a> | 
+        <a href="../rustdoc/agent_profile/index.html">Rustdoc</a> | 
+        <a href="https://github.com/ckir/aiprofiles">GitHub</a> | 
+        <a href="https://github.com/ckir/aiprofiles/releases">Releases</a> | 
+        <a href="https://github.com/ckir/aiprofiles/issues">Issues</a>
+      </nav>
+      <p class="fine">Claude and Claude Code are trademarks of Anthropic. OpenAI and Codex are trademarks of OpenAI. Gemini is a trademark of Google LLC. GitHub and Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Agent Profile is an independent open-source project, not affiliated with, endorsed by, or sponsored by any of these organizations.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
