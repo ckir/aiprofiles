@@ -1,4 +1,49 @@
+# Version control
+.git/
+.worktrees/
+
+# Cargo build artifacts and executables
+target/
+debug/
+dist/
+**/*.rs.bk
+*.pdb
+
+# Dependencies and lockfiles
 Cargo.lock
+
+# Mutation testing and test outputs
+**/mutants.out*/
+coverage/
+testResults.xml
+
+# Agent and AI runtime data, caches, and scratch
+.agent/
 .claude/
 .clavity/
+.gemini/
+.review-relay/
 .serena/
+.superpowers/
+
+# Python caches (plan tooling/scratch scripts)
+__pycache__/
+*.pyc
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Logs and environment files
+*.log
+logs/
+.env
+.env.local
+*.pem
+*.key
