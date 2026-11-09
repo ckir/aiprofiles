@@ -1,7 +1,7 @@
 custody: ci
-run-id: 39024332187
-run-url: https://github.com/ckir/aiprofiles/actions/runs/39024332187
-harness-commit: 16737cb79a0cde5bb698fae7784e69b9eeb6b551
+run-id: 42654070717
+run-url: https://github.com/ckir/aiprofiles/actions/runs/42654070717
+harness-commit: 96c66274332c4054bab8794f8715ccc2e33604e1
 ---
 install:
   npm install --global cline
@@ -14,8 +14,8 @@ exit-codes:
   behaviour-flagdir---config 0
 probe-exit: 0
 version:
-  3.0.73
-version-extracted: 3.0.73
+  3.0.74
+version-extracted: 3.0.74
 help:
   Usage: cline [options] [command] [prompt]
   
@@ -88,7 +88,7 @@ help:
     kanban                        Run the kanban app
 strings:
   # /home/agent/.local/bin/cline -> /home/agent/.local/lib/node_modules/cline/bin/cline
-  # scanned 28185 file(s), 462057430 byte(s) under /home/agent/.local/lib/node_modules/cline
+  # scanned 26008 file(s), 507528065 byte(s) under /home/agent/.local/lib/node_modules/cline
   documented ANTHROPIC_API_KEY: present
   documented CLINE_API_KEY: present
   documented OPENAI_API_KEY: present
@@ -107,6 +107,7 @@ strings:
   AFTER_DOCTYPE_SYSTEM_KEYWORD
   AGENTROUTER_API_KEY
   AGENT_CONFIG_DIRECTORY_NAME
+  AGENT_MEMORY_API_KEY
   AGENT_PROXY_AUTH_TOKEN
   AGENT_UNEXPECTED_REASONING_TOKENS_EVENT
   AGNES_API_KEY
@@ -125,9 +126,11 @@ strings:
   ALIBABA_CODING_PLAN_API_KEY
   ALIBABA_TOKEN_PLAN_API_KEY
   ALLOWED_TOKEN_PATTERN
+  ALLUSERSPROFILE
   AMAZONTOKEN
   AMBIENT_API_KEY
   AMD_API_KEY
+  ANDROID_HOME
   ANTHROPIC_API_KEY
   ANTHROPIC_AUTH_TOKEN
   ANTHROPIC_AWS_API_KEY
@@ -194,6 +197,7 @@ strings:
   ATTR_AWS_S3_KEY
   ATTR_AWS_SECRETSMANAGER_SECRET_ARN
   ATTR_FEATURE_FLAG_KEY
+  ATTR_GCP_PUBSUB_MESSAGE_ORDERING_KEY
   ATTR_GEN_AI_REQUEST_MAX_TOKENS
   ATTR_GEN_AI_TOKEN_TYPE
   ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS
@@ -203,6 +207,7 @@ strings:
   ATTR_GEN_AI_USAGE_OUTPUT_TOKENS
   ATTR_GEN_AI_USAGE_PROMPT_TOKENS
   ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS
+  ATTR_KAFKA_MESSAGE_KEY
   ATTR_MESSAGING_GCP_PUBSUB_MESSAGE_ORDERING_KEY
   ATTR_MESSAGING_KAFKA_MESSAGE_KEY
   ATTR_MESSAGING_RABBITMQ_DESTINATION_ROUTING_KEY
@@ -212,6 +217,8 @@ strings:
   ATTR_PPROF_PROFILE_DROP_FRAMES
   ATTR_PPROF_PROFILE_KEEP_FRAMES
   ATTR_PROFILE_FRAME_TYPE
+  ATTR_RABBITMQ_DESTINATION_ROUTING_KEY
+  ATTR_ROCKETMQ_MESSAGE_KEYS
   AURIKO_API_KEY
   AUTH
   AUTHCODE_EXPIRED
@@ -226,7 +233,6 @@ strings:
   AUTHORITY_INTRODUCER_REGION
   AUTHORITY_KEYID
   AUTHORITY_PREFIX
-  AUTHORIZATION
   AUTHORIZATION_CODE_CHALLENGE_METHOD
   AUTHORIZATION_CODE_RESPONSE_TYPE
   AUTHORIZE
@@ -281,12 +287,6 @@ strings:
   BOUNDLESS_API_KEY
   BUILDER_KEYS
   BUN_CONFIG_DISABLE_
-  BUN_CONFIG_DISABLE_COPY_FILE_RANGE
-  BUN_CONFIG_DNS_TIME_TO_LIVE_SECONDS
-  BUN_CONFIG_HTTP_IDLE_TIMEOUT
-  BUN_CONFIG_MAX_HTTP_REQUESTS
-  BUN_CONFIG_MAX_HTTP_REQUESTSBUN_CONFIG_MAX_HTTP_REQUESTS
-  BUN_CONFIG_SKIP_INSTALL_PACKAGESC
     [truncated: more than 200 lines]
 baseline-env-CLINE_DATA_DIR:
   # /home/agent/probe-target
@@ -383,6 +383,7 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-image-model-options.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-image-model.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-image-settings.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-model-catalog.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-prepare-tools.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-provider.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/amazon-bedrock/src/amazon-bedrock-reasoning-metadata.ts
@@ -431,18 +432,22 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-api.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-batch.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-error.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-files.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-language-model-options.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-language-model.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-message-metadata.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-model-catalog.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-prepare-tools.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-provider-metadata.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-provider.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/anthropic-tools.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/convert-anthropic-usage.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/convert-to-anthropic-prompt.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/files
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/files/anthropic-files-api.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/files/anthropic-files.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/forward-anthropic-container-id-from-last-step.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/get-cache-control.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/has-circular-schema-reference.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/index.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/internal
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/internal/index.ts
@@ -452,6 +457,7 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/skills
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/skills/anthropic-skills-api.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/skills/anthropic-skills.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/supports-native-structured-output-schema.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/tool
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/tool/advisor_20260301.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/anthropic/src/tool/bash_20241022.ts
@@ -532,6 +538,7 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-speech-model-settings.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-speech-model.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-spend-report.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-stream-errors.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-tools.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-transcription-model-settings.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/gateway-transcription-model.ts
@@ -541,7 +548,10 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/browserbase-fetch.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/browserbase-search.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/deepseek-fetch.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/deepseek-search.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/exa-search.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/gateway-tool-error.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/parallel-search.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/perplexity-search.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/gateway/src/tool/tako-search.ts
@@ -585,6 +595,7 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-language-model-options.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-language-model.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-model-capabilities.ts
+  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-model-catalog.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-prepare-tools.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-prompt.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/google-provider.ts
@@ -602,15 +613,4 @@ container-delta:
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/build-google-interactions-stream-transform.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/cancel-google-interaction.ts
   A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/convert-google-interactions-usage.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/convert-to-google-interactions-input.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/extract-google-interactions-sources.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/google-interactions-agent.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/google-interactions-api.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/google-interactions-language-model-options.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/google-interactions-language-model.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/google-interactions-prompt.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/google-interactions-provider-metadata.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/map-google-interactions-finish-reason.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/parse-google-interactions-outputs.ts
-  A /home/agent/.local/lib/node_modules/cline/node_modules/@ai-sdk/google/src/interactions/poll-google-interactions.ts
     [truncated: more than 300 lines]

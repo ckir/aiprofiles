@@ -29,8 +29,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "codex-home-v1",
-        verified_at: "2026-10-25",
-        upstream_version: "0.164.0",
+        verified_at: "2026-11-09",
+        upstream_version: "0.167.0",
         source_url: "measured",
         notes: "codex --help: -p/--profile layers $CODEX_HOME/<name>.config.toml; binary strings OPENAI_API_KEY, \
                 CODEX_API_KEY, CODEX_ACCESS_TOKEN, CODEX_SQLITE_HOME; CODEX_HOME semantics per the Codex CLI \

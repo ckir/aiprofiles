@@ -30,6 +30,11 @@
 # moving and called it isolated.
 default="$PROBE_AGENT_HOME/.kiro $PROBE_AGENT_HOME/.local/share/kiro-cli"
 
+# Registered BEFORE the version and help steps: kiro-cli 3.x creates ~/.kiro and ~/.local/share/kiro-cli on a bare
+# `--version`, so a baseline taken later is not pristine and the delta cannot show the data tree at the default.
+# shellcheck disable=SC2086 # <default-location> is a whitespace-separated LIST; the split is the point
+probe_pristine $default
+
 probe_script_install https://cli.kiro.dev/install bash
 probe_version kiro-cli
 probe_help kiro-cli

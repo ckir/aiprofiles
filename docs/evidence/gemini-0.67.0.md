@@ -1,7 +1,7 @@
 custody: ci
-run-id: 40146391660
-run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
-harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
+run-id: 42654070717
+run-url: https://github.com/ckir/aiprofiles/actions/runs/42654070717
+harness-commit: 96c66274332c4054bab8794f8715ccc2e33604e1
 ---
 install:
   npm install --global @google/gemini-cli
@@ -12,8 +12,8 @@ exit-codes:
   behaviour-env-GEMINI_CLI_HOME 0
 probe-exit: 0
 version:
-  0.65.0
-version-extracted: 0.65.0
+  0.67.0
+version-extracted: 0.67.0
 help:
   Usage: gemini [options] [command]
   
@@ -25,6 +25,7 @@ help:
     gemini skills <command>      Manage agent skills.  [aliases: skill]
     gemini hooks <command>       Manage Gemini CLI hooks.  [aliases: hook]
     gemini gemma                 Manage local Gemma model routing
+    gemini models [command]      Manage or list Gemini models.
     gemini [query..]             Launch Gemini CLI  [default]
   
   Positionals:
@@ -48,6 +49,7 @@ help:
         --allowed-tools             [DEPRECATED: Use Policy Engine instead See https://geminicli.com/docs/core/policy-engine] Tools that are allowed to run without confirmation  [array]
     -e, --extensions                A list of extensions to use. If not provided, all extensions are used.  [array]
     -l, --list-extensions           List all available extensions and exit.  [boolean]
+        --list-models               List available Gemini models and exit.  [boolean]
     -r, --resume                    Resume a previous session. Use "latest" for most recent or index number (e.g. --resume 5)  [string]
         --session-file              Load a session from a JSON file  [string]
         --session-id                Start a new session with a manually provided UUID.  [string]
@@ -62,7 +64,7 @@ help:
     -h, --help                      Show help  [boolean]
 strings:
   # /home/agent/.local/bin/gemini -> /home/agent/.local/lib/node_modules/@google/gemini-cli/bundle/gemini.js
-  # scanned 825 file(s), 102571893 byte(s) under /home/agent/.local/lib/node_modules/@google/gemini-cli
+  # scanned 825 file(s), 102851678 byte(s) under /home/agent/.local/lib/node_modules/@google/gemini-cli
   documented GEMINI_API_KEY: present
   documented GOOGLE_API_KEY: present
   documented GOOGLE_APPLICATION_CREDENTIALS: present
@@ -267,10 +269,10 @@ baseline-env-GEMINI_CLI_HOME:
   d /home/agent/probe-target
   # /home/agent/.gemini
   d /home/agent/.gemini
-  f /home/agent/.gemini/projects.json.0fb4a987-94e8-489c-a903-49016553c1e3.tmp
-  f /home/agent/.gemini/projects.json.17e85aaa-86d8-44b6-8109-e16707bf94ae.tmp
-  f /home/agent/.gemini/projects.json.825d2a6d-e04b-410d-bbeb-7f1d7cd83f71.tmp
-  f /home/agent/.gemini/projects.json.b09d4d1b-1dce-428e-9660-d79966fffe82.tmp
+  f /home/agent/.gemini/projects.json.15ce677c-8aa9-4723-97ca-43dcac808700.tmp
+  f /home/agent/.gemini/projects.json.4d7b130d-159d-48d1-8b0e-3b0a9ad080b8.tmp
+  f /home/agent/.gemini/projects.json.80c0397b-9f82-48cb-8177-1ce39e43bcba.tmp
+  f /home/agent/.gemini/projects.json.82f9419b-98f1-42a3-9e77-905c68074fbe.tmp
 delta-env-GEMINI_CLI_HOME:
   + d /home/agent/probe-target/.gemini
   + d /home/agent/probe-target/.gemini/history
