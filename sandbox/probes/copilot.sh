@@ -15,6 +15,39 @@
 . sandbox/probes/common.sh
 
 probe_npm_install @github/copilot
+
+# BEGIN npm-race retry
+# THE RACE. @github/copilot ships its binary in a per-platform optional dependency
+# (@github/copilot-linux-x64, ...). When the main package is published BEFORE its platform packages, npm
+# skips the missing optional dependency and `install` still EXITS 0, so the install step records a success
+# and every later step runs the loader's stub: "GitHub Copilot CLI: no platform package found", exit 1,
+# version `unknown`, adapter forced to Experimental (measured 2026-11-09, minutes before the platform
+# package appeared; a re-run succeeded).
+#
+# WHY HERE AND NOT IN common.sh OR THE WORKFLOW. No other agent ships this way, and a retry of the whole
+# run would discard the failed attempt and commit a transcript with no trace of the race. This one
+# retries the INSTALL only, as its own recorded step, so the transcript says it happened: `exit-codes:`
+# gains one `install-retry <status>` row per retry, while `install:` still names the first command.
+#
+# THE TRIGGER IS THAT EXACT SYMPTOM, NOT A NON-ZERO EXIT. A crash, a missing library or a vendor that
+# really cannot install fall straight through to `probe_version` and are recorded as failures. If the
+# vendor rewords the message the loop simply does not fire (it fails closed, as before this block).
+# Bounded at three retries; `probe_version` below is the final check, so a race that outlasts the budget
+# still records `unknown` rather than passing.
+#
+# PROBE_COPILOT_BACKOFF is the seconds to wait before each retry, so the harness test can run it at zero.
+copilot_backoff=${PROBE_COPILOT_BACKOFF:-"15 30 60"}
+for copilot_wait in $copilot_backoff; do
+    copilot_check=$(probe_as_agent timeout --kill-after=10s "$PROBE_TIMEOUT" copilot --version 2>&1 || true)
+    case $copilot_check in
+        *"no platform package found"*) ;;
+        *) break ;;
+    esac
+    sleep "$copilot_wait"
+    probe_record_agent install-retry npm install --global "@github/copilot${PROBE_VERSION:+@$PROBE_VERSION}"
+done
+# END npm-race retry
+
 probe_version copilot
 probe_help copilot
 probe_strings copilot COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN COPILOT_HOME
