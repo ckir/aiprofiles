@@ -796,7 +796,7 @@ done | LC_ALL=C sort -u)
 check "no literal step name given to probe_record claims the harness's own prefix" \
     "$(printf '%s\n' "$record_names" | grep -c '^harness-' || true)" "0"
 check "and that was checked against the literal names actually found" \
-    "$record_names" "$(printf 'help\ninstall\nservice-stop-dir\nservice-stop-file\nversion\n')"
+    "$record_names" "$(printf 'help\ninstall\ninstall-retry\nservice-stop-dir\nservice-stop-file\nversion\n')"
 
 # --- the agent's home ---------------------------------------------------------------------------
 #
@@ -1649,6 +1649,62 @@ else
     failures=$((failures + 1))
 fi
 rm -f "$probe_scripts"
+
+# --- copilot's npm publish race --------------------------------------------------------------------
+#
+# `copilot.sh` retries its INSTALL when `copilot --version` prints "no platform package found" (the main
+# npm package published before its platform package; `npm install` exits 0 regardless). The block between
+# the BEGIN/END markers is extracted from the real script and RUN here against stub `copilot` and `npm`
+# executables, so what is tested is the text that ships, not a copy of it. The backoff is set to zero.
+#
+# Each case reads two things: how many `install-retry` rows reached `steps` (the transcript's
+# `exit-codes:`, which is how a retry stays visible in committed evidence) and how many times the stub
+# `npm` ran. A mutant that drops the symptom test (retry on any failure), drops the bound, or retries
+# without recording each fails a different case below.
+copilot_block=$(sed -n '/^# BEGIN npm-race retry$/,/^# END npm-race retry$/p' "$root/sandbox/probes/copilot.sh")
+if [ -z "$copilot_block" ]; then
+    echo "FAIL - copilot.sh has no BEGIN/END npm-race retry block to test"
+    failures=$((failures + 1))
+fi
+
+# copilot_case <copilot-stub-mode> <npm-exit>: run the block; sets $retry_rows, $npm_runs and $probe_status.
+# Modes: race<N> fails with the symptom for its first N calls and then works; crash always exits 139.
+copilot_case() {
+    case $1 in
+        race*) stub_body="n=\$(cat \"\$(dirname \"\$0\")/calls\" 2>/dev/null || echo 0); n=\$((n + 1)); echo \$n > \"\$(dirname \"\$0\")/calls\"
+if [ \$n -le ${1#race} ]; then echo 'GitHub Copilot CLI: no platform package found. Reinstall it.'; exit 1; fi
+echo 'GitHub Copilot CLI 1.0.108.'" ;;
+        crash) stub_body="echo 'Segmentation fault'; exit 139" ;;
+    esac
+    stage copilot "$stub_body"
+    stage npm "echo run >> \"\$(dirname \"\$0\")/npm-calls\"; exit $2"
+    run_staged "PROBE_COPILOT_BACKOFF='0 0 0'
+$copilot_block"
+    retry_rows=$(grep -c '^install-retry ' "$PROBE_OUT_DIR/steps" 2>/dev/null || true)
+    npm_runs=$(wc -l < "$PROBE_OUT_DIR/bin/npm-calls" 2>/dev/null || echo 0)
+    npm_runs=$(printf '%s' "$npm_runs" | tr -d ' ')
+}
+
+copilot_case race0 0
+check "a healthy copilot is not reinstalled" "$retry_rows $npm_runs" "0 0"
+
+copilot_case race2 0
+check "a race that clears after two checks is retried exactly twice, each recorded" "$retry_rows $npm_runs" "2 2"
+
+copilot_case race99 0
+check "a race that never clears stops at the three-retry bound" "$retry_rows $npm_runs" "3 3"
+
+copilot_case crash 0
+check "a crash that is not the race symptom is never retried" "$retry_rows $npm_runs" "0 0"
+
+copilot_case race1 1
+check "a retry whose own install fails is recorded as a failure" \
+    "$(grep -c '^install-retry 1$' "$PROBE_OUT_DIR/failures" 2>/dev/null || true)" "1"
+
+# THE SHIPPED DEFAULT, which every case above overrides with zeros and so cannot see: the three-retry bound
+# and its backoff live in this string. MEASURED: widening it to five entries left all five cases green.
+check "the shipped backoff is three retries at 15s, 30s and 60s" \
+    "$(sed -n 's/^copilot_backoff=${PROBE_COPILOT_BACKOFF:-"\(.*\)"}$/\1/p' "$root/sandbox/probes/copilot.sh")" "15 30 60"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
