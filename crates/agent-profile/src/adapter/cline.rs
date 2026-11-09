@@ -26,8 +26,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Experimental,
     evidence: AdapterEvidence {
         mechanism_id: "cline-cli-v1",
-        verified_at: "2026-10-17",
-        upstream_version: "3.0.73",
+        verified_at: "2026-11-09",
+        upstream_version: "3.0.74",
         source_url: "measured",
         notes: "measured in a sandbox at 3.0.73: --help lists `CLINE_DATA_DIR` as a Configuration \
                 directory and `--config`/`--data-dir` as directory flags; a launch with the env var set \

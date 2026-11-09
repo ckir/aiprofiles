@@ -1,7 +1,7 @@
 custody: ci
-run-id: 40146391660
-run-url: https://github.com/ckir/aiprofiles/actions/runs/40146391660
-harness-commit: e51b7714ef11ba55e69db6cadbb4fd1bda676a00
+run-id: 42654070717
+run-url: https://github.com/ckir/aiprofiles/actions/runs/42654070717
+harness-commit: 96c66274332c4054bab8794f8715ccc2e33604e1
 ---
 install:
   npm install --global @opencode/cli
@@ -15,8 +15,8 @@ exit-codes:
   service-stop-file 0
 probe-exit: 0
 version:
-  opencode v2.1.4
-version-extracted: v2.1.4
+  opencode v2.2.6
+version-extracted: v2.2.6
 help:
   DESCRIPTION
     OpenCode command line interface
@@ -39,7 +39,7 @@ help:
     --help, -h                                                          Show help information
     --version, -v                                                       Show version information
     --wizard                                                            Start wizard mode for a command
-    --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+    --completions <bash|zsh|fish|powershell|sh|pwsh>                    Print shell completion script (choices: bash, zsh, fish, powershell, sh, pwsh)
     --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
     --print-logs                                                        Print logs to stderr (server logs require --standalone)
   
@@ -63,7 +63,7 @@ help:
     serve              Start the v2 API and web server
 strings:
   # /home/agent/.local/bin/opencode2 -> /home/agent/.local/lib/node_modules/@opencode/cli/bin/opencode.exe
-  # scanned 11 file(s), 1199921202 byte(s) under /home/agent/.local/lib/node_modules/@opencode/cli
+  # scanned 11 file(s), 1298495538 byte(s) under /home/agent/.local/lib/node_modules/@opencode/cli
   documented ANTHROPIC_API_KEY: present
   documented OPENAI_API_KEY: present
   documented OPENCODE_CONFIG_DIR: present
@@ -72,19 +72,31 @@ strings:
   #
   # variable-shaped tokens that name a credential or a location, documented or not
   ABORT_ERRERR_ACCESS_DENIEDERR_AMBIGUOUS_ARGUMENTERR_ARG_NOT_ITERABLEERR_ASSERTIONERR_ASYNC_CALLBACKERR_ASYNC_TYPEERR_BODY_ALREADY_USEDERR_BORINGSSLERR_BROTLI_INVALID_PARAMERR_BUFFER_OUT_OF_BOUNDSERR_BUFFER_TOO_LARGEERR_CHILD_PROCESS_IPC_REQUIREDERR_CHILD_PROCESS_STDIO_MAXBUFFERERR_CLOSED_MESSAGE_PORTERR_CONSOLE_WRITABLE_STREAMERR_CONSTRUCT_CALL_INVALIDERR_CONSTRUCT_CALL_REQUIREDERR_CRYPTO_CUSTOM_ENGINE_NOT_SUPPORTEDERR_CRYPTO_ECDH_INVALID_FORMATERR_CRYPTO_ECDH_INVALID_PUBLIC_KEYERR_CRYPTO_HASH_F  [line truncated]
+  ACCESS_KEY_ID
   ACTIONS_ID_TOKEN_REQUEST_TOKEN
   ACTIONS_ID_TOKEN_REQUEST_URL
   ADDRCONFIG
   AES_KEY_SETUP_FAILED
   AFTER_DOCTYPE_PUBLIC_KEYWORD
   AFTER_DOCTYPE_SYSTEM_KEYWORD
+  AGENT_PROXY_AUTH_TOKEN
   AICORE_SERVICE_KEY
   AI_GATEWAY_API_KEY
   ALIAS_KEYS
   ALIBABA_API_KEY
+  ALLUSERSPROFILE
+  ANDROID_HOME
   ANTHROPIC_API_KEY
   ANTHROPIC_AUTH_TOKEN
+  ANTHROPIC_AWS_API_KEY
+  ANTHROPIC_CONFIG_DIR
+  ANTHROPIC_FOUNDRY_API_KEY
+  ANTHROPIC_FOUNDRY_AUTH_TOKEN
+  ANTHROPIC_IDENTITY_TOKEN
+  ANTHROPIC_IDENTITY_TOKEN_FILE
+  ANTHROPIC_PROFILE
   ANY_KEY__
+  API_KEY_URL
   API_KEY_WITH_CREDENTIALS
   ATTR_ASPNETCORE_USER_IS_AUTHENTICATED
   AUTH
@@ -96,6 +108,7 @@ strings:
   AUTHORIZED
   AUTHORS
   AUTH_HEADER
+  AVDISCARD_NONKEY
   AWS_ACCESS_KEY_ID
   AWS_ACCESS_KEY_IDS3_SECRET_ACCESS_KEYAWS_SECRET_ACCESS_KEYS3_REGIONAWS_REGIONS3_ENDPOINTAWS_ENDPOINTS3_BUCKETAWS_BUCKETAWS_SESSION_TOKEN
   AWS_AUTH_SCHEME_PREFERENCE
@@ -149,11 +162,91 @@ strings:
   CANNOT_HAVE_BOTH_PRIVKEY_AND_METHOD
   CANNOT_RECOVER_MULTI_PRIME_KEY
   CANT_CHECK_DH_KEY
+  CCR_AGENT_PROXY_TOKEN_FILE_DESCRIPTOR
+  CCR_SESSION_PROFILE
   CEREBRAS_API_KEY
   CERTIFICATE_AND_PRIVATE_KEY_MISMATCH
   CERTIFICATE_CONFIGURATION_ENV_VARIABLE
   CERTIFICATE_HAS_NO_KEYID
   CF_AIG_TOKEN
+  CLAUDE_AI_AUTHORIZE_URL
+  CLAUDE_BG_AUTH_SNAPSHOT_PATH
+  CLAUDE_BG_CLAIM_AUTH
+  CLAUDE_BG_PTY_AUTH
+  CLAUDE_BG_RV_AUTH
+  CLAUDE_BG_SOCKET_TOKENS_PATH
+  CLAUDE_BRIDGE_OAUTH_TOKEN
+  CLAUDE_CHROME_TAB_GROUP_KEY
+  CLAUDE_CODE_AGENT_PROXY_GIT_CONFIG
+  CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR
+  CLAUDE_CODE_API_KEY_HELPER_TTL_MS
+  CLAUDE_CODE_ARTIFACTS_API_TOKEN
+  CLAUDE_CODE_AUTH_FAIL_EXIT_MS
+  CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS
+  CLAUDE_CODE_CLIENT_KEY
+  CLAUDE_CODE_CLIENT_KEY_PASSPHRASE
+  CLAUDE_CODE_CONFIG_PROBE
+  CLAUDE_CODE_CONFIG_WATCH_EVENTS
+  CLAUDE_CODE_CUSTOM_OAUTH_URL
+  CLAUDE_CODE_DESIGN_OAUTH_CLIENT_ID
+  CLAUDE_CODE_DISABLE_AUTH_REFRESH_LOCK
+  CLAUDE_CODE_ENABLE_PROXY_AUTH_HELPER
+  CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT
+  CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS
+  CLAUDE_CODE_GATEWAY_TOKEN_FILE_DESCRIPTOR
+  CLAUDE_CODE_HFI_BEARER_TOKEN
+  CLAUDE_CODE_HIDE_SETTINGS_HINT
+  CLAUDE_CODE_HOME_SEED_HOLD_TIMEOUT_MS
+  CLAUDE_CODE_HOME_SEED_VERDICT_TIMEOUT_MS
+  CLAUDE_CODE_HOST_AUTH_ENV_VAR
+  CLAUDE_CODE_HOST_AUTH_REFRESH_TIMEOUT_MS
+  CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS
+  CLAUDE_CODE_IDLE_TOKEN_THRESHOLD
+  CLAUDE_CODE_MANAGED_CONFIG_PREFETCH
+  CLAUDE_CODE_MANAGED_SETTINGS_PATH
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS
+  CLAUDE_CODE_MCP_SERVE_AUTH_TOKEN
+  CLAUDE_CODE_MEMORY_API_TOKEN
+  CLAUDE_CODE_MOCK_REMOTE_SETTINGS
+  CLAUDE_CODE_OAUTH_401_WAIT_MS
+  CLAUDE_CODE_OAUTH_CLIENT_ID
+  CLAUDE_CODE_OAUTH_REFRESH_TOKEN
+  CLAUDE_CODE_OAUTH_SCOPES
+  CLAUDE_CODE_OAUTH_TOKEN
+  CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR
+  CLAUDE_CODE_POST_TURN_MEMORY_CONFIG
+  CLAUDE_CODE_PROFILE_STARTUP
+  CLAUDE_CODE_PROXY_AUTH_HELPER_TTL_MS
+  CLAUDE_CODE_RELAUNCH_HOME_TRUST
+  CLAUDE_CODE_REMOTE_MCP_CONFIG
+  CLAUDE_CODE_REMOTE_SETTINGS_PATH
+  CLAUDE_CODE_REMOTE_SETTINGS_POLL_MS
+  CLAUDE_CODE_RESTRICT_PERSONAL_CONFIG
+  CLAUDE_CODE_RESUME_TOKEN_THRESHOLD
+  CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH
+  CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH
+  CLAUDE_CODE_SESSION_ACCESS_TOKEN
+  CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH
+  CLAUDE_CODE_SKIP_ANTHROPIC_GOOGLE_CLOUD_AUTH
+  CLAUDE_CODE_SKIP_BEDROCK_AUTH
+  CLAUDE_CODE_SKIP_FOUNDRY_AUTH
+  CLAUDE_CODE_SKIP_MANTLE_AUTH
+  CLAUDE_CODE_SKIP_VERTEX_AUTH
+  CLAUDE_CODE_SLACK_TAG_TOKEN
+  CLAUDE_CODE_SUBAGENT_CONFIG_WARNING
+  CLAUDE_CODE_TOTAL_TOKENS_REMINDER
+  CLAUDE_CODE_TOTAL_TOKENS_REMINDER_AFTER_USER_TURN
+  CLAUDE_CODE_TOTAL_TOKENS_REMINDER_BUDGET
+  CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR
+  CLAUDE_CODE_WORKFLOW_SIZE_WARNING_TOKENS
+  CLAUDE_CONFIG_DIR
+  CLAUDE_LOCAL_OAUTH_API_BASE
+  CLAUDE_LOCAL_OAUTH_APPS_BASE
+  CLAUDE_LOCAL_OAUTH_CONSOLE_BASE
+  CLAUDE_SECURESTORAGE_CONFIG_DIR
+  CLAUDE_SESSION_INGRESS_TOKEN_FILE
+  CLAUDE_TRUSTED_DEVICE_TOKEN
   CLIENT_EARLY_TRAFFIC_SECRET
   CLIENT_HANDSHAKE_TRAFFIC_SECRET
   CLIENT_HTTP_AUTHENTICATION
@@ -162,106 +255,13 @@ strings:
   CLOUDFLARE_API_KEY
   CLOUDFLARE_API_TOKEN
   CLOUDFLARE_WORKERS_AI_TOKEN
+  CLOUDSDK_ACTIVE_CONFIG_NAME
+  CLOUDSDK_AUTH_ACCESS_TOKEN
   CLOUDSDK_CONFIG
+  CLOUDSDK_PROXY_PASSWORD
   CMAKE_CXX_COMPILER_LAUNCHERCMAKE_C_COMPILER_LAUNCHERNODE_TLS_REJECT_UNAUTHORIZEDBUN_CONFIG_NO_CLEAR_TERMINAL_ON_RELOADCITDDIUMGITHUB_ACTIONSJENKINS_URL
   COHERE_API_KEY
   COMMENT_KEYS
-  CONFIG
-  CONFIG_MAX_ATTEMPTS
-  CONFIG_PREFIX_SEPARATOR
-  CONFIG_RETRY_MODE
-  CONFIG_USE_DUALSTACK_ENDPOINT
-  CONFIG_USE_FIPS_ENDPOINT
-  CREDENTIALS_CODE
-  CREDENTIALS_ENV_VARS
-  CREDENTIALS_ENV_VARS0
-  CREDENTIALS_ENV_VARS_STS_WEB_ID_TOKEN
-  CREDENTIALS_HTTP
-  CREDENTIALS_LOGIN
-  CREDENTIALS_PROCESS
-  CREDENTIALS_PROFILE
-  CREDENTIALS_PROFILE_LOGIN
-  CREDENTIALS_PROFILE_NAMED_PROVIDER
-  CREDENTIALS_PROFILE_PROCESS
-  CREDENTIALS_PROFILE_SOURCE_PROFILE
-  CREDENTIALS_PROFILE_SSO
-  CREDENTIALS_PROFILE_SSO_LEGACY
-  CREDENTIALS_PROFILE_STS_WEB_ID_TOKEN
-  CREDENTIALS_SSO
-  CREDENTIALS_SSO_LEGACY
-  CREDENTIALS_STS_ASSUME_ROLE
-  CREDENTIALS_STS_ASSUME_ROLE_WEB_ID
-  CREDENTIAL_QUERY_PARAM
-  DASHSCOPE_API_KEY
-  DATABRICKS_TOKEN
-  DATABRICKS_TOKENG
-  DATA_TOO_LARGE_FOR_KEY_SIZE
-  DATA_TOO_SMALL_FOR_KEY_SIZE
-  DEBUG_AUTH
-  DEEPINFRA_API_KEY
-  DEEPSEEK_API_KEY
-  DEEP_HEADER_AUTHORIZATION
-  DEFAULT_MAX_TOKEN_LIFETIME_SECS_
-  DEFAULT_PROFILE
-  DEFAULT_SETTINGS_ENABLE_CONNECT_PROTOCOL
-  DEFAULT_SETTINGS_ENABLE_PUSH
-  DEFAULT_SETTINGS_HEADER_TABLE_SIZE
-  DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE
-  DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS
-  DEFAULT_SETTINGS_MAX_FRAME_SIZE
-  DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE
-  DEPRECATED_KEYS
-  DIFFERENT_KEY_TYPES
-  DIGEST_AND_KEY_TYPE_NOT_SUPPORTED
-  DIGEST_TOO_BIG_FOR_RSA_KEY
-  DIGITALOCEAN_ACCESS_TOKEN
-  DIGITALOCEAN_API_KEY
-  DO_INFERENCE_API_KEY
-  DUPLICATE_KEY_SHARE
-  EAUTHIP
-  ECH_SERVER_CONFIG_AND_PRIVATE_KEY_MISMATCH
-  ECH_SERVER_CONFIG_UNSUPPORTED_EXTENSION
-  ECH_SERVER_WOULD_HAVE_NO_RETRY_CONFIGS
-  EEXPIREDSIGNATUREKEY
-  EIOEADVEDOME2BIGEBADEEBADFEBADREBUSYECOMMEFBIGEIDRMEINTRELOOPENOSRENXIOEPERMEPIPEEROFSESRCHETIMEEXDEVEACCESEAGAINEBADFDEBFONTECHILDECHRNGEDQUOTEEXISTEFAULTEILSEQEINVALEISDIREISNAMEL2HLTEL3HLTEL3RSTELNRNGEMFILEEMLINKENFILEENOANOENOCSIENODEVENOENTENOKEYENOLCKENOMEMENOMSGENONETENOPKGENOSPCENOSTRENOSYSENOTTYEPROTOERANGEESPIPEESRMNTESTALEEUSERSEXFULLEBADMSGEBADRQCEBADSLTEDEADLKEDOTDOTEISCONNELIBACCELIBBADELIBMAXELIBSCNENAVAILENOBUFSENODATAENOEXECENOLINKENOTBLKENOTDIRENOTNAMENOTSUPEREMCHGEREMOTEERFKIL  [line truncated]
-  EMISSINGSIGNATUREKEY
-  EMPTY_PUBLIC_KEY
-  ENGINE_METHOD_PKEY_ASN1_METHS
-  ENGINE_METHOD_PKEY_METHS
-  ENV_KEY
-  ENV_PROFILE
-  ENV_SECRET
-  EPERMENOENTESRCHEINTREIOENXIOE2BIGENOEXECEBADFECHILDEAGAINENOMEMEACCESEFAULTENOTBLKEBUSYEEXISTEXDEVENODEVENOTDIREISDIREINVALENFILEEMFILEENOTTYETXTBSYEFBIGENOSPCESPIPEEROFSEMLINKEPIPEEDOMEADVERANGEEDEADLKENAMETOOLONGENOLCKENOSYSENOTEMPTYELOOPENOMSGEIDRMECHRNGEL3HLTEL3RSTELNRNGEUNATCHENOCSIEL2HLTEBADEEBADREXFULLENOANOEBADRQCEBADSLTEBFONTENOSTRENODATAETIMEENOSRENONETENOPKGEREMOTEENOLINKESRMNTECOMMEPROTOEMULTIHOPEDOTDOTEBADMSGEOVERFLOWEBADFDEREMCHGELIBACCELIBBADELIBSCNELIBMAXEILSEQEUSERSEDESTADDRREQ  [line truncated]
-  EPERMENOENTESRCHEINTREIOENXIOE2BIGENOEXECEBADFECHILDEAGAINENOMEMEACCESEFAULTENOTBLKEBUSYEEXISTEXDEVENODEVENOTDIREISDIREINVALENFILEEMFILEENOTTYETXTBSYEFBIGENOSPCESPIPEEROFSEMLINKEPIPEERANGEEDEADLKENAMETOOLONGENOLCKENOSYSENOTEMPTYELOOPENOMSGEIDRMECHRNGEL3HLTEL3RSTELNRNGEUNATCHENOCSIEL2HLTEBADEEBADREXFULLENOANOEBADRQCEBADSLTEBFONTENOSTRENODATAETIMEENOSRENONETENOPKGEREMOTEENOLINKESRMNTECOMMEPROTOEMULTIHOPEDOTDOTEBADMSGEOVERFLOWEBADFDEREMCHGELIBACCELIBBADELIBSCNELIBMAXEILSEQEUSERSEDESTADDRREQEPROTOTY  [line truncated]
-  EPERMENOENTESRCHEINTREIOENXIOE2BIGENOEXECEBADFECHILDEAGAINENOMEMEACCESEFAULTENOTBLKEBUSYEEXISTEXDEVENODEVENOTDIREISDIREINVALENFILEEMFILEENOTTYETXTBSYEFBIGENOSPCESPIPEEROFSEMLINKEPIPEERANGEEDEADLKENAMETOOLONGENOLCKENOSYSENOTEMPTYELOOPENOMSGEIDRMECHRNGEL3HLTEL3RSTELNRNGEUNATCHENOCSIEL2HLTEBADEEBADREXFULLENOANOEBADRQCEBADSLTEBFONTENOSTRENODATAETIMEENOSRENONETENOPKGEREMOTEENOLINKESRMNTECOMMEPROTOEMULTIHOPEDOTDOTEBADMSGEOVERFLOWEBADFDEREMCHGELIBACCELIBBADELIBSCNELIBMAXEILSEQEUSERSEDESTADDRREQEPROTOTY  [line truncated]
-  ERANGEEDEADLKENAMETOOLONGENOLCKENOSYSENOTEMPTYELOOPENOMSGEIDRMECHRNGEL3HLTEL3RSTELNRNGEUNATCHENOCSIEL2HLTEBADEEBADREXFULLENOANOEBADRQCEBADSLTEBFONTENOSTRENODATAETIMEENOSRENONETENOPKGEREMOTEENOLINKESRMNTECOMMEPROTOEMULTIHOPEDOTDOTEBADMSGEOVERFLOWEBADFDEREMCHGELIBACCELIBBADELIBSCNELIBMAXEILSEQEUSERSEDESTADDRREQEPROTOTYPEENOPROTOOPTEPROTONOSUPPORTESOCKTNOSUPPORTEOPNOTSUPPEPFNOSUPPORTEAFNOSUPPORTEADDRINUSEEADDRNOTAVAILENETUNREACHENETRESETECONNABORTEDECONNRESETENOBUFSEISCONNESHUTDOWNETOOMANYREFSETIME  [line truncated]
-  ERROR_CONVERTING_PRIVATE_KEY
-  ERR_CRYPTO_ECDH_INVALID_PUBLIC_KEY
-  ERR_CRYPTO_INCOMPATIBLE_KEY
-  ERR_CRYPTO_INCOMPATIBLE_KEY_OPTIONS
-  ERR_CRYPTO_INVALID_AUTH_TAG
-  ERR_CRYPTO_INVALID_KEYLEN
-  ERR_CRYPTO_INVALID_KEYPAIR
-  ERR_CRYPTO_INVALID_KEYTYPE
-  ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE
-  ERR_CRYPTO_JWK_UNSUPPORTED_KEY_TYPE
-  ERR_CRYPTO_SIGN_KEY_REQUIRED
-  ERR_HTTP2_CONNECT_AUTHORITY
-  ERR_HTTP2_INVALID_PACKED_SETTINGS_LENGTH
-  ERR_HTTP2_MAX_PENDING_SETTINGS_ACK
-  ERR_HTTP2_TOO_MANY_CUSTOM_SETTINGS
-  ERR_INVALID_AUTH
-  ERR_INVALID_HTTP_TOKEN
-  ERR_INVALID_PACKAGE_CONFIG
-  ERR_INVALID_REPL_EVAL_CONFIG
-  ERR_JWKS_MULTIPLE_MATCHING_KEYS
-  ERR_JWKS_NO_MATCHING_KEY
-  ERR_JWKS_NO_MATCHING_KEY4
-  ERR_KEY_GENERATION_JOB_FAILED
-  ERR_MYSQL_MISSING_AUTH_DATAERR_MYSQL_AUTHENTICATION_FAILEDERR_MYSQL_FAILED_TO_ENCRYPT_PASSWORDERR_MYSQL_INVALID_PUBLIC_KEYERR_MYSQL_PUBLIC_KEY_RETRIEVAL_NOT_ALLOWEDERR_MYSQL_UNSUPPORTED_AUTH_PLUGINERR_MYSQL_UNSUPPORTED_PROTOCOL_VERSIONERR_MYSQL_OVERFLOWERR_MYSQL_QUERY_CANCELLEDERR_MYSQL_WRONG_NUMBER_OF_PARAMETERS_PROVIDEDERR_MYSQL_UNSUPPORTED_COLUMN_TYPEERR_MYSQL_INVALID_AUTH_SWITCH_REQUESTERR_MYSQL_INVALID_RESULT_ROWERR_MYSQL_INVALID_BINARY_VALUEERR_MYSQL_INVALID_ENCODED_INTEGERERR_MYSQL_INVALI  [line truncated]
-  ERR_POSTGRES_AUTHENTICATION_FAILED_PBKDF2
-  ERR_POSTGRES_INVALID_BACKEND_KEY_DATA
-  ERR_POSTGRES_INVALID_SERVER_KEY
     [truncated: more than 200 lines]
 baseline-env-OPENCODE_CONFIG_DIR:
   # /home/agent/probe-target
@@ -358,100 +358,99 @@ container-delta:
   A /home/agent/.npm/_cacache
   A /home/agent/.npm/_cacache/content-v2
   A /home/agent/.npm/_cacache/content-v2/sha512
-  A /home/agent/.npm/_cacache/content-v2/sha512/01
-  A /home/agent/.npm/_cacache/content-v2/sha512/01/ba
-  A /home/agent/.npm/_cacache/content-v2/sha512/01/ba/6e4a7bcd79f971705bbf0c7eb55f2900917255f810fc3f5973f9d25221387fcb93c05fe7e85578ce922e29c74d0d36485c26a1d259b12f95a085598bc0fc
-  A /home/agent/.npm/_cacache/content-v2/sha512/04
-  A /home/agent/.npm/_cacache/content-v2/sha512/04/17
-  A /home/agent/.npm/_cacache/content-v2/sha512/04/17/11d12d64f8e76135d1cbe960a510cd9daf67138a75f4d3f473e041768de72328ae36c45307f455416f5ebaa241194db618f5e9238e09d1194747856e5e71
+  A /home/agent/.npm/_cacache/content-v2/sha512/18
+  A /home/agent/.npm/_cacache/content-v2/sha512/18/0e
+  A /home/agent/.npm/_cacache/content-v2/sha512/18/0e/db9ebbdf2473875d6b288862f3cedd9229c2f6a0c0f92e11c8c9f4143f5e0bd975e9c731bf4bc42810ca2bd66feaf7deb57fd9efe1d4ea62bf6fb8c3928c
+  A /home/agent/.npm/_cacache/content-v2/sha512/1a
+  A /home/agent/.npm/_cacache/content-v2/sha512/1a/6a
+  A /home/agent/.npm/_cacache/content-v2/sha512/1a/6a/a26808f1b8cba98cc443f0655353db9ae32a4e3caa1a11c073a93b66d50e9a5e5d5213352e08be93225f5431e383b39a4561f6f4b31f65351190b539ea05
   A /home/agent/.npm/_cacache/content-v2/sha512/1b
-  A /home/agent/.npm/_cacache/content-v2/sha512/1b/84
-  A /home/agent/.npm/_cacache/content-v2/sha512/1b/84/a713f3ce522596b58e8f730b75cf64c82c66ab49dd49d3f043d9fc945516b97d3f80b9556ada854982e81eb1582e8c5831d22bf0a22155b1e1b0057d7a4c
-  A /home/agent/.npm/_cacache/content-v2/sha512/23
-  A /home/agent/.npm/_cacache/content-v2/sha512/23/85
-  A /home/agent/.npm/_cacache/content-v2/sha512/23/85/6fa9078b2a79a3795d765b3999ac1bc29a363afbb24805b8639f420a51bab341f0a64142040c7c5c5ece1b409d748de96a43d9b27feebecdabdd9f5b696f
-  A /home/agent/.npm/_cacache/content-v2/sha512/2f
-  A /home/agent/.npm/_cacache/content-v2/sha512/2f/a3
-  A /home/agent/.npm/_cacache/content-v2/sha512/2f/a3/607d077ddccc34a9682c06ed0bdfd0c233f1b80979f4f21e0f983467d4952091eb2a91c3ee4b2d0a960152c9f9188b2c84944632f0328212be89387434d3
-  A /home/agent/.npm/_cacache/content-v2/sha512/3c
-  A /home/agent/.npm/_cacache/content-v2/sha512/3c/bc
-  A /home/agent/.npm/_cacache/content-v2/sha512/3c/bc/460e9d0eb7e97be1aae1ab85a6835b3860f28413302d066a1b6eb5e6911258668caa6aeb98752228249e67e071ca6a9619933938a178c4b2907d647b6277
+  A /home/agent/.npm/_cacache/content-v2/sha512/1b/65
+  A /home/agent/.npm/_cacache/content-v2/sha512/1b/65/5542b352a86f2e25d23c2d72e69b2f9795c0445f88ffd05c93a7aa6cc9ad71b8e01ed74ef400f0dd8036acb534ffde8f58516fa8fc953bd54a983b1e7285
+  A /home/agent/.npm/_cacache/content-v2/sha512/30
+  A /home/agent/.npm/_cacache/content-v2/sha512/30/2c
+  A /home/agent/.npm/_cacache/content-v2/sha512/30/2c/5600a892fae8b8fc937e3688b0db3e863d848ca87665a5931d2fdeb82a9631d488745b2c3c9241f44d09fb53c4e09a8dd04dee633ae8d669354975e3ee6d
+  A /home/agent/.npm/_cacache/content-v2/sha512/41
+  A /home/agent/.npm/_cacache/content-v2/sha512/41/36
+  A /home/agent/.npm/_cacache/content-v2/sha512/41/36/b8301194493944e358ee040311671ca36595979bfa8aba5d5924c60ac6badd0b2ab902c9f7222c975170d00caf7b038059e4b42ec87cfce8a169f3903391
+  A /home/agent/.npm/_cacache/content-v2/sha512/45
+  A /home/agent/.npm/_cacache/content-v2/sha512/45/be
+  A /home/agent/.npm/_cacache/content-v2/sha512/45/be/b76e512bf45b2a73035f4e7844e1b1d1da2aef34193135bcf28d7a993f08a667c2c13cb9c504555c79ec0b59492832c6fd98aebd87f7263c6b2b9228978b
+  A /home/agent/.npm/_cacache/content-v2/sha512/47
+  A /home/agent/.npm/_cacache/content-v2/sha512/47/c9
+  A /home/agent/.npm/_cacache/content-v2/sha512/47/c9/92b18b1815958b8dde4c537c2a842ae9cca96ba7169e0b119ebbd63ab56a8e08b493916d9a96f3533eec1000887573464a0c27c7d43f31439ab29955eb02
+  A /home/agent/.npm/_cacache/content-v2/sha512/57
+  A /home/agent/.npm/_cacache/content-v2/sha512/57/86
+  A /home/agent/.npm/_cacache/content-v2/sha512/57/86/daeee8b8657b715927b4664af910ef761de83ceddfa77f4c7d2632dcd6f7eca7af27162223c36045bc226e93c1aa2eadcdb5b4d39d198a9cd8536af51f77
   A /home/agent/.npm/_cacache/content-v2/sha512/61
-  A /home/agent/.npm/_cacache/content-v2/sha512/61/9a
-  A /home/agent/.npm/_cacache/content-v2/sha512/61/9a/1b6015a149d3adbc94844d7bc9831722b6174706d37e3ad7f524b2dd4bcac09888049984687ae92d788ec77d4a17d6b9e5b0dad80d01efabfa475957e75a
-  A /home/agent/.npm/_cacache/content-v2/sha512/72
-  A /home/agent/.npm/_cacache/content-v2/sha512/72/0c
-  A /home/agent/.npm/_cacache/content-v2/sha512/72/0c/bfd261765e49aaf1d780a48fd7caeaaddd7563c7c1cff069c291492db418f885dffbf890834b4d863807713b753cda4c11c89656f47c048a1995050bbb4f
-  A /home/agent/.npm/_cacache/content-v2/sha512/8f
-  A /home/agent/.npm/_cacache/content-v2/sha512/8f/27
-  A /home/agent/.npm/_cacache/content-v2/sha512/8f/27/63764476c0f1454099bc522143349dfe409af7edc081483f99ee09ac88d023f9e4911eb555367706a10db02b290f2557079076d16e255fce6c09d2d263d5
-  A /home/agent/.npm/_cacache/content-v2/sha512/9a
-  A /home/agent/.npm/_cacache/content-v2/sha512/9a/bc
-  A /home/agent/.npm/_cacache/content-v2/sha512/9a/bc/79f57a51057e160baf782324441ddacc830b796d4fd4b6e46ddb1a789699ac4c6f2b72a917d6e8dcbd22f1d71586d4cf63907a8433fdf33dcd6ab5c87e56
-  A /home/agent/.npm/_cacache/content-v2/sha512/9e
-  A /home/agent/.npm/_cacache/content-v2/sha512/9e/cd
-  A /home/agent/.npm/_cacache/content-v2/sha512/9e/cd/6a355f022b839de39a4fd17b0d9acc8bd823b78efa7e88a4162be5bcb887e8d786a63ea6ee6c2186f499d28cf9a92ee4b15f47188d4dfcf762aa61e983ac
-  A /home/agent/.npm/_cacache/content-v2/sha512/a3
-  A /home/agent/.npm/_cacache/content-v2/sha512/a3/c1
-  A /home/agent/.npm/_cacache/content-v2/sha512/a3/c1/09d19b13e1dcc328dfb49a91b610a6cd1b3272a7e175fbe02fdbc51179155f884bfe377e1e6449cdfee9e488ca1eaca1da77a5ba222ee4e2e9139cf36635
-  A /home/agent/.npm/_cacache/content-v2/sha512/b0
-  A /home/agent/.npm/_cacache/content-v2/sha512/b0/ce
-  A /home/agent/.npm/_cacache/content-v2/sha512/b0/ce/6203fd2ee9f8c92adcb99a05cf3f3c69e630dfb77dc5cadf908c808291b632240cbfecaaff563a262fe15503c144e34f8c8a7e6b7eb3e58586e8b3fea864
-  A /home/agent/.npm/_cacache/content-v2/sha512/b2
-  A /home/agent/.npm/_cacache/content-v2/sha512/b2/4c
-  A /home/agent/.npm/_cacache/content-v2/sha512/b2/4c/f08f8ada64088364a5a0b359a36f72916462b55a57c1af81848c05c06b7a90c67b7eb40674ace6d4e13d767e823df67d5efb908e8b8887865d2a3a41eac8
-  A /home/agent/.npm/_cacache/content-v2/sha512/be
-  A /home/agent/.npm/_cacache/content-v2/sha512/be/d1
-  A /home/agent/.npm/_cacache/content-v2/sha512/be/d1/c56bfd5fad2ca5a71d5c651bb398cd9e7075a7e9807c70dbe1c3c79628fbd216f0e7724657ba00db8b72c9603f531a3471d94e89468ef6e6ac2ab703147d
-  A /home/agent/.npm/_cacache/content-v2/sha512/ce
-  A /home/agent/.npm/_cacache/content-v2/sha512/ce/94
-  A /home/agent/.npm/_cacache/content-v2/sha512/ce/94/2ac0a5c51cc078430f37b79c93f7910f578e9e674eba5158e6eb0dd63cff91465e4d41ab0b02415d05f42c97cea25ca7e27bb1cd3b1f2b039b1e66308091
-  A /home/agent/.npm/_cacache/content-v2/sha512/d3
-  A /home/agent/.npm/_cacache/content-v2/sha512/d3/f1
-  A /home/agent/.npm/_cacache/content-v2/sha512/d3/f1/f8c110c05b8840e4858de38d17c03ad10136ef4f7727a3e514b2a1729d3bb44de1973400e32b60197ef84d4dfc89695c826bebfb56107eafb821b8c6b911
-  A /home/agent/.npm/_cacache/content-v2/sha512/fc
-  A /home/agent/.npm/_cacache/content-v2/sha512/fc/6f
-  A /home/agent/.npm/_cacache/content-v2/sha512/fc/6f/0019e376cc631af3d406636f26d01f4ed665202b6d5a648588fb2d1bc851dc3559196f0608965ad8f22c7f0c80adbfcb74cb92ac1000dec4cc1f98256291
+  A /home/agent/.npm/_cacache/content-v2/sha512/61/54
+  A /home/agent/.npm/_cacache/content-v2/sha512/61/54/d17b949ebe7eaa2760f85152102a0fe1d20d1c0f50d9daada2ec08c12bdec6abda4d2fdda33c8a9b58eb8b926b1e29916d4a137f1652905375dd3dc24ef3
+  A /home/agent/.npm/_cacache/content-v2/sha512/68
+  A /home/agent/.npm/_cacache/content-v2/sha512/68/9b
+  A /home/agent/.npm/_cacache/content-v2/sha512/68/9b/7d66acaf490dc4217849d776b7b4f97522d1788c8f5bc2fd4dea69ecbe759d553cb7b1875a0d4cb82c6f07f88d823db8f23b14a03f83339da27f8890c5a4
+  A /home/agent/.npm/_cacache/content-v2/sha512/6f
+  A /home/agent/.npm/_cacache/content-v2/sha512/6f/cd
+  A /home/agent/.npm/_cacache/content-v2/sha512/6f/cd/830a5be9ccd591c0e1f00f0503878ebed5632bddc0c619fec3c809771f79e6ffe3a18e8e37e934032a71651eb4b1a7504647e247a5f66d1029049b3adb95
+  A /home/agent/.npm/_cacache/content-v2/sha512/7e
+  A /home/agent/.npm/_cacache/content-v2/sha512/7e/b8
+  A /home/agent/.npm/_cacache/content-v2/sha512/7e/b8/2ce0e65cd6b6b31a4c0434b04f700483b0d4d93eecb38a8f5cf5491f4ca06359059d7a603dcc0b9a394abea94a2811c53ce42ec6756be640fecfb19787eb
+  A /home/agent/.npm/_cacache/content-v2/sha512/80
+  A /home/agent/.npm/_cacache/content-v2/sha512/80/4b
+  A /home/agent/.npm/_cacache/content-v2/sha512/80/4b/f86664f3f94b236276899f5257e8786ee75f546729fb21ff686f9eca69bdd6ecff4cdc6c73d99a719ae5eb9e7fad768b43e32fd1eb3d2d7193d2acfc5151
+  A /home/agent/.npm/_cacache/content-v2/sha512/83
+  A /home/agent/.npm/_cacache/content-v2/sha512/83/53
+  A /home/agent/.npm/_cacache/content-v2/sha512/83/53/52846b7edb4cbfee7cd0bea0273bb6d0b210bc9d919acfc582ec9f2f8e05c8399d6ece8c73e4e88b9c26d459eaed7f608cdc3961f6dceb99925fd2273d03
+  A /home/agent/.npm/_cacache/content-v2/sha512/86
+  A /home/agent/.npm/_cacache/content-v2/sha512/86/ac
+  A /home/agent/.npm/_cacache/content-v2/sha512/86/ac/8e99d01bf03f89a3e9a08108760e1d9f27571e07198e7023ad33e27c8090634e5dda29196fda7d02ff9ec7618a4ef71e7cf2255a6de4f4da3c446e4cd521
+  A /home/agent/.npm/_cacache/content-v2/sha512/a7
+  A /home/agent/.npm/_cacache/content-v2/sha512/a7/40
+  A /home/agent/.npm/_cacache/content-v2/sha512/a7/40/720956251c1ff2a4e576603c68e8b90d0a969eeea6de75c31c1a180b9776fd4eb28f12a5b7ade613b60bc1385db4be08ca50d9a0747b8bced03ae0bbc0f8
+  A /home/agent/.npm/_cacache/content-v2/sha512/ab
+  A /home/agent/.npm/_cacache/content-v2/sha512/ab/16
+  A /home/agent/.npm/_cacache/content-v2/sha512/ab/16/a4d1a64c9f9088129cc1c8e040a1ef89dc89ca077a471c8f30d3900f40a65fe5576a3e40cad9d3347a89a2b852318780b7d39b74e649120cb01309c7dd8e
+  A /home/agent/.npm/_cacache/content-v2/sha512/c4
+  A /home/agent/.npm/_cacache/content-v2/sha512/c4/d5
+  A /home/agent/.npm/_cacache/content-v2/sha512/c4/d5/a3d049746bfcfda514f312cc78804a7d1318eee3bc5bdf45cc5c37d8c93cf85d8e03ee0d766aa8426de1dd09f054e41b40e6ff1d563fff561ec06835bbd3
   A /home/agent/.npm/_cacache/index-v5
+  A /home/agent/.npm/_cacache/index-v5/08
+  A /home/agent/.npm/_cacache/index-v5/08/2e
+  A /home/agent/.npm/_cacache/index-v5/08/2e/52a9f97fb647545c790e500dc51191c5e4c375a60142eae254dbcee9f504
   A /home/agent/.npm/_cacache/index-v5/2b
   A /home/agent/.npm/_cacache/index-v5/2b/1b
   A /home/agent/.npm/_cacache/index-v5/2b/1b/0c9622df0e8a899a5033b8c363f97d16b249f6fe51364d4c1ed795c3c32e
-  A /home/agent/.npm/_cacache/index-v5/2c
-  A /home/agent/.npm/_cacache/index-v5/2c/34
-  A /home/agent/.npm/_cacache/index-v5/2c/34/cbdb396ceb673e1154a4eefdbbb4c6fdcc5c743d3e5d82a65b3ec6aed9b8
-  A /home/agent/.npm/_cacache/index-v5/30
-  A /home/agent/.npm/_cacache/index-v5/30/65
-  A /home/agent/.npm/_cacache/index-v5/30/65/87f83501ea5bc70f5086011d5658d014cdb058c3ce19914f085879453f4a
   A /home/agent/.npm/_cacache/index-v5/31
   A /home/agent/.npm/_cacache/index-v5/31/b9
   A /home/agent/.npm/_cacache/index-v5/31/b9/6f4765b4224cd87e72db0fc90b9753fb93d45bc031435734154a050ba0b3
+  A /home/agent/.npm/_cacache/index-v5/31/e5
+  A /home/agent/.npm/_cacache/index-v5/31/e5/c44684fe4e0650c556e2d92f198e3c19dbcf4a1f8bbd6a82e48aa540218f
   A /home/agent/.npm/_cacache/index-v5/3f
   A /home/agent/.npm/_cacache/index-v5/3f/b5
   A /home/agent/.npm/_cacache/index-v5/3f/b5/768f077b96e18c9b12ce33096ce1fcff6a8970754561449cb62722e93644
-  A /home/agent/.npm/_cacache/index-v5/51
-  A /home/agent/.npm/_cacache/index-v5/51/ab
-  A /home/agent/.npm/_cacache/index-v5/51/ab/4044a4cf44a9c74ecf852f2be03f0e34db57e5712328bbee52d6d523da85
+  A /home/agent/.npm/_cacache/index-v5/57
+  A /home/agent/.npm/_cacache/index-v5/57/62
+  A /home/agent/.npm/_cacache/index-v5/57/62/ff540f909bd36357226821ab0c99d3c6f7bfc4f0d94bd1ec3ced68f080cb
+  A /home/agent/.npm/_cacache/index-v5/71
+  A /home/agent/.npm/_cacache/index-v5/71/a3
+  A /home/agent/.npm/_cacache/index-v5/71/a3/764f8d526ca8497debb8c4dd3ef5b08248a4e6e34b214f3265dcba3b41e2
   A /home/agent/.npm/_cacache/index-v5/89
   A /home/agent/.npm/_cacache/index-v5/89/a0
   A /home/agent/.npm/_cacache/index-v5/89/a0/bfa29b6f6dd6d076e5be806eebca32586b46f4a7adcba9ab76bfc03e7ad1
   A /home/agent/.npm/_cacache/index-v5/ad
   A /home/agent/.npm/_cacache/index-v5/ad/a0
   A /home/agent/.npm/_cacache/index-v5/ad/a0/12100d721273755db112241301dc2706902c4935ccd229956104de4e4fe7
-  A /home/agent/.npm/_cacache/index-v5/ba
-  A /home/agent/.npm/_cacache/index-v5/ba/90
-  A /home/agent/.npm/_cacache/index-v5/ba/90/64812f284beb2b8c4701724562ca0d6bfcffff2df823665d9da695e7e688
   A /home/agent/.npm/_cacache/index-v5/bf
   A /home/agent/.npm/_cacache/index-v5/bf/53
   A /home/agent/.npm/_cacache/index-v5/bf/53/c643f047d385e390e4b7b4d29f5957a6bb84e9e3fdf1fa5f09c8fef4450c
-  A /home/agent/.npm/_cacache/index-v5/d6
-  A /home/agent/.npm/_cacache/index-v5/d6/e9
-  A /home/agent/.npm/_cacache/index-v5/d6/e9/b19cf592f47249031b9cddb122db22785b2ec310b717fb089d7efb4b0059
   A /home/agent/.npm/_cacache/index-v5/d7
   A /home/agent/.npm/_cacache/index-v5/d7/d8
   A /home/agent/.npm/_cacache/index-v5/d7/d8/99ffef73c1f258a8d4f453aadefa5299c73fbd07ae424d0b69429eedbe71
   A /home/agent/.npm/_cacache/index-v5/de
   A /home/agent/.npm/_cacache/index-v5/de/ff
   A /home/agent/.npm/_cacache/index-v5/de/ff/f7fb4442679371dd78cf820d55414fba9b114c21da5fa074dddaaefb1024
+  A /home/agent/.npm/_cacache/index-v5/e2
+  A /home/agent/.npm/_cacache/index-v5/e2/57
+  A /home/agent/.npm/_cacache/index-v5/e2/57/e80f7eea239bdb863d3bbd8ef2852d0c8921ee18d17928671d8fdae0a748
   A /home/agent/.npm/_cacache/index-v5/f2
   A /home/agent/.npm/_cacache/index-v5/f2/15
   A /home/agent/.npm/_cacache/index-v5/f2/15/47ecc4de437d6a4b8dd58e43ddd37bc7909a7aa5ceb92126ccbb1ac5e733
@@ -467,7 +466,7 @@ container-delta:
   A /home/agent/.npm/_cacache/index-v5/fb/82/5df1718069e939cc0241a011755c5af560f9bb680f9c61593c9c9017a8e7
   A /home/agent/.npm/_cacache/tmp
   A /home/agent/.npm/_logs
-  A /home/agent/.npm/_logs/2026-10-25T00_23_01_172Z-debug-0.log
+  A /home/agent/.npm/_logs/2026-11-09T16_23_27_911Z-debug-0.log
   A /home/agent/.npm/_update-notifier-last-checked
   A /home/agent/probe-target
   A /home/agent/probe-target/opencode.json
@@ -514,7 +513,7 @@ container-delta:
   C /tmp
   A /tmp/.bun-1001-71b650bef1b3e52c.node
   A /tmp/.bun-1001-89812e6e6a68aaeb.so
-  A /tmp/.bun-1001-ebbfe5f112d1e949.so
+  A /tmp/.bun-1001-a2b2948027b90162.so
   A /tmp/node-compile-cache
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/00bf0630
@@ -605,4 +604,5 @@ container-delta:
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/2ee203d7
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/2f8c9e26
   A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/2fc52dda
+  A /tmp/node-compile-cache/v24.21.0-x64-964aae3f-1001/30838e72
     [truncated: more than 300 lines]

@@ -156,7 +156,7 @@ agent:        claude
 executable:   /home/probe/.local/bin/claude (PATH)
 mechanism:    environment variable CLAUDE_CONFIG_DIR
 support:      proven
-version:      2.1.310 (verified 2026-10-25)
+version:      2.1.319 (verified 2026-11-09)
 isolation:    config: supported
                 cited: user settings live in the config directory; project .claude/settings*.json and .mcp.json still layer on top
               credentials: conditional
@@ -168,7 +168,7 @@ agent:        codex
 executable:   /home/probe/.local/bin/codex (PATH)
 mechanism:    environment variable CODEX_HOME
 support:      proven
-version:      0.164.0 (verified 2026-10-25)
+version:      0.167.0 (verified 2026-11-09)
 isolation:    config: supported
                 cited: config.toml and &lt;name&gt;.config.toml live in CODEX_HOME; project-level configuration layering is not measured
               credentials: conditional

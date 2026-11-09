@@ -25,8 +25,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Experimental,
     evidence: AdapterEvidence {
         mechanism_id: "cursor-config-dir-v1",
-        verified_at: "2026-10-25",
-        upstream_version: "2026.10.22-27dcf5f",
+        verified_at: "2026-11-09",
+        upstream_version: "2026.11.05-86047df",
         source_url: "https://cursor.com/docs/cli/reference/configuration",
         notes: "the agent's one pre-network write moved under CURSOR_CONFIG_DIR \
                 (`+ f /home/agent/probe-target/cli-config.json`) while the default \

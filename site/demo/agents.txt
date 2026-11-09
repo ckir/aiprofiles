@@ -2,7 +2,7 @@ agent:        claude
 executable:   /home/probe/.local/bin/claude (PATH)
 mechanism:    environment variable CLAUDE_CONFIG_DIR
 support:      proven
-version:      2.1.310 (verified 2026-10-25)
+version:      2.1.319 (verified 2026-11-09)
 isolation:    config: supported
                 cited: user settings live in the config directory; project .claude/settings*.json and .mcp.json still layer on top
               credentials: conditional
@@ -14,7 +14,7 @@ agent:        codex
 executable:   /home/probe/.local/bin/codex (PATH)
 mechanism:    environment variable CODEX_HOME
 support:      proven
-version:      0.164.0 (verified 2026-10-25)
+version:      0.167.0 (verified 2026-11-09)
 isolation:    config: supported
                 cited: config.toml and <name>.config.toml live in CODEX_HOME; project-level configuration layering is not measured
               credentials: conditional
@@ -38,7 +38,7 @@ agent:        gemini
 executable:   not found on PATH
 mechanism:    environment variable GEMINI_CLI_HOME
 support:      proven
-version:      0.65.0 (verified 2026-10-25)
+version:      0.67.0 (verified 2026-11-09)
 isolation:    config: supported
                 measured: `+ d /home/agent/probe-target/.gemini` and `+ f /home/agent/probe-target/.gemini/projects.json` — the variable moved the configuration inside the target, nested one level as the agent creates `.gemini` itself
               credentials: unknown
@@ -50,7 +50,7 @@ agent:        copilot
 executable:   not found on PATH
 mechanism:    environment variable COPILOT_HOME
 support:      experimental
-version:      1.0.103 (verified 2026-10-25)
+version:      1.0.108 (verified 2026-11-09)
 isolation:    config: unknown
                 unmeasured: `delta-env-COPILOT_HOME: (no change: nothing was created, moved or removed at the watched locations)` while the default `~/.copilot` was `(absent)` (§9 outcome 5, Unknown branch)
               credentials: unknown
@@ -62,7 +62,7 @@ agent:        opencode
 executable:   not found on PATH
 mechanism:    environment variable OPENCODE_CONFIG_DIR
 support:      proven
-version:      v2.1.4 (verified 2026-10-25)
+version:      v2.2.6 (verified 2026-11-09)
 isolation:    config: supported
                 measured: `+ f /home/agent/probe-target/service.json` — the config-side write followed OPENCODE_CONFIG_DIR into the target, and the second delta (`envfile:OPENCODE_CONFIG`) shows the same write at the default `.config/opencode/service.json` when only the file variable is set
               credentials: unknown
@@ -74,7 +74,7 @@ agent:        pi
 executable:   not found on PATH
 mechanism:    environment variable PI_CODING_AGENT_DIR
 support:      proven
-version:      1.4.0 (verified 2026-10-25)
+version:      1.5.0 (verified 2026-11-09)
 isolation:    config: supported
                 measured: `+ f /home/agent/probe-target/auth.json` and `+ f /home/agent/probe-target/models-store.json` — the config directory's files moved **without** a `.pi/agent` prefix, so `PI_CODING_AGENT_DIR` names the config directory itself (the delta at the watched default `.pi` was empty)
               credentials: not supported
@@ -98,7 +98,7 @@ agent:        cursor
 executable:   not found on PATH
 mechanism:    environment variable CURSOR_CONFIG_DIR
 support:      experimental
-version:      2026.10.22-27dcf5f (verified 2026-10-25)
+version:      2026.11.05-86047df (verified 2026-11-09)
 isolation:    config: supported
                 measured: `+ f /home/agent/probe-target/cli-config.json` — the agent's one pre-network write followed CURSOR_CONFIG_DIR into the target, and the watched fallback location recorded `f /home/agent/.config/cursor  (absent)`, so the XDG fallback was not chosen
               credentials: unknown
@@ -134,7 +134,7 @@ agent:        cline
 executable:   not found on PATH
 mechanism:    environment variable CLINE_DATA_DIR
 support:      experimental
-version:      3.0.73 (verified 2026-10-17)
+version:      3.0.74 (verified 2026-11-09)
 isolation:    config: unknown
                 unmeasured: the probe's delta at both watched locations — the target and the default `/home/agent/.cline` — was `(no change: nothing was created, moved or removed at the watched locations)`, so whether the agent's own config writes would follow CLINE_DATA_DIR was not observable while the agent writes nothing before it needs the network (§9 outcome 5)
               credentials: unknown

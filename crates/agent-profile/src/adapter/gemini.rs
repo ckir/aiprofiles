@@ -25,8 +25,8 @@ static METADATA: AdapterMetadata = AdapterMetadata {
     support: SupportLevel::Proven,
     evidence: AdapterEvidence {
         mechanism_id: "gemini-cli-home-v1",
-        verified_at: "2026-10-25",
-        upstream_version: "0.65.0",
+        verified_at: "2026-11-09",
+        upstream_version: "0.67.0",
         source_url: "https://geminicli.com/docs/cli/enterprise/",
         notes: "the sandbox delta moved config (projects.json) and history/tmp state into \
                 <target>/.gemini while the default location gained nothing; \
