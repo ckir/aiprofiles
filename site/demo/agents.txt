@@ -86,7 +86,7 @@ agent:        kiro
 executable:   not found on PATH
 mechanism:    environment variable KIRO_HOME
 support:      proven
-version:      2.34.0 (verified 2026-10-25)
+version:      3.1.0 (verified 2026-11-09)
 isolation:    config: supported
                 measured: `+ f /home/agent/probe-target/settings/cli.json` — the settings subsystem moved its file under KIRO_HOME, and the watched default `~/.kiro` and `.local/share/kiro-cli` were both `(absent)` at baseline, so the settings write at the target is the variable's
               credentials: unknown
