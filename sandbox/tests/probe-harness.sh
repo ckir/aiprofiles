@@ -1701,6 +1701,11 @@ copilot_case race1 1
 check "a retry whose own install fails is recorded as a failure" \
     "$(grep -c '^install-retry 1$' "$PROBE_OUT_DIR/failures" 2>/dev/null || true)" "1"
 
+# THE SHIPPED DEFAULT, which every case above overrides with zeros and so cannot see: the three-retry bound
+# and its backoff live in this string. MEASURED: widening it to five entries left all five cases green.
+check "the shipped backoff is three retries at 15s, 30s and 60s" \
+    "$(sed -n 's/^copilot_backoff=${PROBE_COPILOT_BACKOFF:-"\(.*\)"}$/\1/p' "$root/sandbox/probes/copilot.sh")" "15 30 60"
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
     exit 1
